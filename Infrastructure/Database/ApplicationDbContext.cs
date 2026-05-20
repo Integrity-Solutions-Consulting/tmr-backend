@@ -1,5 +1,14 @@
 using Microsoft.EntityFrameworkCore;
 using tmr_backend.Features.Clientes.Domain;
+using tmr_backend.Features.Auth.Domain;
+using tmr_backend.Features.CargaActividades.Domain;
+using tmr_backend.Features.Colaboradores.Domain;
+using tmr_backend.Features.Configuracion.Domain;
+using tmr_backend.Features.Dashboard.Domain;
+using tmr_backend.Features.Lideres.Domain;
+using tmr_backend.Features.Proyectos.Domain;
+using tmr_backend.Features.Reportes.Domain;
+using tmr_backend.Features.TimeReport.Domain;
 
 namespace tmr_backend.Infrastructure.Database;
 
@@ -11,6 +20,15 @@ public class ApplicationDbContext : DbContext
 
     // Agregar aquí los DbSets para cada feature
     public DbSet<Cliente> Clientes { get; set; } = null!;
+    public DbSet<Usuario> Usuarios { get; set; } = null!;
+    public DbSet<Actividad> Actividades { get; set; } = null!;
+    public DbSet<Colaborador> Colaboradores { get; set; } = null!;
+    public DbSet<ConfiguracionSistema> ConfiguracionesSistema { get; set; } = null!;
+    public DbSet<DashboardItem> DashboardItems { get; set; } = null!;
+    public DbSet<Lider> Lideres { get; set; } = null!;
+    public DbSet<Proyecto> Proyectos { get; set; } = null!;
+    public DbSet<Reporte> Reportes { get; set; } = null!;
+    public DbSet<RegistroTiempo> RegistrosTiempo { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -22,6 +40,69 @@ public class ApplicationDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Nombre).IsRequired().HasMaxLength(100);
             entity.Property(e => e.Empresa).HasMaxLength(100);
+        });
+
+        modelBuilder.Entity<Usuario>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Nombre).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Descripcion).HasMaxLength(200);
+        });
+
+        modelBuilder.Entity<Actividad>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Nombre).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Descripcion).HasMaxLength(200);
+        });
+
+        modelBuilder.Entity<Colaborador>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Nombre).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Descripcion).HasMaxLength(200);
+        });
+
+        modelBuilder.Entity<ConfiguracionSistema>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Nombre).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Descripcion).HasMaxLength(200);
+        });
+
+        modelBuilder.Entity<DashboardItem>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Nombre).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Descripcion).HasMaxLength(200);
+        });
+
+        modelBuilder.Entity<Lider>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Nombre).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Descripcion).HasMaxLength(200);
+        });
+
+        modelBuilder.Entity<Proyecto>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Nombre).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Descripcion).HasMaxLength(200);
+        });
+
+        modelBuilder.Entity<Reporte>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Nombre).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Descripcion).HasMaxLength(200);
+        });
+
+        modelBuilder.Entity<RegistroTiempo>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Nombre).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Descripcion).HasMaxLength(200);
         });
     }
 }
