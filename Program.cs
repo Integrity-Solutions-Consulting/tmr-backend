@@ -1,5 +1,4 @@
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.InMemory;
+﻿using Microsoft.EntityFrameworkCore;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Features.Clientes;
 using tmr_backend.Features.Auth;
@@ -11,29 +10,25 @@ using tmr_backend.Features.Lideres;
 using tmr_backend.Features.Proyectos;
 using tmr_backend.Features.Reportes;
 using tmr_backend.Features.TimeReport;
+using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddOpenApi();
 
-// Configure Database (InMemory for simple testing as requested)
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseInMemoryDatabase("TmrDb"));
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
+    app.MapOpenApi();
+    app.MapScalarApiReference();
 }
 
 app.UseHttpsRedirection();
 
-// Map Feature Endpoints
 app.MapClientesEndpoints();
 app.MapAuthEndpoints();
 app.MapCargaActividadesEndpoints();
