@@ -1,11 +1,12 @@
 namespace tmr_backend.Features.Lideres.DTOs.Request;
 
 public record CrearLiderRequest(
-    string Codigo,
-    string Tipo,
-    string PrimerNombre,
+    string Nombres,
     string Apellidos,
-    string CorreoElectronico,
+    string Email,
     string Telefono,
-    Guid? ClienteId
+    string Tipopersona,
+    int Idtipo,
+    string Usuariocreacion,
+    string Ipcreacion
 );

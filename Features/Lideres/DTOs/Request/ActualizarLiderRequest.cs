@@ -1,11 +1,12 @@
 namespace tmr_backend.Features.Lideres.DTOs.Request;
 
 public record ActualizarLiderRequest(
-    string Tipo,
-    string PrimerNombre,
+    string Nombres,
     string Apellidos,
-    string CorreoElectronico,
+    string Email,
     string Telefono,
-    Guid? ClienteId,
-    bool Activo
+    int? Idtipo,
+    bool Activo,
+    string Usuariomodificacion,
+    string Ipmodificacion
 );

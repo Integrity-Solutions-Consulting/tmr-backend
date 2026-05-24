@@ -1,17 +1,16 @@
 namespace tmr_backend.Features.Lideres.DTOs.Response;
 
 public record LiderResponse(
-    Guid Id,
-    string Codigo,
-    string Tipo,
-    string PrimerNombre,
+    int Id,
+    string Nombres,
     string Apellidos,
-    string CorreoElectronico,
-    string Telefono,
-    Guid? ClienteId,
-    string? NombreCliente,
+    string? Email,
+    string? Telefono,
+    string Tipopersona,
+    int? Idtipo,
+    string? TipoNombre,
     bool Activo,
-    DateTime FechaCreacion
+    DateTime Fechacreacion
 );
 
 public record ContadoresLiderResponse(

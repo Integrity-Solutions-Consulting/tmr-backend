@@ -18,13 +18,11 @@ using System.Text;
 using FluentValidation;
 using tmr_backend.Features.Auth.Validators;
 using tmr_backend.Features.Auth.Services;
+using tmr_backend.Features.Lideres.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
-
-// builder.Services.AddDbContext<ApplicationDbContext>(options =>
-//     options.UseInMemoryDatabase("TmrDb"));
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -36,6 +34,9 @@ builder.Services.Configure<JwtSettings>(
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<ITokenService,   TokenService>();
 builder.Services.AddScoped<IAuthService,    AuthService>();
+
+// ── Lideres ───────────────────────────────────────────────
+builder.Services.AddScoped<ILiderService,   LiderService>();
 
 // Register FluentValidation validators from the auth feature
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
