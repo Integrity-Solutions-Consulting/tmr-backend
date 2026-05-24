@@ -15,7 +15,10 @@ public static class LideresEndpoints
         {
             var lideres = await db.Lideres
                 .Where(c => c.Activo)
-                .Select(c => new LiderResponse(c.Id, c.Nombre, c.Descripcion, c.Activo, c.FechaCreacion))
+                .Select(c => new LiderResponse(
+                    c.Id, c.Codigo, c.Tipo, c.PrimerNombre, c.Apellidos,
+                    c.CorreoElectronico, c.Telefono, c.ClienteId, null,
+                    c.Activo, c.FechaCreacion))
                 .ToListAsync();
 
             return Results.Ok(lideres);
@@ -24,22 +27,32 @@ public static class LideresEndpoints
         group.MapGet("/{id:guid}", async (Guid id, ApplicationDbContext db) =>
         {
             var lider = await db.Lideres.FindAsync(id);
-
             if (lider is null) return Results.NotFound();
 
-            return Results.Ok(new LiderResponse(lider.Id, lider.Nombre, lider.Descripcion, lider.Activo, lider.FechaCreacion));
+            return Results.Ok(new LiderResponse(
+                lider.Id, lider.Codigo, lider.Tipo, lider.PrimerNombre, lider.Apellidos,
+                lider.CorreoElectronico, lider.Telefono, lider.ClienteId, null,
+                lider.Activo, lider.FechaCreacion));
         });
 
         group.MapPost("/", async (CrearLiderRequest request, ApplicationDbContext db) =>
         {
             try
             {
-                var nuevoLider = Lider.Crear(request.Nombre, request.Descripcion);
-                
+                var nuevoLider = Lider.Crear(
+                    request.Codigo, request.Tipo, request.PrimerNombre,
+                    request.Apellidos, request.CorreoElectronico,
+                    request.Telefono, request.ClienteId);
+
                 db.Lideres.Add(nuevoLider);
                 await db.SaveChangesAsync();
 
-                var response = new LiderResponse(nuevoLider.Id, nuevoLider.Nombre, nuevoLider.Descripcion, nuevoLider.Activo, nuevoLider.FechaCreacion);
+                var response = new LiderResponse(
+                    nuevoLider.Id, nuevoLider.Codigo, nuevoLider.Tipo,
+                    nuevoLider.PrimerNombre, nuevoLider.Apellidos,
+                    nuevoLider.CorreoElectronico, nuevoLider.Telefono,
+                    nuevoLider.ClienteId, null, nuevoLider.Activo, nuevoLider.FechaCreacion);
+
                 return Results.Created($"/api/lideres/{nuevoLider.Id}", response);
             }
             catch (ArgumentException ex)
@@ -51,14 +64,16 @@ public static class LideresEndpoints
         group.MapPut("/{id:guid}", async (Guid id, ActualizarLiderRequest request, ApplicationDbContext db) =>
         {
             var lider = await db.Lideres.FindAsync(id);
-
             if (lider is null) return Results.NotFound();
 
             try
             {
-                lider.ActualizarDetalles(request.Nombre, request.Descripcion);
-                await db.SaveChangesAsync();
+                lider.ActualizarDetalles(
+                    request.Tipo, request.PrimerNombre, request.Apellidos,
+                    request.CorreoElectronico, request.Telefono,
+                    request.ClienteId, request.Activo);
 
+                await db.SaveChangesAsync();
                 return Results.NoContent();
             }
             catch (ArgumentException ex)
@@ -70,12 +85,10 @@ public static class LideresEndpoints
         group.MapDelete("/{id:guid}", async (Guid id, ApplicationDbContext db) =>
         {
             var lider = await db.Lideres.FindAsync(id);
-
             if (lider is null) return Results.NotFound();
 
             lider.Desactivar();
             await db.SaveChangesAsync();
-
             return Results.NoContent();
         });
     }
