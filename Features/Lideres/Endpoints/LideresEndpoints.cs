@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using tmr_backend.Features.Lideres.Domain;
-using tmr_backend.Features.Lideres.DTOs;
+using tmr_backend.Features.Lideres.DTOs.Request;
+using tmr_backend.Features.Lideres.DTOs.Response;
+
 using tmr_backend.Infrastructure.Database;
 
 namespace tmr_backend.Features.Lideres;
