@@ -84,7 +84,7 @@ public static class ColaboradorMappings
         this TblAdministracionCargo c) =>
         new(c.Id, c.Nombrecargo);
 
- 
+
     // ComboBox de personas
     public static PersonaResponse ToPersonaResponse(
         this TblAdministracionPersona p) =>
@@ -94,6 +94,9 @@ public static class ColaboradorMappings
             p.Apellidos,
             p.Numeroidentificacion,
             p.Fechanacimiento,
-            p.Idgenero
-        );
+            p.Idgenero,
+            p.Email,
+            p.Telefono,
+            p.Direccion
+            );
 }

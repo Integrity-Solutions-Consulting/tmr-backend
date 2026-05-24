@@ -64,6 +64,20 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
+
+// ── CORS: permitir que el frontend Angular llame al backend ──
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("PermitirFrontend", policy =>
+    {
+        policy.WithOrigins("http://localhost:4200")  // URL del frontend Angular
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
+
+
+
 builder.Services.AddAuthorization();
 var app = builder.Build();
 
@@ -74,6 +88,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseCors("PermitirFrontend"); //cors
+
 
 app.MapClientesEndpoints();
 app.MapAuthEndpoints();
