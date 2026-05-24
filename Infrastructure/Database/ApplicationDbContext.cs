@@ -9,7 +9,6 @@ using tmr_backend.Features.CargaActividades.Domain;
 using tmr_backend.Features.Colaboradores.Domain;
 using tmr_backend.Features.Configuracion.Domain;
 using tmr_backend.Features.Dashboard.Domain;
-using tmr_backend.Features.Lideres.Domain;
 using tmr_backend.Features.Proyectos.Domain;
 using tmr_backend.Features.Reportes.Domain;
 using tmr_backend.Features.TimeReport.Domain;
@@ -29,7 +28,6 @@ public partial class ApplicationDbContext : DbContext
     public DbSet<Colaborador> Colaboradores { get; set; } = null!;
     public DbSet<ConfiguracionSistema> ConfiguracionesSistema { get; set; } = null!;
     public DbSet<DashboardItem> DashboardItems { get; set; } = null!;
-    public DbSet<Lider> Lideres { get; set; } = null!;
     public DbSet<Proyecto> Proyectos { get; set; } = null!;
     public DbSet<Reporte> Reportes { get; set; } = null!;
     public DbSet<RegistroTiempo> RegistrosTiempo { get; set; } = null!;
