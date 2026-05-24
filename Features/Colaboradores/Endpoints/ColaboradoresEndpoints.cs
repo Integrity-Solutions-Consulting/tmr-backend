@@ -1,9 +1,14 @@
+using FluentValidation;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using tmr_backend.Features.Colaboradores.Domain;
-using tmr_backend.Features.Colaboradores.DTOs;
+using tmr_backend.Features.Colaboradores.DTOs.Request;
+using tmr_backend.Features.Colaboradores.DTOs.Response;
+using tmr_backend.Features.Colaboradores.Mappings;
+using tmr_backend.Features.Colaboradores.Services;
 using tmr_backend.Infrastructure.Database;
 
 namespace tmr_backend.Features.Colaboradores;
+
 
 public static class ColaboradoresEndpoints
 {
@@ -11,72 +16,190 @@ public static class ColaboradoresEndpoints
     {
         var group = app.MapGroup("/api/colaboradores").WithTags("Colaboradores");
 
-        group.MapGet("/", async (ApplicationDbContext db) =>
+        // =====================================================================
+        // GET /api/colaboradores  → lista (con filtros opcionales)
+        // =====================================================================
+        group.MapGet("/", async (
+            string? busqueda,
+            bool? activo,
+            int? asignacion,
+            IColaboradorService service,
+            CancellationToken ct) =>
         {
-            var colaboradores = await db.Colaboradores
-                .Where(c => c.Activo)
-                .Select(c => new ColaboradorResponse(c.Id, c.Nombre, c.Descripcion, c.Activo, c.FechaCreacion))
-                .ToListAsync();
-
-            return Results.Ok(colaboradores);
+            var lista = await service.ListarAsync(busqueda, activo, asignacion, ct);
+            return Results.Ok(lista);
         });
+        // .RequireAuthorization(); // descomentar cuando el JWT esté integrado
 
-        group.MapGet("/{id:guid}", async (Guid id, ApplicationDbContext db) =>
+        // =====================================================================
+        // GET /api/colaboradores/{id}  → detalle
+        // =====================================================================
+        group.MapGet("/{id:int}", async (
+            int id,
+            IColaboradorService service,
+            CancellationToken ct) =>
         {
-            var colaborador = await db.Colaboradores.FindAsync(id);
-
-            if (colaborador is null) return Results.NotFound();
-
-            return Results.Ok(new ColaboradorResponse(colaborador.Id, colaborador.Nombre, colaborador.Descripcion, colaborador.Activo, colaborador.FechaCreacion));
+            var detalle = await service.ObtenerPorIdAsync(id, ct);
+            return detalle is null ? Results.NotFound() : Results.Ok(detalle);
         });
+        // .RequireAuthorization();
 
-        group.MapPost("/", async (CrearColaboradorRequest request, ApplicationDbContext db) =>
+        // =====================================================================
+        // POST /api/colaboradores  → crear
+        // =====================================================================
+        group.MapPost("/", async (
+            CrearColaboradorRequest request,
+            IColaboradorService service,
+            CancellationToken ct) =>
         {
             try
             {
-                var nuevoColaborador = Colaborador.Crear(request.Nombre, request.Descripcion);
-                
-                db.Colaboradores.Add(nuevoColaborador);
-                await db.SaveChangesAsync();
-
-                var response = new ColaboradorResponse(nuevoColaborador.Id, nuevoColaborador.Nombre, nuevoColaborador.Descripcion, nuevoColaborador.Activo, nuevoColaborador.FechaCreacion);
-                return Results.Created($"/api/colaboradores/{nuevoColaborador.Id}", response);
+                var nuevoId = await service.CrearAsync(request, ct);
+                return Results.Created($"/api/colaboradores/{nuevoId}", new { Id = nuevoId });
             }
-            catch (ArgumentException ex)
+            catch (ValidationException ex)
             {
-                return Results.BadRequest(new { Mensaje = ex.Message });
+                return Results.BadRequest(new ProblemDetails
+                {
+                    Title = "Validación fallida",
+                    Detail = string.Join(", ", ex.Errors.Select(e => e.ErrorMessage)),
+                    Status = StatusCodes.Status400BadRequest
+                });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Conflict(new ProblemDetails
+                {
+                    Title = "Conflicto",
+                    Detail = ex.Message,
+                    Status = StatusCodes.Status409Conflict
+                });
             }
         });
+        // .RequireAuthorization();
 
-        group.MapPut("/{id:guid}", async (Guid id, ActualizarColaboradorRequest request, ApplicationDbContext db) =>
+        // =====================================================================
+        // PUT /api/colaboradores/{id}  → actualizar
+        // =====================================================================
+        group.MapPut("/{id:int}", async (
+            int id,
+            ActualizarColaboradorRequest request,
+            IColaboradorService service,
+            CancellationToken ct) =>
         {
-            var colaborador = await db.Colaboradores.FindAsync(id);
-
-            if (colaborador is null) return Results.NotFound();
-
             try
             {
-                colaborador.ActualizarDetalles(request.Nombre, request.Descripcion);
-                await db.SaveChangesAsync();
-
+                await service.ActualizarAsync(id, request, ct);
                 return Results.NoContent();
             }
-            catch (ArgumentException ex)
+            catch (ValidationException ex)
             {
-                return Results.BadRequest(new { Mensaje = ex.Message });
+                return Results.BadRequest(new ProblemDetails
+                {
+                    Title = "Validación fallida",
+                    Detail = string.Join(", ", ex.Errors.Select(e => e.ErrorMessage)),
+                    Status = StatusCodes.Status400BadRequest
+                });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Conflict(new ProblemDetails
+                {
+                    Title = "Conflicto",
+                    Detail = ex.Message,
+                    Status = StatusCodes.Status409Conflict
+                });
             }
         });
+        // .RequireAuthorization();
 
-        group.MapDelete("/{id:guid}", async (Guid id, ApplicationDbContext db) =>
+        // =====================================================================
+        // DELETE /api/colaboradores/{id}  → eliminación lógica
+        // =====================================================================
+        group.MapDelete("/{id:int}", async (
+            int id,
+            IColaboradorService service,
+            CancellationToken ct) =>
         {
-            var colaborador = await db.Colaboradores.FindAsync(id);
-
-            if (colaborador is null) return Results.NotFound();
-
-            colaborador.Desactivar();
-            await db.SaveChangesAsync();
-
-            return Results.NoContent();
+            try
+            {
+                await service.EliminarAsync(id, ct);
+                return Results.NoContent();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.NotFound(new ProblemDetails
+                {
+                    Title = "No encontrado",
+                    Detail = ex.Message,
+                    Status = StatusCodes.Status404NotFound
+                });
+            }
         });
+        // .RequireAuthorization();
+
+        // =====================================================================
+        // GET /api/colaboradores/personas  → ComboBox de personas existentes
+        // =====================================================================
+        group.MapGet("/personas", async (
+            ApplicationDbContext db,
+            CancellationToken ct) =>
+        {
+            var personas = await db.TblAdministracionPersonas
+                .Where(p => p.Activo)
+                .OrderBy(p => p.Nombres)
+                .Select(p => p.ToPersonaResponse())
+                .ToListAsync(ct);
+
+            return Results.Ok(personas);
+        });
+        // .RequireAuthorization();
+
+        // =====================================================================
+        // GET /api/colaboradores/cargos?idDepartamento=5
+        //   → cargos filtrados por departamento (flujo Departamento → Cargo)
+        // =====================================================================
+        group.MapGet("/cargos", async (
+            int idDepartamento,
+            ApplicationDbContext db,
+            CancellationToken ct) =>
+        {
+            var cargos = await db.TblAdministracionCargos
+                .Where(c => c.Activo && c.Iddepartamento == idDepartamento)
+                .OrderBy(c => c.Nombrecargo)
+                .Select(c => c.ToCargoResponse())
+                .ToListAsync(ct);
+
+            return Results.Ok(cargos);
+        });
+        // .RequireAuthorization();
+
+        // =====================================================================
+        // GET /api/colaboradores/catalogos/{codigo}
+        //   → dropdowns. codigo = GEN, DEP, MDT, CAT, EMP, TCT, TID
+        // =====================================================================
+        group.MapGet("/catalogos/{codigo}", async (
+            string codigo,
+            ApplicationDbContext db,
+            CancellationToken ct) =>
+        {
+            // Buscamos la cabecera del catálogo por su código (DEP, GEN, etc.).
+            var cabecera = await db.TblAdministracionCatalogos
+                .FirstOrDefaultAsync(c =>
+                    c.Codigo == codigo.ToUpper() && c.Tipocatalogo == "ADM", ct);
+
+            if (cabecera is null)
+                return Results.NotFound(new { Mensaje = $"No existe el catálogo '{codigo}'." });
+
+            // Traemos los detalles activos de ese catálogo, ordenados.
+            var detalles = await db.TblAdministracionCatalogoDetalles
+                .Where(d => d.Idcatalogo == cabecera.Id && d.Activo)
+                .OrderBy(d => d.Orden)
+                .Select(d => d.ToCatalogoResponse())
+                .ToListAsync(ct);
+
+            return Results.Ok(detalles);
+        });
+        // .RequireAuthorization();
     }
 }

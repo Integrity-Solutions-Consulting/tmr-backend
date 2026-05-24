@@ -28,7 +28,7 @@ public sealed class TokenService : ITokenService
     // ---------------------------------------------------------------
     // ACCESS TOKEN — JWT firmado con HS256
     // ---------------------------------------------------------------
-    public string GenerateAccessToken(Guid userId, string email)
+    public string GenerateAccessTokenPorId(Guid userId, string email)
     {
         var claims = new[]
         {
@@ -52,7 +52,7 @@ public sealed class TokenService : ITokenService
 
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
-    public string GenerateAccessToken2(TblAutenticacionUsuario user)
+    public string GenerateAccessToken(TblAutenticacionUsuario user)
     {
         var secret = _configuration["Jwt:SecretKey"]!;
         var issuer = _configuration["Jwt:Issuer"];

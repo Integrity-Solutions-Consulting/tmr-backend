@@ -4,6 +4,7 @@ using tmr_backend.Features.Clientes;
 using tmr_backend.Features.Auth;
 using tmr_backend.Features.CargaActividades;
 using tmr_backend.Features.Colaboradores;
+using tmr_backend.Features.Colaboradores.Services;
 using tmr_backend.Features.Configuracion;
 using tmr_backend.Features.Dashboard;
 using tmr_backend.Features.Lideres;
@@ -36,6 +37,9 @@ builder.Services.Configure<JwtSettings>(
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<ITokenService,   TokenService>();
 builder.Services.AddScoped<IAuthService,    AuthService>();
+// ── Servicios de Colaboradores (DI - SOLID) ───────────────
+builder.Services.AddScoped<IColaboradorService, ColaboradorService>();
+builder.Services.AddScoped<ICodigoEmpleadoGenerator, CodigoEmpleadoGenerator>();
 
 // Register FluentValidation validators from the auth feature
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
