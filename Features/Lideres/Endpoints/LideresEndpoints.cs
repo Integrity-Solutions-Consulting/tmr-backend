@@ -8,7 +8,7 @@ public static class LideresEndpoints
 {
     public static void MapLideresEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/lideres").WithTags("Lideres");
+        var group = app.MapGroup("/api/lideres").WithTags("Lideres").RequireAuthorization();
 
         group.MapGet("/", async (ILiderService service, bool? activo, CancellationToken ct) =>
         {
