@@ -191,4 +191,19 @@ public class LiderService : ILiderService
                 p.Telefono))
             .ToListAsync(ct);
     }
+    public async Task<IEnumerable<TipoLiderResponse>> ObtenerTiposAsync(CancellationToken ct)
+{
+    return await _db.TblAdministracionCatalogoDetalles
+        .Include(d => d.IdcatalogoNavigation)
+        .Where(d => d.Activo &&
+                    d.IdcatalogoNavigation.Codigo == "TLI" &&
+                    d.IdcatalogoNavigation.Tipocatalogo == "ADM")
+        .OrderBy(d => d.Orden)
+        .Select(d => new TipoLiderResponse(
+            d.Id,
+            d.Codigovalor,
+            d.Valor,
+            d.Descripcion))
+        .ToListAsync(ct);
+}
 }

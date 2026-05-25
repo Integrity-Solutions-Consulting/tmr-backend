@@ -28,6 +28,12 @@ public static class LideresEndpoints
             return Results.Ok(personas);
         });
 
+        group.MapGet("/tipos", async (ILiderService service, CancellationToken ct) =>
+        {
+            var tipos = await service.ObtenerTiposAsync(ct);
+            return Results.Ok(tipos);
+        });
+
         group.MapGet("/{id:int}", async (int id, ILiderService service, CancellationToken ct) =>
         {
             var lider = await service.ObtenerPorIdAsync(id, ct);
