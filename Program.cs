@@ -19,10 +19,14 @@ using System.Text;
 using FluentValidation;
 using tmr_backend.Features.Auth.Validators;
 using tmr_backend.Features.Auth.Services;
+using tmr_backend.Infrastructure.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
+});
 
 // builder.Services.AddDbContext<ApplicationDbContext>(options =>
 //     options.UseInMemoryDatabase("TmrDb"));
