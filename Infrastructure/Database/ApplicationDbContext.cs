@@ -359,6 +359,12 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Nombrecomercial)
                 .HasMaxLength(100)
                 .HasColumnName("nombrecomercial");
+            entity.Property(e => e.Nombres)
+                .HasMaxLength(150)
+                .HasColumnName("nombres");
+            entity.Property(e => e.Apellidos)
+                .HasMaxLength(150)
+                .HasColumnName("apellidos");
             entity.Property(e => e.Numeroidentificacion)
                 .HasMaxLength(20)
                 .HasColumnName("numeroidentificacion");

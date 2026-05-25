@@ -14,9 +14,13 @@ public partial class TblAdministracionCliente
     public string? Nombrecomercial { get; set; }
 
     public string? Razonsocial { get; set; }
+    
+    public string Nombres { get; set; } = null!;
+
+    public string Apellidos { get; set; } = null!;
 
     public string? Email { get; set; }
-
+    
     public string? Telefono { get; set; }
 
     public string? Direccion { get; set; }
