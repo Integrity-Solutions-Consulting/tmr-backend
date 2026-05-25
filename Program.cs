@@ -1,5 +1,4 @@
-﻿using dotenv.net;
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Features.Clientes;
 using tmr_backend.Features.Auth;
@@ -21,26 +20,12 @@ using tmr_backend.Features.Auth.Validators;
 using tmr_backend.Features.Auth.Services;
 using tmr_backend.Features.Lideres.Services;
 
-DotEnv.Load();
-
 var builder = WebApplication.CreateBuilder(args);
-
-var dbConnection = Environment.GetEnvironmentVariable("DB_CONNECTION")
-    ?? builder.Configuration.GetConnectionString("DefaultConnection");
-
-var jwtSecret = Environment.GetEnvironmentVariable("JWT_SECRET")
-    ?? builder.Configuration["Jwt:SecretKey"];
-
-var jwtIssuer = Environment.GetEnvironmentVariable("JWT_ISSUER")
-    ?? builder.Configuration["Jwt:Issuer"];
-
-var jwtAudience = Environment.GetEnvironmentVariable("JWT_AUDIENCE")
-    ?? builder.Configuration["Jwt:Audience"];
 
 builder.Services.AddOpenApi();
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseNpgsql(dbConnection));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 builder.Services.Configure<JwtSettings>(
     builder.Configuration.GetSection("Jwt"));
@@ -56,6 +41,8 @@ builder.Services.AddScoped<ILiderService,   LiderService>();
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 
 // ── JWT Middleware ─────────────────────────────────────────
+var jwt = builder.Configuration.GetSection("Jwt").Get<JwtSettings>()!;
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(opt =>
     {
@@ -65,10 +52,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateAudience         = true,
             ValidateLifetime         = true,
             ValidateIssuerSigningKey = true,
-            ValidIssuer              = jwtIssuer,
-            ValidAudience            = jwtAudience,
+            ValidIssuer              = jwt.Issuer,
+            ValidAudience            = jwt.Audience,
             IssuerSigningKey         = new SymmetricSecurityKey(
-                                           Encoding.UTF8.GetBytes(jwtSecret!)),
+                                           Encoding.UTF8.GetBytes(jwt.SecretKey)),
             ClockSkew                = TimeSpan.Zero
         };
     });
