@@ -14,7 +14,9 @@ public static class ColaboradoresEndpoints
 {
     public static void MapColaboradoresEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/colaboradores").WithTags("Colaboradores");
+        var group = app.MapGroup("/api/colaboradores")
+                       .WithTags("Colaboradores")
+                       .RequireAuthorization();  // JWT: protege TODOS los endpoints del grupo
 
         // =====================================================================
         // GET /api/colaboradores  → lista (con filtros opcionales)
@@ -29,7 +31,7 @@ public static class ColaboradoresEndpoints
             var lista = await service.ListarAsync(busqueda, activo, asignacion, ct);
             return Results.Ok(lista);
         });
-        // .RequireAuthorization(); // descomentar cuando el JWT esté integrado
+        
 
         // =====================================================================
         // GET /api/colaboradores/{id}  → detalle
@@ -42,7 +44,7 @@ public static class ColaboradoresEndpoints
             var detalle = await service.ObtenerPorIdAsync(id, ct);
             return detalle is null ? Results.NotFound() : Results.Ok(detalle);
         });
-        // .RequireAuthorization();
+        
 
         // =====================================================================
         // POST /api/colaboradores  → crear
@@ -76,7 +78,7 @@ public static class ColaboradoresEndpoints
                 });
             }
         });
-        // .RequireAuthorization();
+        
 
         // =====================================================================
         // PUT /api/colaboradores/{id}  → actualizar
@@ -111,7 +113,7 @@ public static class ColaboradoresEndpoints
                 });
             }
         });
-        // .RequireAuthorization();
+        
 
         // =====================================================================
         // DELETE /api/colaboradores/{id}  → eliminación lógica
@@ -136,7 +138,7 @@ public static class ColaboradoresEndpoints
                 });
             }
         });
-        // .RequireAuthorization();
+       
 
         // =====================================================================
         // GET /api/colaboradores/personas  → ComboBox de personas existentes
@@ -153,7 +155,7 @@ public static class ColaboradoresEndpoints
 
             return Results.Ok(personas);
         });
-        // .RequireAuthorization();
+      
 
         // =====================================================================
         // GET /api/colaboradores/cargos?idDepartamento=5
@@ -172,7 +174,7 @@ public static class ColaboradoresEndpoints
 
             return Results.Ok(cargos);
         });
-        // .RequireAuthorization();
+        
 
         // =====================================================================
         // GET /api/colaboradores/catalogos/{codigo}
@@ -200,6 +202,6 @@ public static class ColaboradoresEndpoints
 
             return Results.Ok(detalles);
         });
-        // .RequireAuthorization();
+        
     }
 }

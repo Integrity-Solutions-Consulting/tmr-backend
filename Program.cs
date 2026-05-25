@@ -91,6 +91,10 @@ app.UseHttpsRedirection();
 
 app.UseCors("PermitirFrontend"); //cors
 
+// ── Activar autenticación y autorización (JWT) ──
+app.UseAuthentication();   // primero valida el token
+app.UseAuthorization();    // luego verifica permisos
+
 
 app.MapClientesEndpoints();
 app.MapAuthEndpoints();
