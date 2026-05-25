@@ -2,7 +2,7 @@
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Features.Clientes;
 using tmr_backend.Features.Auth;
-using tmr_backend.Features.CargaActividades; // Tu feature
+using tmr_backend.Features.CargaActividades;
 using tmr_backend.Features.Colaboradores;
 using tmr_backend.Features.Configuracion;
 using tmr_backend.Features.Dashboard;
@@ -21,12 +21,68 @@ using tmr_backend.Features.Auth.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// =========================
+// SERVICES
+// =========================
 builder.Services.AddOpenApi();
 
+// CORS (Angular)
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("PermitirAngular", policy =>
+    {
+        policy.WithOrigins("http://localhost:4200")
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
+
+// DB (PostgreSQL)
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseInMemoryDatabase("TmrDb"));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// JWT Settings
+builder.Services.Configure<JwtSettings>(
+    builder.Configuration.GetSection("Jwt"));
+
+// Auth Services
+builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
+builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+
+// FluentValidation
+builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
+
+// JWT Authentication
+var jwt = builder.Configuration.GetSection("Jwt").Get<JwtSettings>()!;
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(opt =>
+    {
+        opt.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwt.Issuer,
+            ValidAudience = jwt.Audience,
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(jwt.SecretKey)),
+            ClockSkew = TimeSpan.Zero
+        };
+    });
+
+builder.Services.AddAuthorization();
+
+// TU FEATURE
+builder.Services.AddScoped<ICargarActividadesExcelHandler, CargarActividadesExcelHandler>();
 
 var app = builder.Build();
+
+// =========================
+// PIPELINE
+// =========================
 
 if (app.Environment.IsDevelopment())
 {
@@ -34,17 +90,17 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
-//app.UseHttpsRedirection();
-
-// ==========================================
-// CORRECCIÓN: MIDDLEWARE DE CORS CONFIGURADO
-// ==========================================
+// CORS
 app.UseCors("PermitirAngular");
 
-// Aquí es donde tu arquitectura expone los endpoints automáticamente
+// Auth middleware (IMPORTANTE si usas JWT)
+app.UseAuthentication();
+app.UseAuthorization();
+
+// Endpoints
 app.MapClientesEndpoints();
 app.MapAuthEndpoints();
-app.MapCargaActividadesEndpoints(); // <-- Este método llamará a tu lógica
+app.MapCargaActividadesEndpoints();
 app.MapColaboradoresEndpoints();
 app.MapConfiguracionEndpoints();
 app.MapDashboardEndpoints();
