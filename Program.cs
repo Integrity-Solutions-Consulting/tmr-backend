@@ -11,25 +11,20 @@ using tmr_backend.Features.Proyectos;
 using tmr_backend.Features.Reportes;
 using tmr_backend.Features.TimeReport;
 using Scalar.AspNetCore;
+using tmr_backend.Infrastructure.Security;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using FluentValidation;
+using tmr_backend.Features.Auth.Validators;
+using tmr_backend.Features.Auth.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("PermitirAngular", policy =>
-    {
-        policy.WithOrigins("http://localhost:4200") // Cambia esto por la URL de tu frontend Angular
-              .AllowAnyHeader()
-              .AllowAnyMethod();
-    });
-});
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseInMemoryDatabase("TmrDb"));
-
-
-builder.Services.AddScoped<ICargarActividadesExcelHandler, CargarActividadesExcelHandler>();
 
 var app = builder.Build();
 
