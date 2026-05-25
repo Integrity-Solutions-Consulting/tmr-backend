@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc; // OBLIGATORIO PARA EL [FromForm]
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using MiniExcelLibs;
+using System.IO;
 using System;
 using System.Security.Claims;
 using System.Threading.Tasks;
@@ -18,77 +20,100 @@ public static class CargaActividadesEndpoints
     {
         var group = app.MapGroup("/api/carga-actividades").WithTags("CargaActividades");
 
-        // 1. GET: Obtener todas las actividades activas
+        // 1. GET: Obtener todas las actividades activas en el esquema real de time_report
         group.MapGet("/", async (ApplicationDbContext db) =>
         {
-            var actividades = await db.Actividades
+            var actividades = await db.TblTimeReportActividadDiaria
                 .Where(c => c.Activo)
-                .Select(c => new ActividadResponse(c.Id, c.Nombre, c.Descripcion, c.Activo, c.FechaCreacion))
+                .Select(c => new
+                {
+                    c.Id,
+                    c.Idempleado,
+                    c.Idproyecto,
+                    c.Idtipoactividad,
+                    c.Codigorequerimiento,
+                    c.Cantidadhoras,
+                    Fechaactividad = c.Fechaactividad.ToString("yyyy-MM-dd"),
+                    c.Descripcionactividad,
+                    c.Notas,
+                    c.Esbillable,
+                    c.Aprobadopor,
+                    c.Fechaaprobacion,
+                    c.Activo,
+                    c.Usuariocreacion,
+                    c.Fechacreacion
+                })
                 .ToListAsync();
 
             return Results.Ok(actividades);
         });
 
         // 2. GET: Obtener una actividad por ID
-        group.MapGet("/{id:guid}", async (Guid id, ApplicationDbContext db) =>
+        group.MapGet("/{id:int}", async (int id, ApplicationDbContext db) =>
         {
-            var actividad = await db.Actividades.FindAsync(id);
+            var actividad = await db.TblTimeReportActividadDiaria.FindAsync(id);
 
             if (actividad is null) return Results.NotFound();
 
-            return Results.Ok(new ActividadResponse(actividad.Id, actividad.Nombre, actividad.Descripcion, actividad.Activo, actividad.FechaCreacion));
+            return Results.Ok(new
+            {
+                actividad.Id,
+                actividad.Idempleado,
+                actividad.Idproyecto,
+                actividad.Idtipoactividad,
+                actividad.Codigorequerimiento,
+                actividad.Cantidadhoras,
+                Fechaactividad = actividad.Fechaactividad.ToString("yyyy-MM-dd"),
+                actividad.Descripcionactividad,
+                actividad.Notas,
+                actividad.Esbillable,
+                actividad.Aprobadopor,
+                actividad.Fechaaprobacion,
+                actividad.Activo,
+                actividad.Usuariocreacion,
+                actividad.Fechacreacion
+            });
         });
 
-        // 3. POST: Crear una actividad individual manual
-        group.MapPost("/", async (CrearActividadRequest request, ApplicationDbContext db) =>
+        // 3. POST: Crear una actividad individual manual (legacy no soportado en el nuevo esquema)
+        group.MapPost("/", () => Results.StatusCode(501));
+
+        // 4. PUT: Actualizar una actividad existente (legacy no soportado en el nuevo esquema)
+        group.MapPut("/{id:int}", () => Results.StatusCode(501));
+
+        // 5. DELETE: Desactivar una actividad (legacy no soportado en el nuevo esquema)
+        group.MapDelete("/{id:int}", () => Results.StatusCode(501));
+
+        // 6. GET: Descargar actividades activas como archivo Excel
+        group.MapGet("/download", async (ApplicationDbContext db) =>
         {
-            try
-            {
-                var nuevaActividad = Actividad.Crear(request.Nombre, request.Descripcion);
-                
-                db.Actividades.Add(nuevaActividad);
-                await db.SaveChangesAsync();
+            var actividades = await db.TblTimeReportActividadDiaria
+                .Where(c => c.Activo)
+                .Select(c => new
+                {
+                    c.Id,
+                    c.Idempleado,
+                    c.Idproyecto,
+                    c.Idtipoactividad,
+                    c.Codigorequerimiento,
+                    c.Cantidadhoras,
+                    Fechaactividad = c.Fechaactividad.ToString("yyyy-MM-dd"),
+                    c.Descripcionactividad,
+                    c.Notas,
+                    c.Esbillable,
+                    c.Aprobadopor,
+                    Fechaaprobacion = c.Fechaaprobacion.HasValue ? c.Fechaaprobacion.Value.ToString("yyyy-MM-dd HH:mm:ss") : null,
+                    c.Activo,
+                    c.Usuariocreacion,
+                    Fechacreacion = c.Fechacreacion.ToString("yyyy-MM-dd HH:mm:ss")
+                })
+                .ToListAsync();
 
-                var response = new ActividadResponse(nuevaActividad.Id, nuevaActividad.Nombre, nuevaActividad.Descripcion, nuevaActividad.Activo, nuevaActividad.FechaCreacion);
-                return Results.Created($"/api/carga-actividades/{nuevaActividad.Id}", response);
-            }
-            catch (ArgumentException ex)
-            {
-                return Results.BadRequest(new { Mensaje = ex.Message });
-            }
-        });
+            await using var stream = new MemoryStream();
+            await stream.SaveAsAsync(actividades);
+            stream.Position = 0;
 
-        // 4. PUT: Actualizar una actividad existente
-        group.MapPut("/{id:guid}", async (Guid id, ActualizarActividadRequest request, ApplicationDbContext db) =>
-        {
-            var actividad = await db.Actividades.FindAsync(id);
-
-            if (actividad is null) return Results.NotFound();
-
-            try
-            {
-                actividad.ActualizarDetalles(request.Nombre, request.Descripcion);
-                await db.SaveChangesAsync();
-
-                return Results.NoContent();
-            }
-            catch (ArgumentException ex)
-            {
-                return Results.BadRequest(new { Mensaje = ex.Message });
-            }
-        });
-
-        // 5. DELETE: Desactivar una actividad
-        group.MapDelete("/{id:guid}", async (Guid id, ApplicationDbContext db) =>
-        {
-            var actividad = await db.Actividades.FindAsync(id);
-
-            if (actividad is null) return Results.NotFound();
-
-            actividad.Desactivar();
-            await db.SaveChangesAsync();
-
-            return Results.NoContent();
+            return Results.File(stream.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "carga-actividades.xlsx");
         });
 
         // =============================================================================

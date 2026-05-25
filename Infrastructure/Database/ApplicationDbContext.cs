@@ -555,7 +555,7 @@ public partial class ApplicationDbContext : DbContext
                 .HasColumnName("activo");
             entity.Property(e => e.Apellidos)
                 .HasMaxLength(100)
-                .HasColumnName("apellidos");
+                .HasColumnName("apellidopaterno");
             entity.Property(e => e.Direccion)
                 .HasMaxLength(255)
                 .HasColumnName("direccion");
@@ -578,7 +578,7 @@ public partial class ApplicationDbContext : DbContext
                 .HasColumnName("ipmodificacion");
             entity.Property(e => e.Nombres)
                 .HasMaxLength(100)
-                .HasColumnName("nombres");
+                .HasColumnName("primernombre");
             entity.Property(e => e.Numeroidentificacion)
                 .HasMaxLength(20)
                 .HasColumnName("numeroidentificacion");
