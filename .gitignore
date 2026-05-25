@@ -366,3 +366,6 @@ FodyWeavers.xsd
 
 .claude/
 blueprint.md
+
+
+appsettings.Development.json
