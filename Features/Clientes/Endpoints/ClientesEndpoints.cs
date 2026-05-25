@@ -1,87 +1,169 @@
+using FluentValidation;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using tmr_backend.Features.Clientes.Domain;
-using tmr_backend.Features.Clientes.DTOs;
+using tmr_backend.Features.Clientes.DTOs.Request;
+using tmr_backend.Features.Clientes.DTOs.Response;
+using tmr_backend.Features.Clientes.Mappings;
+using tmr_backend.Features.Clientes.Services;
 using tmr_backend.Infrastructure.Database;
 
 namespace tmr_backend.Features.Clientes;
+
 
 public static class ClientesEndpoints
 {
     public static void MapClientesEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/clientes").WithTags("Clientes");
+        var group = app.MapGroup("/api/clientes")
+                       .WithTags("Clientes")
+                       .RequireAuthorization();  // JWT: protege TODOS los endpoints del grupo
 
-        // 1. Obtener todos los clientes (Query)
-        group.MapGet("/", async (ApplicationDbContext db) =>
+        // =====================================================================
+        // GET /api/clientes  - lista 
+        // =====================================================================
+        group.MapGet("/", async (
+            string? busqueda,
+            bool? activo,
+            IClienteService service,
+            CancellationToken ct) =>
         {
-            var clientes = await db.Clientes
-                .Where(c => c.Activo)
-                .Select(c => new ClienteResponse(c.Id, c.Nombre, c.Empresa, c.Activo, c.FechaCreacion))
-                .ToListAsync();
-
-            return Results.Ok(clientes);
+            var lista = await service.ListarAsync(busqueda, activo, ct);
+            return Results.Ok(lista);
         });
 
-        // 2. Obtener cliente por ID (Query)
-        group.MapGet("/{id:guid}", async (Guid id, ApplicationDbContext db) =>
+
+        // =====================================================================
+        // GET /api/clientes/{id}  - detalle
+        // =====================================================================
+        group.MapGet("/{id:int}", async (
+            int id,
+            IClienteService service,
+            CancellationToken ct) =>
         {
-            var cliente = await db.Clientes.FindAsync(id);
-
-            if (cliente is null) return Results.NotFound();
-
-            return Results.Ok(new ClienteResponse(cliente.Id, cliente.Nombre, cliente.Empresa, cliente.Activo, cliente.FechaCreacion));
+            var detalle = await service.ObtenerPorIdAsync(id, ct);
+            return detalle is null ? Results.NotFound() : Results.Ok(detalle);
         });
 
-        // 3. Crear cliente (Command)
-        group.MapPost("/", async (CrearClienteRequest request, ApplicationDbContext db) =>
+
+        // =====================================================================
+        // POST /api/clientes  - crear
+        // =====================================================================
+        group.MapPost("/", async (
+            CrearClienteRequest request,
+            IClienteService service,
+            CancellationToken ct) =>
         {
             try
             {
-                var nuevoCliente = Cliente.Crear(request.Nombre, request.Empresa);
-                
-                db.Clientes.Add(nuevoCliente);
-                await db.SaveChangesAsync();
-
-                var response = new ClienteResponse(nuevoCliente.Id, nuevoCliente.Nombre, nuevoCliente.Empresa, nuevoCliente.Activo, nuevoCliente.FechaCreacion);
-                return Results.Created($"/api/clientes/{nuevoCliente.Id}", response);
+                var nuevoId = await service.CrearAsync(request, ct);
+                return Results.Created($"/api/clientes/{nuevoId}", new { Id = nuevoId });
             }
-            catch (ArgumentException ex)
+            catch (ValidationException ex)
             {
-                return Results.BadRequest(new { Mensaje = ex.Message });
+                return Results.BadRequest(new ProblemDetails
+                {
+                    Title = "Validación fallida",
+                    Detail = string.Join(", ", ex.Errors.Select(e => e.ErrorMessage)),
+                    Status = StatusCodes.Status400BadRequest
+                });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Conflict(new ProblemDetails
+                {
+                    Title = "Conflicto",
+                    Detail = ex.Message,
+                    Status = StatusCodes.Status409Conflict
+                });
             }
         });
 
-        // 4. Actualizar cliente (Command)
-        group.MapPut("/{id:guid}", async (Guid id, ActualizarClienteRequest request, ApplicationDbContext db) =>
+
+        // =====================================================================
+        // PUT /api/clientes/{id}  - actualizar
+        // =====================================================================
+        group.MapPut("/{id:int}", async (
+            int id,
+            ActualizarClienteRequest request,
+            IClienteService service,
+            CancellationToken ct) =>
         {
-            var cliente = await db.Clientes.FindAsync(id);
-
-            if (cliente is null) return Results.NotFound();
-
             try
             {
-                cliente.ActualizarDetalles(request.Nombre, request.Empresa);
-                await db.SaveChangesAsync();
-
+                await service.ActualizarAsync(id, request, ct);
                 return Results.NoContent();
             }
-            catch (ArgumentException ex)
+            catch (ValidationException ex)
             {
-                return Results.BadRequest(new { Mensaje = ex.Message });
+                return Results.BadRequest(new ProblemDetails
+                {
+                    Title = "Validación fallida",
+                    Detail = string.Join(", ", ex.Errors.Select(e => e.ErrorMessage)),
+                    Status = StatusCodes.Status400BadRequest
+                });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Conflict(new ProblemDetails
+                {
+                    Title = "Conflicto",
+                    Detail = ex.Message,
+                    Status = StatusCodes.Status409Conflict
+                });
             }
         });
 
-        // 5. Desactivar cliente (Command)
-        group.MapDelete("/{id:guid}", async (Guid id, ApplicationDbContext db) =>
+
+        // =====================================================================
+        // DELETE /api/clientes/{id}  - eliminación lógica
+        // =====================================================================
+        group.MapDelete("/{id:int}", async (
+            int id,
+            IClienteService service,
+            CancellationToken ct) =>
         {
-            var cliente = await db.Clientes.FindAsync(id);
-
-            if (cliente is null) return Results.NotFound();
-
-            cliente.Desactivar();
-            await db.SaveChangesAsync();
-
-            return Results.NoContent();
+            try
+            {
+                await service.EliminarAsync(id, ct);
+                return Results.NoContent();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.NotFound(new ProblemDetails
+                {
+                    Title = "No encontrado",
+                    Detail = ex.Message,
+                    Status = StatusCodes.Status404NotFound
+                });
+            }
         });
+
+
+        // =====================================================================
+        // GET /api/clientes/tipos-identificacion
+        //   → dropdown de Tipo de Identificación (catálogo TID)
+        // =====================================================================
+        group.MapGet("/tipos-identificacion", async (
+            ApplicationDbContext db,
+            CancellationToken ct) =>
+        {
+            // Buscamos la cabecera del catálogo TID.
+            var cabecera = await db.TblAdministracionCatalogos
+                .FirstOrDefaultAsync(c =>
+                    c.Codigo == "TID" && c.Tipocatalogo == "ADM", ct);
+
+            if (cabecera is null)
+                return Results.NotFound(new { Mensaje = "No existe el catálogo 'TID'." });
+
+            // Traemos los detalles activos de ese catálogo, ordenados.
+            var tipos = await db.TblAdministracionCatalogoDetalles
+                .Where(d => d.Idcatalogo == cabecera.Id && d.Activo)
+                .OrderBy(d => d.Orden)
+                .Select(d => d.ToTipoIdentificacionResponse())
+                .ToListAsync(ct);
+
+            return Results.Ok(tipos);
+        });
+
     }
 }

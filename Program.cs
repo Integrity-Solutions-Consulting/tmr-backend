@@ -1,6 +1,9 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Features.Clientes;
+using tmr_backend.Features.Clientes.DTOs.Request;
+using tmr_backend.Features.Clientes.Services;
+using tmr_backend.Features.Clientes.Validators;
 using tmr_backend.Features.Auth;
 using tmr_backend.Features.CargaActividades;
 using tmr_backend.Features.Colaboradores;
@@ -36,6 +39,14 @@ builder.Services.Configure<JwtSettings>(
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<ITokenService,   TokenService>();
 builder.Services.AddScoped<IAuthService,    AuthService>();
+
+
+// ── Servicios de Clientes (DI - SOLID) ─────────────
+builder.Services.AddScoped<IClienteService, ClienteService>();
+// ── Validadores de Clientes (FluentValidation) ───────
+builder.Services.AddScoped<IValidator<CrearClienteRequest>, CrearClienteRequestValidator>();
+builder.Services.AddScoped<IValidator<ActualizarClienteRequest>, ActualizarClienteRequestValidator>();
+
 
 // Register FluentValidation validators from the auth feature
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
