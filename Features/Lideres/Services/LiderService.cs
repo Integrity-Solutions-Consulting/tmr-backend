@@ -73,7 +73,7 @@ public class LiderService : ILiderService
                 Email = request.Email,
                 Telefono = request.Telefono,
                 Tipopersona = request.Tipopersona,
-                Numeroidentificacion = Guid.NewGuid().ToString(),
+                Numeroidentificacion = Guid.NewGuid().ToString().Replace("-", "").Substring(0, 20),
                 Activo = true,
                 Usuariocreacion = request.Usuariocreacion,
                 Fechacreacion = DateTime.UtcNow,
