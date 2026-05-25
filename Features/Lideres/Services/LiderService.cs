@@ -174,4 +174,21 @@ public class LiderService : ILiderService
 
         return new ContadoresLiderResponse(internos, externos, inactivos);
     }
+
+    public async Task<IEnumerable<PersonaDisponibleResponse>> ObtenerPersonasDisponiblesAsync(CancellationToken ct)
+    {
+        var idsLideres = await _db.TblAdministracionLiders
+            .Select(l => l.Idpersona)
+            .ToListAsync(ct);
+
+        return await _db.TblAdministracionPersonas
+            .Where(p => p.Activo && !idsLideres.Contains(p.Id))
+            .Select(p => new PersonaDisponibleResponse(
+                p.Id,
+                p.Nombres,
+                p.Apellidos,
+                p.Email,
+                p.Telefono))
+            .ToListAsync(ct);
+    }
 }

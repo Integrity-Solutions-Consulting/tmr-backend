@@ -18,3 +18,10 @@ public record ContadoresLiderResponse(
     int Externos,
     int Inactivos
 );
+public record PersonaDisponibleResponse(
+    int Id,
+    string Nombres,
+    string Apellidos,
+    string? Email,
+    string? Telefono
+);

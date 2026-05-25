@@ -11,4 +11,5 @@ public interface ILiderService
     Task<LiderResponse?> ActualizarAsync(int id, ActualizarLiderRequest request, CancellationToken ct);
     Task<bool> DesactivarAsync(int id, CancellationToken ct);
     Task<ContadoresLiderResponse> ObtenerContadoresAsync(CancellationToken ct);
+    Task<IEnumerable<PersonaDisponibleResponse>> ObtenerPersonasDisponiblesAsync(CancellationToken ct);
 }
