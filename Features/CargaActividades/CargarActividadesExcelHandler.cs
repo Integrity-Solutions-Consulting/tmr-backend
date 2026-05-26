@@ -32,6 +32,7 @@ namespace tmr_backend.Features.CargaActividades
             var erroresValidacion = new List<string>();
             var actividadesParaInsertar = new List<TblTimeReportActividadDiarium>();
             var listaParaFrontend = new List<object>();
+            var firmasFilasProcesadas = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             try
             {
@@ -142,16 +143,49 @@ namespace tmr_backend.Features.CargaActividades
                     }
 
                     var proyectoId = await FindProyectoIdAsync(proyecto, cancellationToken);
+                    var codigoRequerimientoNormalizado = string.IsNullOrWhiteSpace(codigoRequerimiento) ? null : codigoRequerimiento.Trim();
+                    var descripcionNormalizada = descripcionActividad.Trim();
+
+                    var firmaFila = BuildRowSignature(
+                        empleado.Id,
+                        proyectoId,
+                        tipoActividadId.Value,
+                        fechaActividad,
+                        cantidadHoras,
+                        codigoRequerimientoNormalizado,
+                        descripcionNormalizada);
+
+                    if (!firmasFilasProcesadas.Add(firmaFila))
+                    {
+                        erroresValidacion.Add($"Fila {filaIndex}: registro duplicado dentro del archivo.");
+                        continue;
+                    }
+
+                    var existeEnBase = await _context.TblTimeReportActividadDiaria.AnyAsync(a =>
+                        a.Idempleado == empleado.Id &&
+                        a.Idproyecto == proyectoId &&
+                        a.Idtipoactividad == tipoActividadId.Value &&
+                        a.Fechaactividad == fechaActividad &&
+                        a.Cantidadhoras == cantidadHoras &&
+                        a.Codigorequerimiento == codigoRequerimientoNormalizado &&
+                        a.Descripcionactividad == descripcionNormalizada &&
+                        a.Activo, cancellationToken);
+
+                    if (existeEnBase)
+                    {
+                        erroresValidacion.Add($"Fila {filaIndex}: registro duplicado en la base de datos. No se volverá a insertar.");
+                        continue;
+                    }
 
                     actividadesParaInsertar.Add(new TblTimeReportActividadDiarium
                     {
                         Idempleado           = empleado.Id,
                         Idproyecto           = proyectoId,
                         Idtipoactividad      = tipoActividadId.Value,
-                        Codigorequerimiento  = string.IsNullOrWhiteSpace(codigoRequerimiento) ? null : codigoRequerimiento,
+                        Codigorequerimiento  = codigoRequerimientoNormalizado,
                         Cantidadhoras        = cantidadHoras,
                         Fechaactividad       = fechaActividad,
-                        Descripcionactividad = descripcionActividad,
+                        Descripcionactividad = descripcionNormalizada,
                         Notas                = string.IsNullOrWhiteSpace(notas) ? null : notas,
                         Esbillable           = null,
                         Activo               = true,
@@ -167,6 +201,7 @@ namespace tmr_backend.Features.CargaActividades
                         proyecto     = proyecto,
                         cliente      = cliente,
                         liderTecnico = lider,
+                         fecha        = fechaActividad.ToString("yyyy-MM-dd"),
                         nroHoras     = cantidadHoras,
                         estado       = "Cargado"
                     });
@@ -224,6 +259,25 @@ namespace tmr_backend.Features.CargaActividades
 
             return decimal.TryParse(value.Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out result)
                 || decimal.TryParse(value.Trim(), NumberStyles.Number, CultureInfo.CurrentCulture, out result);
+        }
+
+        private static string BuildRowSignature(
+            int empleadoId,
+            int? proyectoId,
+            int tipoActividadId,
+            DateOnly fechaActividad,
+            decimal cantidadHoras,
+            string? codigoRequerimiento,
+            string descripcionActividad)
+        {
+            return string.Join("|",
+                empleadoId,
+                proyectoId?.ToString() ?? "NULL",
+                tipoActividadId,
+                fechaActividad.ToString("yyyy-MM-dd"),
+                cantidadHoras.ToString(CultureInfo.InvariantCulture),
+                codigoRequerimiento ?? "",
+                descripcionActividad.Trim());
         }
 
         private static bool TryParseDateOnly(string value, out DateOnly result)

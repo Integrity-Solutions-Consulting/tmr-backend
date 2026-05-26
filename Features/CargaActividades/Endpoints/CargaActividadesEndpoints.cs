@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc; // OBLIGATORIO PARA EL [FromForm]
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using ClosedXML.Excel;
 using MiniExcelLibs;
 using System.IO;
 using System;
@@ -91,26 +92,77 @@ public static class CargaActividadesEndpoints
                 .Where(c => c.Activo)
                 .Select(c => new
                 {
-                    c.Id,
-                    c.Idempleado,
-                    c.Idproyecto,
-                    c.Idtipoactividad,
+                    Fecha = c.Fechaactividad.ToString("yyyy-MM-dd"),
+                    Colaborador = c.IdempleadoNavigation.IdpersonaNavigation != null
+                        ? (c.IdempleadoNavigation.IdpersonaNavigation.Nombres + " " + c.IdempleadoNavigation.IdpersonaNavigation.Apellidos).Trim()
+                        : c.IdempleadoNavigation.Codigoempleado,
+                    TipoActividad = c.IdtipoactividadNavigation.Nombretipo,
+                    Proyecto = c.IdproyectoNavigation != null
+                        ? c.IdproyectoNavigation.Nombre
+                        : "Sin proyecto",
+                    Cliente = c.IdproyectoNavigation != null && c.IdproyectoNavigation.IdclienteNavigation != null
+                        ? c.IdproyectoNavigation.IdclienteNavigation.Razonsocial ?? c.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial ?? "Cliente desconocido"
+                        : "Sin cliente",
+                    LiderTecnico = c.IdproyectoNavigation != null && c.IdproyectoNavigation.IdliderNavigation != null && c.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation != null
+                        ? (c.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Nombres + " " + c.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Apellidos).Trim()
+                        : "Sin líder",
                     c.Codigorequerimiento,
-                    c.Cantidadhoras,
-                    Fechaactividad = c.Fechaactividad.ToString("yyyy-MM-dd"),
-                    c.Descripcionactividad,
-                    c.Notas,
-                    c.Esbillable,
-                    c.Aprobadopor,
-                    Fechaaprobacion = c.Fechaaprobacion.HasValue ? c.Fechaaprobacion.Value.ToString("yyyy-MM-dd HH:mm:ss") : null,
-                    c.Activo,
-                    c.Usuariocreacion,
-                    Fechacreacion = c.Fechacreacion.ToString("yyyy-MM-dd HH:mm:ss")
+                    Horas = c.Cantidadhoras,
+                    Descripción = c.Descripcionactividad,
+                    Notas = c.Notas,
+                    EsBillable = c.Esbillable.HasValue ? (c.Esbillable.Value ? "Sí" : "No") : "No definido",
+                    AprobadoPor = c.AprobadoporNavigation != null && c.AprobadoporNavigation.IdpersonaNavigation != null
+                        ? (c.AprobadoporNavigation.IdpersonaNavigation.Nombres + " " + c.AprobadoporNavigation.IdpersonaNavigation.Apellidos).Trim()
+                        : "No aprobado",
+                    FechaAprobacion = c.Fechaaprobacion.HasValue ? c.Fechaaprobacion.Value.ToString("yyyy-MM-dd HH:mm:ss") : string.Empty,
+                    UsuarioCreacion = c.Usuariocreacion,
+                    FechaCreacion = c.Fechacreacion.ToString("yyyy-MM-dd HH:mm:ss")
                 })
                 .ToListAsync();
 
+            using var workbook = new XLWorkbook();
+            var worksheet = workbook.Worksheets.Add("Actividades");
+            worksheet.Cell(1, 1).Value = "Fecha";
+            worksheet.Cell(1, 2).Value = "Colaborador";
+            worksheet.Cell(1, 3).Value = "TipoActividad";
+            worksheet.Cell(1, 4).Value = "Proyecto";
+            worksheet.Cell(1, 5).Value = "Cliente";
+            worksheet.Cell(1, 6).Value = "LiderTecnico";
+            worksheet.Cell(1, 7).Value = "Codigorequerimiento";
+            worksheet.Cell(1, 8).Value = "Horas";
+            worksheet.Cell(1, 9).Value = "Descripción";
+            worksheet.Cell(1, 10).Value = "Notas";
+            worksheet.Cell(1, 11).Value = "EsBillable";
+            worksheet.Cell(1, 12).Value = "AprobadoPor";
+            worksheet.Cell(1, 13).Value = "FechaAprobacion";
+            worksheet.Cell(1, 14).Value = "UsuarioCreacion";
+            worksheet.Cell(1, 15).Value = "FechaCreacion";
+
+            for (var i = 0; i < actividades.Count; i++)
+            {
+                var fila = actividades[i];
+                var row = i + 2;
+                worksheet.Cell(row, 1).Value = fila.Fecha;
+                worksheet.Cell(row, 2).Value = fila.Colaborador;
+                worksheet.Cell(row, 3).Value = fila.TipoActividad;
+                worksheet.Cell(row, 4).Value = fila.Proyecto;
+                worksheet.Cell(row, 5).Value = fila.Cliente;
+                worksheet.Cell(row, 6).Value = fila.LiderTecnico;
+                worksheet.Cell(row, 7).Value = fila.Codigorequerimiento;
+                worksheet.Cell(row, 8).Value = fila.Horas;
+                worksheet.Cell(row, 9).Value = fila.Descripción;
+                worksheet.Cell(row, 10).Value = fila.Notas;
+                worksheet.Cell(row, 11).Value = fila.EsBillable;
+                worksheet.Cell(row, 12).Value = fila.AprobadoPor;
+                worksheet.Cell(row, 13).Value = fila.FechaAprobacion;
+                worksheet.Cell(row, 14).Value = fila.UsuarioCreacion;
+                worksheet.Cell(row, 15).Value = fila.FechaCreacion;
+            }
+
+            worksheet.Columns().AdjustToContents();
+
             await using var stream = new MemoryStream();
-            await stream.SaveAsAsync(actividades);
+            workbook.SaveAs(stream);
             stream.Position = 0;
 
             return Results.File(stream.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "carga-actividades.xlsx");
