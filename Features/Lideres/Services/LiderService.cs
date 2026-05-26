@@ -66,26 +66,15 @@ public class LiderService : ILiderService
         using var transaction = await _db.Database.BeginTransactionAsync(ct);
         try
         {
-            var persona = new TblAdministracionPersona
-            {
-                Nombres = request.Nombres,
-                Apellidos = request.Apellidos,
-                Email = request.Email,
-                Telefono = request.Telefono,
-                Tipopersona = request.Tipopersona,
-                Numeroidentificacion = Guid.NewGuid().ToString().Replace("-", "").Substring(0, 20),
-                Activo = true,
-                Usuariocreacion = request.Usuariocreacion,
-                Fechacreacion = DateTime.UtcNow,
-                Ipcreacion = request.Ipcreacion
-            };
+            var persona = await _db.TblAdministracionPersonas
+                .FirstOrDefaultAsync(p => p.Id == request.Idpersona, ct);
 
-            _db.TblAdministracionPersonas.Add(persona);
-            await _db.SaveChangesAsync(ct);
+            if (persona is null)
+                throw new ArgumentException("La persona no existe.");
 
             var lider = new TblAdministracionLider
             {
-                Idpersona = persona.Id,
+                Idpersona = request.Idpersona,
                 Idtipo = request.Idtipo,
                 Activo = true,
                 Usuariocreacion = request.Usuariocreacion,
@@ -95,7 +84,6 @@ public class LiderService : ILiderService
 
             _db.TblAdministracionLiders.Add(lider);
             await _db.SaveChangesAsync(ct);
-
             await transaction.CommitAsync(ct);
 
             return new LiderResponse(
@@ -191,19 +179,20 @@ public class LiderService : ILiderService
                 p.Telefono))
             .ToListAsync(ct);
     }
+
     public async Task<IEnumerable<TipoLiderResponse>> ObtenerTiposAsync(CancellationToken ct)
-{
-    return await _db.TblAdministracionCatalogoDetalles
-        .Include(d => d.IdcatalogoNavigation)
-        .Where(d => d.Activo &&
-                    d.IdcatalogoNavigation.Codigo == "TLI" &&
-                    d.IdcatalogoNavigation.Tipocatalogo == "ADM")
-        .OrderBy(d => d.Orden)
-        .Select(d => new TipoLiderResponse(
-            d.Id,
-            d.Codigovalor,
-            d.Valor,
-            d.Descripcion))
-        .ToListAsync(ct);
-}
+    {
+        return await _db.TblAdministracionCatalogoDetalles
+            .Include(d => d.IdcatalogoNavigation)
+            .Where(d => d.Activo &&
+                        d.IdcatalogoNavigation.Codigo == "TLI" &&
+                        d.IdcatalogoNavigation.Tipocatalogo == "ADM")
+            .OrderBy(d => d.Orden)
+            .Select(d => new TipoLiderResponse(
+                d.Id,
+                d.Codigovalor,
+                d.Valor,
+                d.Descripcion))
+            .ToListAsync(ct);
+    }
 }
