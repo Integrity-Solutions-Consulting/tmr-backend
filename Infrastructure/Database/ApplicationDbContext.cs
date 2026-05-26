@@ -496,6 +496,17 @@ public partial class ApplicationDbContext : DbContext
                 .HasConstraintName("fk_administracion_empleado_contrato");
         });
 
+        modelBuilder.Entity<Lider>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Codigo).IsRequired().HasMaxLength(10);
+            entity.Property(e => e.Tipo).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.PrimerNombre).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Apellidos).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.CorreoElectronico).HasMaxLength(150);
+            entity.Property(e => e.Telefono).HasMaxLength(20);
+        });
+
         modelBuilder.Entity<TblAdministracionLider>(entity =>
         {
             entity.HasKey(e => e.Id).HasName("pk_administracion_lider");
