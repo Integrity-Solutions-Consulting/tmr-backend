@@ -30,6 +30,17 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 builder.Services.Configure<JwtSettings>(
     builder.Configuration.GetSection("Jwt"));
 
+// ── CORS ──────────────────────────────────────────────────
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("PermitirAngular", policy =>
+    {
+        policy.WithOrigins("http://localhost:4200")
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
+
 // ── Seguridad ─────────────────────────────────────────────
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<ITokenService,   TokenService>();
@@ -56,7 +67,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidAudience            = jwt.Audience,
             IssuerSigningKey         = new SymmetricSecurityKey(
                                            Encoding.UTF8.GetBytes(jwt.SecretKey)),
-            ClockSkew                = TimeSpan.Zero
+            ClockSkew                = TimeSpan.FromSeconds(5)
         };
     });
 
@@ -70,6 +81,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseCors("PermitirAngular");
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapClientesEndpoints();
 app.MapAuthEndpoints();

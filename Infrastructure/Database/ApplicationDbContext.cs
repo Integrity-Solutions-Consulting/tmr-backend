@@ -12,6 +12,7 @@ using tmr_backend.Features.Dashboard.Domain;
 using tmr_backend.Features.Proyectos.Domain;
 using tmr_backend.Features.Reportes.Domain;
 using tmr_backend.Features.TimeReport.Domain;
+using tmr_backend.Features.Lideres.Domain;
 
 namespace tmr_backend.Infrastructure.Database;
 

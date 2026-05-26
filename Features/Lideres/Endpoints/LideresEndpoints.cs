@@ -58,4 +58,4 @@ public static class LideresEndpoints
             return resultado ? Results.NoContent() : Results.NotFound();
         });
     }
-}
+    }
