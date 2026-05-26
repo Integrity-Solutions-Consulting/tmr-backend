@@ -8,6 +8,7 @@ using tmr_backend.Features.Configuracion;
 using tmr_backend.Features.Dashboard;
 using tmr_backend.Features.Lideres;
 using tmr_backend.Features.Proyectos;
+using tmr_backend.Features.Catalogos;
 using tmr_backend.Features.Reportes;
 using tmr_backend.Features.TimeReport;
 using Scalar.AspNetCore;
@@ -92,6 +93,7 @@ app.MapConfiguracionEndpoints();
 app.MapDashboardEndpoints();
 app.MapLideresEndpoints();
 app.MapProyectosEndpoints();
+app.MapCatalogosEndpoints();
 app.MapReportesEndpoints();
 app.MapTimeReportEndpoints();
 

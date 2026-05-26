@@ -11,25 +11,26 @@ public static class ClientesEndpoints
     {
         var group = app.MapGroup("/api/clientes").WithTags("Clientes");
 
-        // 1. Obtener todos los clientes (Query)
+        // 1. Obtener todos los clientes para combo dinámico
         group.MapGet("/", async (ApplicationDbContext db) =>
         {
-            var clientes = await db.Clientes
+            var clientes = await db.TblAdministracionClientes
                 .Where(c => c.Activo)
-                .Select(c => new ClienteResponse(c.Id, c.Nombre, c.Empresa, c.Activo, c.FechaCreacion))
+                .OrderBy(c => c.Nombrecomercial ?? c.Razonsocial)
+                .Select(c => new ClienteLookupResponse(c.Id, c.Nombrecomercial ?? c.Razonsocial ?? string.Empty))
                 .ToListAsync();
 
             return Results.Ok(clientes);
         });
 
-        // 2. Obtener cliente por ID (Query)
-        group.MapGet("/{id:guid}", async (Guid id, ApplicationDbContext db) =>
+        // 2. Obtener cliente por ID numérico
+        group.MapGet("/{id:int}", async (int id, ApplicationDbContext db) =>
         {
-            var cliente = await db.Clientes.FindAsync(id);
+            var cliente = await db.TblAdministracionClientes.FindAsync(id);
 
             if (cliente is null) return Results.NotFound();
 
-            return Results.Ok(new ClienteResponse(cliente.Id, cliente.Nombre, cliente.Empresa, cliente.Activo, cliente.FechaCreacion));
+            return Results.Ok(new ClienteLookupResponse(cliente.Id, cliente.Nombrecomercial ?? cliente.Razonsocial ?? string.Empty));
         });
 
         // 3. Crear cliente (Command)

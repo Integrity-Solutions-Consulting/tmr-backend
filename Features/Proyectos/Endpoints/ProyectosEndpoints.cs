@@ -20,14 +20,19 @@ public static class ProyectosEndpoints
                 .OrderByDescending(p => p.Fechacreacion)
                 .ToListAsync();
 
-            return Results.Ok(proyectos.Select(MapProyecto));
+            var resultado = new List<ProyectoResponse>();
+            foreach (var p in proyectos)
+            {
+                resultado.Add(await MapProyecto(p, db));
+            }
+            return Results.Ok(resultado);
         });
 
         group.MapGet("/{id:int}", async (int id, ApplicationDbContext db) =>
         {
             var proyecto = await QueryProyectos(db).FirstOrDefaultAsync(p => p.Id == id);
 
-            return proyecto is null ? Results.NotFound() : Results.Ok(MapProyecto(proyecto));
+            return proyecto is null ? Results.NotFound() : Results.Ok(await MapProyecto(proyecto, db));
         });
 
         group.MapGet("/lookups", async (ApplicationDbContext db) =>
@@ -45,15 +50,15 @@ public static class ProyectosEndpoints
                 .ToListAsync();
 
             var estados = await db.TblAdministracionCatalogoDetalles
-                .Where(d => d.Activo && d.IdcatalogoNavigation.Tipocatalogo == "TMR")
+                .Where(d => d.Activo && d.Idcatalogo == 4)
                 .OrderBy(d => d.Orden)
                 .Select(d => new LookupDto(d.Id, d.Valor))
                 .ToListAsync();
 
-            var tipos = await db.TblTimeReportTipoProyectos
-                .Where(t => t.Activo)
-                .OrderBy(t => t.Nombretipo)
-                .Select(t => new LookupDto(t.Id, t.Nombretipo))
+            var tipos = await db.TblAdministracionCatalogoDetalles
+                .Where(d => d.Activo && d.Idcatalogo == 3)
+                .OrderBy(d => d.Orden)
+                .Select(d => new LookupDto(d.Id, d.Valor))
                 .ToListAsync();
 
             return Results.Ok(new { clientes, lideres, estados, tipos });
@@ -99,7 +104,7 @@ public static class ProyectosEndpoints
             await db.SaveChangesAsync();
 
             var creado = await QueryProyectos(db).FirstAsync(p => p.Id == proyecto.Id);
-            return Results.Created($"/api/proyectos/{proyecto.Id}", MapProyecto(creado));
+            return Results.Created($"/api/proyectos/{proyecto.Id}", await MapProyecto(creado, db));
         });
 
         group.MapPut("/{id:int}", async (int id, ActualizarProyectoRequest request, ApplicationDbContext db) =>
@@ -143,7 +148,7 @@ public static class ProyectosEndpoints
             await db.SaveChangesAsync();
 
             var actualizado = await QueryProyectos(db).FirstAsync(p => p.Id == id);
-            return Results.Ok(MapProyecto(actualizado));
+            return Results.Ok(await MapProyecto(actualizado, db));
         });
 
         group.MapDelete("/{id:int}", async (int id, ApplicationDbContext db) =>
@@ -181,9 +186,12 @@ public static class ProyectosEndpoints
                 .ThenInclude(ep => ep.IdempleadoNavigation)
                     .ThenInclude(e => e!.IdcargoNavigation);
 
-    private static ProyectoResponse MapProyecto(TblTimeReportProyecto proyecto)
+    private static async Task<ProyectoResponse> MapProyecto(TblTimeReportProyecto proyecto, ApplicationDbContext db)
     {
         var lider = proyecto.IdliderNavigation?.IdpersonaNavigation;
+        
+        var nombreTipo = proyecto.IdtipoproyectoNavigation?.Nombretipo ?? string.Empty;
+        
         var recursos = proyecto.TblTimeReportEmpleadoProyectos
             .Where(r => r.Activo)
             .Select(r =>
@@ -213,7 +221,7 @@ public static class ProyectosEndpoints
             proyecto.Idcliente,
             proyecto.IdclienteNavigation?.Nombrecomercial ?? proyecto.IdclienteNavigation?.Razonsocial ?? string.Empty,
             proyecto.Idtipoproyecto,
-            proyecto.IdtipoproyectoNavigation?.Nombretipo ?? string.Empty,
+            nombreTipo,
             proyecto.Idlider,
             lider is null ? string.Empty : $"{lider.Nombres} {lider.Apellidos}".Trim(),
             string.Empty,
@@ -248,10 +256,73 @@ public static class ProyectosEndpoints
             .Select(c => (int?)c.Id)
             .FirstOrDefaultAsync();
 
-        idTipoProyecto ??= await db.TblTimeReportTipoProyectos
-            .Where(t => t.Activo && t.Nombretipo == tipo)
-            .Select(t => (int?)t.Id)
-            .FirstOrDefaultAsync();
+        if (idTipoProyecto.HasValue)
+        {
+            var tipoProyectoExistente = await db.TblTimeReportTipoProyectos
+                .Where(t => t.Id == idTipoProyecto.Value && t.Activo)
+                .Select(t => (int?)t.Id)
+                .FirstOrDefaultAsync();
+
+            if (tipoProyectoExistente is null)
+            {
+                var tipoDetalle = await db.TblAdministracionCatalogoDetalles
+                    .Where(d => d.Activo && d.Idcatalogo == 3 && d.Id == idTipoProyecto.Value)
+                    .Select(d => new { d.Codigovalor, d.Valor })
+                    .FirstOrDefaultAsync();
+
+                if (tipoDetalle is not null)
+                {
+                    idTipoProyecto = await db.TblTimeReportTipoProyectos
+                        .Where(t => t.Activo && (t.Nombretipo == tipoDetalle.Valor || t.Nombretipo == tipoDetalle.Codigovalor))
+                        .Select(t => (int?)t.Id)
+                        .FirstOrDefaultAsync();
+
+                    if (idTipoProyecto is null)
+                    {
+                        var nuevoTipo = new TblTimeReportTipoProyecto
+                        {
+                            Nombretipo = tipoDetalle.Valor,
+                            Activo = true,
+                            Usuariocreacion = UsuarioSistema,
+                            Fechacreacion = DateTime.UtcNow,
+                            Ipcreacion = IpSistema
+                        };
+                        db.TblTimeReportTipoProyectos.Add(nuevoTipo);
+                        await db.SaveChangesAsync();
+                        idTipoProyecto = nuevoTipo.Id;
+                    }
+                }
+            }
+        }
+
+        if (!idTipoProyecto.HasValue && !string.IsNullOrWhiteSpace(tipo))
+        {
+            idTipoProyecto = await db.TblTimeReportTipoProyectos
+                .Where(t => t.Activo && t.Nombretipo == tipo)
+                .Select(t => (int?)t.Id)
+                .FirstOrDefaultAsync();
+
+            if (!idTipoProyecto.HasValue)
+            {
+                var tipoDetalle = await db.TblAdministracionCatalogoDetalles
+                    .Where(d => d.Activo && d.Idcatalogo == 3 && (d.Valor == tipo || d.Codigovalor == tipo))
+                    .Select(d => d.Valor)
+                    .FirstOrDefaultAsync();
+
+                var nombreTipo = !string.IsNullOrWhiteSpace(tipoDetalle) ? tipoDetalle : tipo.Trim();
+                var nuevoTipo = new TblTimeReportTipoProyecto
+                {
+                    Nombretipo = nombreTipo,
+                    Activo = true,
+                    Usuariocreacion = UsuarioSistema,
+                    Fechacreacion = DateTime.UtcNow,
+                    Ipcreacion = IpSistema
+                };
+                db.TblTimeReportTipoProyectos.Add(nuevoTipo);
+                await db.SaveChangesAsync();
+                idTipoProyecto = nuevoTipo.Id;
+            }
+        }
 
         idLider ??= await db.TblAdministracionLiders
             .Where(l => l.Activo && (l.IdpersonaNavigation.Nombres + " " + l.IdpersonaNavigation.Apellidos) == lider)
@@ -261,7 +332,7 @@ public static class ProyectosEndpoints
         if (idEstadoProyecto == 0 && !string.IsNullOrWhiteSpace(estado))
         {
             idEstadoProyecto = await db.TblAdministracionCatalogoDetalles
-                .Where(d => d.Activo && d.Valor == estado && d.IdcatalogoNavigation.Tipocatalogo == "TMR")
+                .Where(d => d.Activo && d.Valor == estado && d.IdcatalogoNavigation.Codigo == "EPR")
                 .Select(d => d.Id)
                 .FirstOrDefaultAsync();
         }
