@@ -8,6 +8,7 @@ using tmr_backend.Features.Configuracion;
 using tmr_backend.Features.Dashboard;
 using tmr_backend.Features.Lideres;
 using tmr_backend.Features.Proyectos;
+using tmr_backend.Features.Catalogos;
 using tmr_backend.Features.Reportes;
 using tmr_backend.Features.TimeReport;
 using Scalar.AspNetCore;
@@ -24,6 +25,9 @@ var builder = WebApplication.CreateBuilder(args);
 // =========================
 // SERVICES
 // =========================
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+
 builder.Services.AddOpenApi();
 
 // CORS (Angular)
@@ -78,6 +82,13 @@ builder.Services.AddAuthorization();
 // TU FEATURE
 builder.Services.AddScoped<ICargarActividadesExcelHandler, CargarActividadesExcelHandler>();
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("Frontend", policy =>
+        policy.WithOrigins("http://localhost:4200")
+            .AllowAnyHeader()
+            .AllowAnyMethod());
+});
 var app = builder.Build();
 
 // =========================
@@ -94,6 +105,8 @@ if (app.Environment.IsDevelopment())
 app.UseCors("PermitirAngular");
 
 // Auth middleware (IMPORTANTE si usas JWT)
+app.UseHttpsRedirection();
+app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -106,6 +119,7 @@ app.MapConfiguracionEndpoints();
 app.MapDashboardEndpoints();
 app.MapLideresEndpoints();
 app.MapProyectosEndpoints();
+app.MapCatalogosEndpoints();
 app.MapReportesEndpoints();
 app.MapTimeReportEndpoints();
 

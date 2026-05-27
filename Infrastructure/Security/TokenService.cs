@@ -52,7 +52,7 @@ public sealed class TokenService : ITokenService
 
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
-    public string GenerateAccessToken2(TblAutenticacionUsuario user)
+    public string GenerateAccessToken(TblAutenticacionUsuario user)
     {
         var secret = _configuration["Jwt:SecretKey"]!;
         var issuer = _configuration["Jwt:Issuer"];
