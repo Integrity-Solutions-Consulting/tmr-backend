@@ -11,14 +11,82 @@ public static class DashboardEndpoints
     {
         var group = app.MapGroup("/api/dashboard").WithTags("Dashboard");
 
-        group.MapGet("/", async (ApplicationDbContext db) =>
+        group.MapGet("/", async (string? rango, ApplicationDbContext db) =>
         {
-            var items = await db.DashboardItems
-                .Where(c => c.Activo)
-                .Select(c => new DashboardItemResponse(c.Id, c.Nombre, c.Descripcion, c.Activo, c.FechaCreacion))
+            Console.WriteLine($"[Dashboard] Rango recibido en backend: '{rango}'");
+            var queryActividades = db.TimeReportActividadesDiarias.Where(a => a.Activo);
+
+            if (!string.IsNullOrEmpty(rango))
+            {
+                var hoyUtc = DateTime.UtcNow.Date;
+                if (rango == "mes")
+                {
+                    var inicioMes = new DateTime(hoyUtc.Year, hoyUtc.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+                    queryActividades = queryActividades.Where(a => a.FechaActividad >= inicioMes);
+                }
+                else if (rango == "trimestre")
+                {
+                    var inicioTrimestre = DateTime.SpecifyKind(hoyUtc.AddMonths(-3), DateTimeKind.Utc);
+                    queryActividades = queryActividades.Where(a => a.FechaActividad >= inicioTrimestre);
+                }
+                else if (rango == "anio")
+                {
+                    var inicioAnio = new DateTime(hoyUtc.Year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+                    queryActividades = queryActividades.Where(a => a.FechaActividad >= inicioAnio);
+                }
+            }
+
+            var totalProyectos = await db.TimeReportProyectos.CountAsync(p => p.Activo);
+
+            var horasReportadas = await queryActividades
+                .SumAsync(a => (decimal?)a.CantidadHoras) ?? 0m;
+
+            var colaboradoresActivos = await db.AdministracionEmpleados
+                .CountAsync(e => e.Activo);
+
+            var clientesActivos = await db.AdministracionClientes.CountAsync();
+
+            var metricas = new DashboardMetricasResponse(
+                totalProyectos, 
+                horasReportadas, 
+                colaboradoresActivos, 
+                clientesActivos
+            );
+
+            var proyectos = await db.TimeReportProyectos
+                .Include(p => p.Cliente)
+                .Where(p => p.Activo)
                 .ToListAsync();
 
-            return Results.Ok(items);
+            var horasProyectos = await queryActividades
+                .Where(a => a.IdProyecto.HasValue)
+                .GroupBy(a => a.IdProyecto!.Value)
+                .Select(g => new { ProyectoId = g.Key, Horas = g.Sum(a => a.CantidadHoras) })
+                .ToDictionaryAsync(x => x.ProyectoId, x => x.Horas);
+
+            var proximosACerrar = proyectos
+                .OrderBy(p => p.FechaFinPlaneada ?? DateTime.MaxValue)
+                .Take(3)
+                .Select(p => new DashboardProyectoResumenResponse(
+                    p.Codigo ?? "",
+                    p.Nombre,
+                    p.Cliente?.NombreComercial ?? "Sin Cliente",
+                    "En progreso",
+                    horasProyectos.TryGetValue(p.Id, out var h) ? h : 0m,
+                    p.Presupuesto ?? 0m
+                ))
+                .ToList();
+
+            var horasPorProyecto = proyectos
+                .Select(p => new DashboardHorasPorProyectoResponse(
+                    p.Nombre,
+                    horasProyectos.TryGetValue(p.Id, out var h) ? h : 0m,
+                    p.Codigo ?? ""
+                ))
+                .ToList();
+
+            var dashboardData = new DashboardDataResponse(metricas, proximosACerrar, horasPorProyecto);
+            return Results.Ok(dashboardData);
         });
 
         group.MapGet("/{id:guid}", async (Guid id, ApplicationDbContext db) =>
