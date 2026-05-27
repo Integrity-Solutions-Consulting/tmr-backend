@@ -15,6 +15,7 @@ using tmr_backend.Features.Configuracion;
 using tmr_backend.Features.Dashboard;
 using tmr_backend.Features.Lideres;
 using tmr_backend.Features.Proyectos;
+using tmr_backend.Features.Catalogos;
 using tmr_backend.Features.Reportes;
 using tmr_backend.Features.TimeReport;
 using tmr_backend.Features.HealthCheck.Services;
@@ -54,13 +55,30 @@ builder.Services.AddOpenApi(options =>
         return Task.CompletedTask;
     });
 }); 
+// =========================
+// SERVICES
+// =========================
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
 
-// builder.Services.AddDbContext<ApplicationDbContext>(options =>
-//     options.UseInMemoryDatabase("TmrDb"));
+builder.Services.AddOpenApi();
 
+// CORS (Angular)
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("PermitirAngular", policy =>
+    {
+        policy.WithOrigins("http://localhost:4200")
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
+
+// DB (PostgreSQL)
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+// JWT Settings
 builder.Services.Configure<JwtSettings>(
     builder.Configuration.GetSection("Jwt"));
 
@@ -81,11 +99,15 @@ builder.Services.AddMemoryCache();
 
 // ── Health Check ──────────────────────────────────────────
 builder.Services.AddScoped<IHealthCheckService, HealthCheckService>();
+// Auth Services
+builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
+builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
 
-// Register FluentValidation validators from the auth feature
+// FluentValidation
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 
-// ── JWT Middleware ─────────────────────────────────────────
+// JWT Authentication
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtSettings>()!;
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -94,15 +116,15 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         opt.MapInboundClaims = false;
         opt.TokenValidationParameters = new TokenValidationParameters
         {
-            ValidateIssuer           = true,
-            ValidateAudience         = true,
-            ValidateLifetime         = true,
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
-            ValidIssuer              = jwt.Issuer,
-            ValidAudience            = jwt.Audience,
-            IssuerSigningKey         = new SymmetricSecurityKey(
-                                           Encoding.UTF8.GetBytes(jwt.SecretKey)),
-            ClockSkew                = TimeSpan.Zero
+            ValidIssuer = jwt.Issuer,
+            ValidAudience = jwt.Audience,
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(jwt.SecretKey)),
+            ClockSkew = TimeSpan.Zero
         };
 
         // ── Validación de Blacklist en OnTokenValidated ──
@@ -156,7 +178,22 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddAuthorization();
+
+// TU FEATURE
+builder.Services.AddScoped<ICargarActividadesExcelHandler, CargarActividadesExcelHandler>();
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("Frontend", policy =>
+        policy.WithOrigins("http://localhost:4200")
+            .AllowAnyHeader()
+            .AllowAnyMethod());
+});
 var app = builder.Build();
+
+// =========================
+// PIPELINE
+// =========================
 
 if (app.Environment.IsDevelopment())
 {
@@ -168,13 +205,21 @@ app.MapScalarApiReference(options =>
 });
 }
 
+// CORS
+app.UseCors("PermitirAngular");
+
+// Auth middleware (IMPORTANTE si usas JWT)
 app.UseHttpsRedirection();
+app.UseCors("Frontend");
+app.UseAuthentication();
+app.UseAuthorization();
 
 // ── Middleware de Autenticación y Autorización ─────────────
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapHealthCheckEndpoints();
+// Endpoints
 app.MapClientesEndpoints();
 app.MapAuthEndpoints();
 app.MapUsuariosEndpoints();
@@ -184,6 +229,7 @@ app.MapConfiguracionEndpoints();
 app.MapDashboardEndpoints();
 app.MapLideresEndpoints();
 app.MapProyectosEndpoints();
+app.MapCatalogosEndpoints();
 app.MapReportesEndpoints();
 app.MapTimeReportEndpoints();
 

@@ -70,6 +70,7 @@ public sealed class TokenService : ITokenService
         IEnumerable<string> roles,
         string? fullName = null,
         int? employeeId = null)
+    public string GenerateAccessToken(TblAutenticacionUsuario user)
     {
         var secret = _configuration["Jwt:SecretKey"]!;
         var issuer = _configuration["Jwt:Issuer"];
@@ -117,6 +118,12 @@ public sealed class TokenService : ITokenService
             signingCredentials: credentials);
 
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    // Implementación demandada por la interfaz ITokenService
+    public string GenerateAccessToken(TblAutenticacionUsuario user)
+    {
+        return GenerateAccessToken2(user);
     }
 
     // ---------------------------------------------------------------
