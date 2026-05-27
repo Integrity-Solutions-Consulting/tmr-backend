@@ -2,17 +2,16 @@
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using tmr_backend.Infrastructure.Database.Entities;
-
-using tmr_backend.Features.Clientes.Domain;
-using tmr_backend.Features.Auth.Domain;
-using tmr_backend.Features.CargaActividades.Domain;
-using tmr_backend.Features.Colaboradores.Domain;
-using tmr_backend.Features.Configuracion.Domain;
-using tmr_backend.Features.Dashboard.Domain;
-using tmr_backend.Features.Lideres.Domain;
-using tmr_backend.Features.Proyectos.Domain;
-using tmr_backend.Features.Reportes.Domain;
+using tmr_backend.Features.Usuarios.Domain;
 using tmr_backend.Features.TimeReport.Domain;
+using tmr_backend.Features.Reportes.Domain;
+using tmr_backend.Features.Proyectos.Domain;
+using tmr_backend.Features.Lideres.Domain;
+using tmr_backend.Features.Colaboradores.Domain;
+using tmr_backend.Features.Clientes.Domain;
+using tmr_backend.Features.Configuracion.Domain;
+using tmr_backend.Features.CargaActividades.Domain;
+using tmr_backend.Features.Dashboard.Domain;
 
 namespace tmr_backend.Infrastructure.Database;
 
@@ -23,123 +22,86 @@ public partial class ApplicationDbContext : DbContext
     {
     }
 
-    public DbSet<Cliente> Clientes { get; set; } = null!;
+    // ─────────────────────────────────────────────────────────────────────
+    // DbSets - Entidades en memoria (Features domain models)
+    // ─────────────────────────────────────────────────────────────────────
     public DbSet<Usuario> Usuarios { get; set; } = null!;
-    public DbSet<Actividad> Actividades { get; set; } = null!;
-    public DbSet<Colaborador> Colaboradores { get; set; } = null!;
-    public DbSet<ConfiguracionSistema> ConfiguracionesSistema { get; set; } = null!;
-    public DbSet<DashboardItem> DashboardItems { get; set; } = null!;
-    public DbSet<Lider> Lideres { get; set; } = null!;
-    public DbSet<Proyecto> Proyectos { get; set; } = null!;
-    public DbSet<Reporte> Reportes { get; set; } = null!;
     public DbSet<RegistroTiempo> RegistrosTiempo { get; set; } = null!;
+    public DbSet<Reporte> Reportes { get; set; } = null!;
+    public DbSet<Proyecto> Proyectos { get; set; } = null!;
+    public DbSet<Lider> Lideres { get; set; } = null!;
+    public DbSet<Colaborador> Colaboradores { get; set; } = null!;
+    public DbSet<Cliente> Clientes { get; set; } = null!;
+    public DbSet<ConfiguracionSistema> ConfiguracionesSistema { get; set; } = null!;
+    public DbSet<Actividad> Actividades { get; set; } = null!;
+    public DbSet<DashboardItem> DashboardItems { get; set; } = null!;
 
+    // ─────────────────────────────────────────────────────────────────────
+    // DbSets - Entidades scaffoldeadas de la base de datos real (Inv_tmr_db)
+    // ─────────────────────────────────────────────────────────────────────
+
+    // Administración
     public virtual DbSet<TblAdministracionApariencium> TblAdministracionApariencia { get; set; }
-
     public virtual DbSet<TblAdministracionCargo> TblAdministracionCargos { get; set; }
-
     public virtual DbSet<TblAdministracionCatalogo> TblAdministracionCatalogos { get; set; }
-
     public virtual DbSet<TblAdministracionCatalogoDetalle> TblAdministracionCatalogoDetalles { get; set; }
-
     public virtual DbSet<TblAdministracionCliente> TblAdministracionClientes { get; set; }
-
     public virtual DbSet<TblAdministracionClienteUsuario> TblAdministracionClienteUsuarios { get; set; }
-
     public virtual DbSet<TblAdministracionEmpleado> TblAdministracionEmpleados { get; set; }
-
     public virtual DbSet<TblAdministracionLider> TblAdministracionLiders { get; set; }
-
     public virtual DbSet<TblAdministracionPersona> TblAdministracionPersonas { get; set; }
-
     public virtual DbSet<TblAdministracionRegistroAsignacion> TblAdministracionRegistroAsignacions { get; set; }
 
+    // Auditoría
     public virtual DbSet<TblAuditoriaAsignacionEquipo> TblAuditoriaAsignacionEquipos { get; set; }
-
     public virtual DbSet<TblAuditoriaEmpleado> TblAuditoriaEmpleados { get; set; }
-
     public virtual DbSet<TblAuditoriaEquipo> TblAuditoriaEquipos { get; set; }
-
     public virtual DbSet<TblAuditoriaHistoricoGeneral> TblAuditoriaHistoricoGenerals { get; set; }
-
     public virtual DbSet<TblAuditoriaSesionUsuario> TblAuditoriaSesionUsuarios { get; set; }
 
+    // Autenticación
     public virtual DbSet<TblAutenticacionAplicacion> TblAutenticacionAplicacions { get; set; }
-
     public virtual DbSet<TblAutenticacionInventarioToken> TblAutenticacionInventarioTokens { get; set; }
-
     public virtual DbSet<TblAutenticacionMenu> TblAutenticacionMenus { get; set; }
-
     public virtual DbSet<TblAutenticacionMenuRol> TblAutenticacionMenuRols { get; set; }
-
     public virtual DbSet<TblAutenticacionMenuUsuario> TblAutenticacionMenuUsuarios { get; set; }
-
     public virtual DbSet<TblAutenticacionModulo> TblAutenticacionModulos { get; set; }
-
     public virtual DbSet<TblAutenticacionPasswordHistorial> TblAutenticacionPasswordHistorials { get; set; }
-
     public virtual DbSet<TblAutenticacionPreguntaUsuario> TblAutenticacionPreguntaUsuarios { get; set; }
-
     public virtual DbSet<TblAutenticacionPrivilegioRol> TblAutenticacionPrivilegioRols { get; set; }
-
     public virtual DbSet<TblAutenticacionPrivilegioUsuario> TblAutenticacionPrivilegioUsuarios { get; set; }
-
     public virtual DbSet<TblAutenticacionRolModulo> TblAutenticacionRolModulos { get; set; }
-
     public virtual DbSet<TblAutenticacionSesion> TblAutenticacionSesions { get; set; }
-
     public virtual DbSet<TblAutenticacionSesionApp> TblAutenticacionSesionApps { get; set; }
-
     public virtual DbSet<TblAutenticacionTokenBlacklist> TblAutenticacionTokenBlacklists { get; set; }
-
     public virtual DbSet<TblAutenticacionUsuario> TblAutenticacionUsuarios { get; set; }
-
     public virtual DbSet<TblAutenticacionUsuarioAplicacion> TblAutenticacionUsuarioAplicacions { get; set; }
-
     public virtual DbSet<TblAutenticacionUsuarioModulo> TblAutenticacionUsuarioModulos { get; set; }
-
     public virtual DbSet<TblAutenticacionUsuarioRol> TblAutenticacionUsuarioRols { get; set; }
 
+    // Inventario
     public virtual DbSet<TblInventarioAsignacionEquipo> TblInventarioAsignacionEquipos { get; set; }
-
     public virtual DbSet<TblInventarioBajaEquipo> TblInventarioBajaEquipos { get; set; }
-
     public virtual DbSet<TblInventarioCaracteristicaEquipo> TblInventarioCaracteristicaEquipos { get; set; }
-
     public virtual DbSet<TblInventarioDetalleFactura> TblInventarioDetalleFacturas { get; set; }
-
     public virtual DbSet<TblInventarioEmpresa> TblInventarioEmpresas { get; set; }
-
     public virtual DbSet<TblInventarioEquipo> TblInventarioEquipos { get; set; }
-
     public virtual DbSet<TblInventarioFactura> TblInventarioFacturas { get; set; }
-
     public virtual DbSet<TblInventarioProveedor> TblInventarioProveedors { get; set; }
-
     public virtual DbSet<TblInventarioReparacionEquipo> TblInventarioReparacionEquipos { get; set; }
-
     public virtual DbSet<TblInventarioStockCategorium> TblInventarioStockCategoria { get; set; }
 
+    // Time Report
     public virtual DbSet<TblTimeReportActividadDiarium> TblTimeReportActividadDiaria { get; set; }
-
     public virtual DbSet<TblTimeReportEmpleadoProyecto> TblTimeReportEmpleadoProyectos { get; set; }
-
     public virtual DbSet<TblTimeReportFeriado> TblTimeReportFeriados { get; set; }
-
     public virtual DbSet<TblTimeReportHomologacionBanco> TblTimeReportHomologacionBancos { get; set; }
-
     public virtual DbSet<TblTimeReportOutboxCargo> TblTimeReportOutboxCargos { get; set; }
-
     public virtual DbSet<TblTimeReportPermiso> TblTimeReportPermisos { get; set; }
-
     public virtual DbSet<TblTimeReportProyeccionHora> TblTimeReportProyeccionHoras { get; set; }
-
     public virtual DbSet<TblTimeReportProyeccionHorasProyecto> TblTimeReportProyeccionHorasProyectos { get; set; }
-
     public virtual DbSet<TblTimeReportProyecto> TblTimeReportProyectos { get; set; }
-
     public virtual DbSet<TblTimeReportTipoActividad> TblTimeReportTipoActividads { get; set; }
-
     public virtual DbSet<TblTimeReportTipoProyecto> TblTimeReportTipoProyectos { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

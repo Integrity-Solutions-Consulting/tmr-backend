@@ -2,6 +2,8 @@
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Features.Clientes;
 using tmr_backend.Features.Auth;
+using tmr_backend.Features.Auth.Login;
+using tmr_backend.Features.Usuarios.Endpoints;
 using tmr_backend.Features.CargaActividades;
 using tmr_backend.Features.Colaboradores;
 using tmr_backend.Features.Configuracion;
@@ -10,6 +12,8 @@ using tmr_backend.Features.Lideres;
 using tmr_backend.Features.Proyectos;
 using tmr_backend.Features.Reportes;
 using tmr_backend.Features.TimeReport;
+using tmr_backend.Features.HealthCheck.Services;
+using tmr_backend.Features.HealthCheck.Endpoints;
 using Scalar.AspNetCore;
 using tmr_backend.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -18,6 +22,7 @@ using System.Text;
 using FluentValidation;
 using tmr_backend.Features.Auth.Validators;
 using tmr_backend.Features.Auth.Services;
+using tmr_backend.Infrastructure.Shared;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -33,9 +38,15 @@ builder.Services.Configure<JwtSettings>(
     builder.Configuration.GetSection("Jwt"));
 
 // ── Seguridad ─────────────────────────────────────────────
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<ITokenService,   TokenService>();
 builder.Services.AddScoped<IAuthService,    AuthService>();
+builder.Services.AddScoped<LoginHandler>();
+builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+
+// ── Health Check ──────────────────────────────────────────
+builder.Services.AddScoped<IHealthCheckService, HealthCheckService>();
 
 // Register FluentValidation validators from the auth feature
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
@@ -71,8 +82,14 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+// ── Middleware de Autenticación y Autorización ─────────────
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapHealthCheckEndpoints();
 app.MapClientesEndpoints();
 app.MapAuthEndpoints();
+app.MapUsuariosEndpoints();
 app.MapCargaActividadesEndpoints();
 app.MapColaboradoresEndpoints();
 app.MapConfiguracionEndpoints();

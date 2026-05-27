@@ -1,10 +1,7 @@
-using Microsoft.EntityFrameworkCore;
-using tmr_backend.Features.Auth.Domain;
-using tmr_backend.Features.Auth.DTOs;
-using tmr_backend.Infrastructure.Database;
-
 using tmr_backend.Features.Auth.DTOs.Request;
+using tmr_backend.Features.Auth.DTOs.Response;
 using tmr_backend.Features.Auth.Services;
+using tmr_backend.Features.Auth.Login;
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc; 
 
@@ -16,98 +13,47 @@ public static class AuthEndpoints
     {
         var group = app.MapGroup("/api/auth").WithTags("Auth");
 
-        group.MapGet("/", async (ApplicationDbContext db) =>
-        {
-            var usuarios = await db.Usuarios
-                .Where(c => c.Activo)
-                .Select(c => new UsuarioResponse(c.Id, c.Nombre, c.Descripcion, c.Activo, c.FechaCreacion))
-                .ToListAsync();
-
-            return Results.Ok(usuarios);
-        });
-
-        group.MapGet("/{id:guid}", async (Guid id, ApplicationDbContext db) =>
-        {
-            var usuario = await db.Usuarios.FindAsync(id);
-
-            if (usuario is null) return Results.NotFound();
-
-            return Results.Ok(new UsuarioResponse(usuario.Id, usuario.Nombre, usuario.Descripcion, usuario.Activo, usuario.FechaCreacion));
-        });
-
-        group.MapPost("/", async (CrearUsuarioRequest request, ApplicationDbContext db) =>
-        {
-            try
-            {
-                var nuevoUsuario = Usuario.Crear(request.Nombre, request.Descripcion);
-                
-                db.Usuarios.Add(nuevoUsuario);
-                await db.SaveChangesAsync();
-
-                var response = new UsuarioResponse(nuevoUsuario.Id, nuevoUsuario.Nombre, nuevoUsuario.Descripcion, nuevoUsuario.Activo, nuevoUsuario.FechaCreacion);
-                return Results.Created($"/api/auth/{nuevoUsuario.Id}", response);
-            }
-            catch (ArgumentException ex)
-            {
-                return Results.BadRequest(new { Mensaje = ex.Message });
-            }
-        });
-
-        group.MapPut("/{id:guid}", async (Guid id, ActualizarUsuarioRequest request, ApplicationDbContext db) =>
-        {
-            var usuario = await db.Usuarios.FindAsync(id);
-
-            if (usuario is null) return Results.NotFound();
-
-            try
-            {
-                usuario.ActualizarDetalles(request.Nombre, request.Descripcion);
-                await db.SaveChangesAsync();
-
-                return Results.NoContent();
-            }
-            catch (ArgumentException ex)
-            {
-                return Results.BadRequest(new { Mensaje = ex.Message });
-            }
-        });
-
-        group.MapDelete("/{id:guid}", async (Guid id, ApplicationDbContext db) =>
-        {
-            var usuario = await db.Usuarios.FindAsync(id);
-
-            if (usuario is null) return Results.NotFound();
-
-            usuario.Desactivar();
-            await db.SaveChangesAsync();
-
-            return Results.NoContent();
-        });
-
+        // ─────────────────────────────────────────────
+        // Endpoint de Registro (Fase 1)
+        // ─────────────────────────────────────────────
         group.MapPost("/register", Register)
             .WithName("Register")
             .WithDisplayName("Registrar usuario")
             .Produces<AuthResponse>(StatusCodes.Status201Created)
             .Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
             .Produces<ProblemDetails>(StatusCodes.Status409Conflict);
+
+        // ─────────────────────────────────────────────
+        // Endpoints de Login (Fase 2)
+        // ─────────────────────────────────────────────
+        LoginEndpoints.MapLoginEndpoints(app);
+
+        // ─────────────────────────────────────────────
+        // Endpoints de Refresh/Logout (Fase 3)
+        // ─────────────────────────────────────────────
+        // RefreshEndpoints.MapRefreshEndpoints(app);
+        // LogoutEndpoints.MapLogoutEndpoints(app);
     }
 
+    /// <summary>
+    /// Registra un nuevo usuario con email y contraseña.
+    /// Crea la persona en administración y usuario en autenticación.
+    /// </summary>
     private static async Task<IResult> Register(
         RegisterRequest request,
-        IAuthService authService,        // ← servicio, NO DbContext directo
+        IAuthService authService,
         CancellationToken ct)
     {
         try
         {
             var result = await authService.RegisterAsync(request, ct);
-            
-            return Results.Created($"/api/auth/{result.User.Id}", result);
+            return Results.Created($"/api/auth/login", result);
         }
         catch (ValidationException ex)
         {
             return Results.BadRequest(new ProblemDetails
             {
-                Title  = "Validación fallida",
+                Title = "Validación fallida",
                 Detail = string.Join(", ", ex.Errors.Select(e => e.ErrorMessage)),
                 Status = StatusCodes.Status400BadRequest
             });
@@ -116,7 +62,7 @@ public static class AuthEndpoints
         {
             return Results.Conflict(new ProblemDetails
             {
-                Title  = "Conflicto",
+                Title = "Conflicto",
                 Detail = ex.Message,
                 Status = StatusCodes.Status409Conflict
             });
