@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using tmr_backend.Features.Auth.DTOs.Request;
-using tmr_backend.Features.Auth.DTOs.Response;
+using tmr_backend.Features.Auth.Login.DTOs;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
 using tmr_backend.Infrastructure.Security;
