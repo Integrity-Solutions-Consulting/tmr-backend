@@ -2,11 +2,18 @@
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using tmr_backend.Infrastructure.Database.Entities;
+using tmr_backend.Features.Usuarios.Domain;
+using tmr_backend.Features.TimeReport.Domain;
+using tmr_backend.Features.Reportes.Domain;
+using tmr_backend.Features.Proyectos.Domain;
+using tmr_backend.Features.Lideres.Domain;
 using tmr_backend.Features.Clientes.Domain;
 using tmr_backend.Features.Auth.Domain;
 using tmr_backend.Features.CargaActividades.Domain;
 using tmr_backend.Features.Colaboradores.Domain;
+using tmr_backend.Features.Clientes.Domain;
 using tmr_backend.Features.Configuracion.Domain;
+using tmr_backend.Features.CargaActividades.Domain;
 using tmr_backend.Features.Dashboard.Domain;
 using tmr_backend.Features.Lideres.Domain;
 using tmr_backend.Features.Reportes.Domain;
@@ -21,13 +28,27 @@ public partial class ApplicationDbContext : DbContext
     {
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // DbSets - Entidades en memoria (Features domain models)
+    // ─────────────────────────────────────────────────────────────────────
     // ── DbSets propios del módulo ──────────────────────────
     public DbSet<Cliente> Clientes { get; set; } = null!;
     public DbSet<Usuario> Usuarios { get; set; } = null!;
-    public DbSet<Actividad> Actividades { get; set; } = null!;
+    public DbSet<RegistroTiempo> RegistrosTiempo { get; set; } = null!;
+    public DbSet<Reporte> Reportes { get; set; } = null!;
+    public DbSet<Proyecto> Proyectos { get; set; } = null!;
+    public DbSet<Lider> Lideres { get; set; } = null!;
     public DbSet<Colaborador> Colaboradores { get; set; } = null!;
+    public DbSet<Cliente> Clientes { get; set; } = null!;
     public DbSet<ConfiguracionSistema> ConfiguracionesSistema { get; set; } = null!;
+    public DbSet<Actividad> Actividades { get; set; } = null!;
     public DbSet<DashboardItem> DashboardItems { get; set; } = null!;
+
+    // ─────────────────────────────────────────────────────────────────────
+    // DbSets - Entidades scaffoldeadas de la base de datos real (Inv_tmr_db)
+    // ─────────────────────────────────────────────────────────────────────
+
+    // Administración
     public DbSet<Lider> Lideres { get; set; } = null!;
     public DbSet<Reporte> Reportes { get; set; } = null!;
     public DbSet<RegistroTiempo> RegistrosTiempo { get; set; } = null!;
@@ -43,11 +64,15 @@ public partial class ApplicationDbContext : DbContext
     public virtual DbSet<TblAdministracionLider> TblAdministracionLiders { get; set; }
     public virtual DbSet<TblAdministracionPersona> TblAdministracionPersonas { get; set; }
     public virtual DbSet<TblAdministracionRegistroAsignacion> TblAdministracionRegistroAsignacions { get; set; }
+
+    // Auditoría
     public virtual DbSet<TblAuditoriaAsignacionEquipo> TblAuditoriaAsignacionEquipos { get; set; }
     public virtual DbSet<TblAuditoriaEmpleado> TblAuditoriaEmpleados { get; set; }
     public virtual DbSet<TblAuditoriaEquipo> TblAuditoriaEquipos { get; set; }
     public virtual DbSet<TblAuditoriaHistoricoGeneral> TblAuditoriaHistoricoGenerals { get; set; }
     public virtual DbSet<TblAuditoriaSesionUsuario> TblAuditoriaSesionUsuarios { get; set; }
+
+    // Autenticación
     public virtual DbSet<TblAutenticacionAplicacion> TblAutenticacionAplicacions { get; set; }
     public virtual DbSet<TblAutenticacionInventarioToken> TblAutenticacionInventarioTokens { get; set; }
     public virtual DbSet<TblAutenticacionMenu> TblAutenticacionMenus { get; set; }
@@ -66,6 +91,8 @@ public partial class ApplicationDbContext : DbContext
     public virtual DbSet<TblAutenticacionUsuarioAplicacion> TblAutenticacionUsuarioAplicacions { get; set; }
     public virtual DbSet<TblAutenticacionUsuarioModulo> TblAutenticacionUsuarioModulos { get; set; }
     public virtual DbSet<TblAutenticacionUsuarioRol> TblAutenticacionUsuarioRols { get; set; }
+
+    // Inventario
     public virtual DbSet<TblInventarioAsignacionEquipo> TblInventarioAsignacionEquipos { get; set; }
     public virtual DbSet<TblInventarioBajaEquipo> TblInventarioBajaEquipos { get; set; }
     public virtual DbSet<TblInventarioCaracteristicaEquipo> TblInventarioCaracteristicaEquipos { get; set; }
@@ -76,6 +103,8 @@ public partial class ApplicationDbContext : DbContext
     public virtual DbSet<TblInventarioProveedor> TblInventarioProveedors { get; set; }
     public virtual DbSet<TblInventarioReparacionEquipo> TblInventarioReparacionEquipos { get; set; }
     public virtual DbSet<TblInventarioStockCategorium> TblInventarioStockCategoria { get; set; }
+
+    // Time Report
     public virtual DbSet<TblTimeReportActividadDiarium> TblTimeReportActividadDiaria { get; set; }
     public virtual DbSet<TblTimeReportEmpleadoProyecto> TblTimeReportEmpleadoProyectos { get; set; }
     public virtual DbSet<TblTimeReportFeriado> TblTimeReportFeriados { get; set; }
