@@ -8,6 +8,7 @@ using tmr_backend.Features.Configuracion;
 using tmr_backend.Features.Dashboard;
 using tmr_backend.Features.Lideres;
 using tmr_backend.Features.Proyectos;
+using tmr_backend.Features.Catalogos;
 using tmr_backend.Features.Reportes;
 using tmr_backend.Features.TimeReport;
 using Scalar.AspNetCore;
@@ -20,6 +21,9 @@ using tmr_backend.Features.Auth.Validators;
 using tmr_backend.Features.Auth.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
 
 builder.Services.AddOpenApi();
 
@@ -61,6 +65,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddAuthorization();
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("Frontend", policy =>
+        policy.WithOrigins("http://localhost:4200")
+            .AllowAnyHeader()
+            .AllowAnyMethod());
+});
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -70,6 +81,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseCors("Frontend");
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapClientesEndpoints();
 app.MapAuthEndpoints();
@@ -79,6 +93,7 @@ app.MapConfiguracionEndpoints();
 app.MapDashboardEndpoints();
 app.MapLideresEndpoints();
 app.MapProyectosEndpoints();
+app.MapCatalogosEndpoints();
 app.MapReportesEndpoints();
 app.MapTimeReportEndpoints();
 

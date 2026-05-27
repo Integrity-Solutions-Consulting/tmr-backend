@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace tmr_backend.Infrastructure.Database.Entities;
 
@@ -17,8 +18,10 @@ public partial class TblAdministracionPersona
 
     public string Tipopersona { get; set; } = null!;
 
+    [Column("primernombre")]
     public string Nombres { get; set; } = null!;
 
+    [Column("apellidopaterno")]
     public string Apellidos { get; set; } = null!;
 
     public DateOnly? Fechanacimiento { get; set; }
@@ -54,5 +57,4 @@ public partial class TblAdministracionPersona
     public virtual ICollection<TblAdministracionLider> TblAdministracionLiders { get; set; } = new List<TblAdministracionLider>();
 
     public virtual ICollection<TblAutenticacionUsuario> TblAutenticacionUsuarios { get; set; } = new List<TblAutenticacionUsuario>();
-
 }
