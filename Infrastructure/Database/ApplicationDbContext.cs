@@ -30,6 +30,19 @@ public class ApplicationDbContext : DbContext
     public DbSet<Reporte> Reportes { get; set; } = null!;
     public DbSet<RegistroTiempo> RegistrosTiempo { get; set; } = null!;
 
+    // Entidades del Módulo de Reportes (DB Real PostgreSQL)
+    public DbSet<AdministracionPersona> AdministracionPersonas { get; set; } = null!;
+    public DbSet<AdministracionEmpleado> AdministracionEmpleados { get; set; } = null!;
+    public DbSet<AdministracionCliente> AdministracionClientes { get; set; } = null!;
+    public DbSet<AdministracionLider> AdministracionLideres { get; set; } = null!;
+    public DbSet<AdministracionCargo> AdministracionCargos { get; set; } = null!;
+    public DbSet<TimeReportProyecto> TimeReportProyectos { get; set; } = null!;
+    public DbSet<TimeReportTipoActividad> TimeReportTiposActividad { get; set; } = null!;
+    public DbSet<TimeReportActividadDiaria> TimeReportActividadesDiarias { get; set; } = null!;
+    public DbSet<TimeReportEmpleadoProyecto> TimeReportEmpleadosProyectos { get; set; } = null!;
+    public DbSet<TimeReportPermiso> TimeReportPermisos { get; set; } = null!;
+    public DbSet<TimeReportFeriado> TimeReportFeriados { get; set; } = null!;
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
