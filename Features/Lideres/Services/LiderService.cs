@@ -151,11 +151,12 @@ public class LiderService : ILiderService
 
     public async Task<ContadoresLiderResponse> ObtenerContadoresAsync(CancellationToken ct)
     {
+        // Asumiendo que Idtipo = 1 es Interno, Idtipo = 2 es Externo
         var internos = await _db.TblAdministracionLiders
-            .CountAsync(l => l.Activo && l.Idtipo != null, ct);
+            .CountAsync(l => l.Activo && l.Idtipo == 1, ct);
 
         var externos = await _db.TblAdministracionLiders
-            .CountAsync(l => l.Activo, ct);
+            .CountAsync(l => l.Activo && l.Idtipo == 2, ct);
 
         var inactivos = await _db.TblAdministracionLiders
             .CountAsync(l => !l.Activo, ct);
