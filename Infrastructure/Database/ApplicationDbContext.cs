@@ -291,6 +291,25 @@ public partial class ApplicationDbContext : DbContext
             entity.HasKey(e => e.Id).HasName("pk_administracion_persona");
             entity.ToTable("tbl_administracion_persona", "administracion");
             entity.HasIndex(e => e.Numeroidentificacion, "idx_adm_persona_identificacion");
+
+            entity.Property(e => e.Id)
+                .UseIdentityAlwaysColumn()
+                .HasColumnName("id");
+            entity.Property(e => e.Activo)
+                .HasDefaultValue(true)
+                .HasColumnName("activo");
+            entity.Property(e => e.Apellidos)
+                .HasMaxLength(100)
+                .HasColumnName("apellidopaterno");
+            entity.Property(e => e.Direccion)
+                .HasMaxLength(255)
+                .HasColumnName("direccion");
+            entity.Property(e => e.Email)
+                .HasMaxLength(100)
+                .HasColumnName("email");
+            entity.Property(e => e.Fechacreacion)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("fechacreacion");
             entity.Property(e => e.Id).UseIdentityAlwaysColumn().HasColumnName("id");
             entity.Property(e => e.Activo).HasDefaultValue(true).HasColumnName("activo");
             entity.Property(e => e.Apellidos).HasMaxLength(100).HasColumnName("apellidopaterno");
@@ -302,6 +321,31 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Idgenero).HasColumnName("idgenero");
             entity.Property(e => e.Idnacionalidad).HasColumnName("idnacionalidad");
             entity.Property(e => e.Idtipoidentificacion).HasColumnName("idtipoidentificacion");
+            entity.Property(e => e.Ipcreacion)
+                .HasMaxLength(45)
+                .HasColumnName("ipcreacion");
+            entity.Property(e => e.Ipmodificacion)
+                .HasMaxLength(45)
+                .HasColumnName("ipmodificacion");
+            entity.Property(e => e.Nombres)
+                .HasMaxLength(100)
+                .HasColumnName("primernombre");
+            entity.Property(e => e.Numeroidentificacion)
+                .HasMaxLength(20)
+                .HasColumnName("numeroidentificacion");
+            entity.Property(e => e.Telefono)
+                .HasMaxLength(20)
+                .HasColumnName("telefono");
+            entity.Property(e => e.Tipopersona)
+                .HasMaxLength(10)
+                .HasColumnName("tipopersona");
+            entity.Property(e => e.Usuariocreacion)
+                .HasMaxLength(50)
+                .HasColumnName("usuariocreacion");
+            entity.Property(e => e.Usuariomodificacion)
+                .HasMaxLength(50)
+                .HasColumnName("usuariomodificacion");
+
             entity.Property(e => e.Ipcreacion).HasMaxLength(45).HasColumnName("ipcreacion");
             entity.Property(e => e.Ipmodificacion).HasMaxLength(45).HasColumnName("ipmodificacion");
             entity.Property(e => e.Nombres).HasMaxLength(100).HasColumnName("primernombre");

@@ -85,6 +85,12 @@ public sealed class TokenService : ITokenService
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
+    // Implementación demandada por la interfaz ITokenService
+    public string GenerateAccessToken(TblAutenticacionUsuario user)
+    {
+        return GenerateAccessToken2(user);
+    }
+
     // ---------------------------------------------------------------
     // REFRESH TOKEN — bytes aleatorios criptográficamente seguros
     // ---------------------------------------------------------------

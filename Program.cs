@@ -22,29 +22,42 @@ using tmr_backend.Features.Auth.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// =========================
+// SERVICES
+// =========================
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 
 builder.Services.AddOpenApi();
 
-// builder.Services.AddDbContext<ApplicationDbContext>(options =>
-//     options.UseInMemoryDatabase("TmrDb"));
+// CORS (Angular)
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("PermitirAngular", policy =>
+    {
+        policy.WithOrigins("http://localhost:4200")
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
 
+// DB (PostgreSQL)
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+// JWT Settings
 builder.Services.Configure<JwtSettings>(
     builder.Configuration.GetSection("Jwt"));
 
-// ── Seguridad ─────────────────────────────────────────────
+// Auth Services
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
-builder.Services.AddScoped<ITokenService,   TokenService>();
-builder.Services.AddScoped<IAuthService,    AuthService>();
+builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
 
-// Register FluentValidation validators from the auth feature
+// FluentValidation
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 
-// ── JWT Middleware ─────────────────────────────────────────
+// JWT Authentication
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtSettings>()!;
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -52,19 +65,23 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     {
         opt.TokenValidationParameters = new TokenValidationParameters
         {
-            ValidateIssuer           = true,
-            ValidateAudience         = true,
-            ValidateLifetime         = true,
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
-            ValidIssuer              = jwt.Issuer,
-            ValidAudience            = jwt.Audience,
-            IssuerSigningKey         = new SymmetricSecurityKey(
-                                           Encoding.UTF8.GetBytes(jwt.SecretKey)),
-            ClockSkew                = TimeSpan.Zero
+            ValidIssuer = jwt.Issuer,
+            ValidAudience = jwt.Audience,
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(jwt.SecretKey)),
+            ClockSkew = TimeSpan.Zero
         };
     });
 
 builder.Services.AddAuthorization();
+
+// TU FEATURE
+builder.Services.AddScoped<ICargarActividadesExcelHandler, CargarActividadesExcelHandler>();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
@@ -74,17 +91,26 @@ builder.Services.AddCors(options =>
 });
 var app = builder.Build();
 
+// =========================
+// PIPELINE
+// =========================
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
     app.MapScalarApiReference();
 }
 
+// CORS
+app.UseCors("PermitirAngular");
+
+// Auth middleware (IMPORTANTE si usas JWT)
 app.UseHttpsRedirection();
 app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Endpoints
 app.MapClientesEndpoints();
 app.MapAuthEndpoints();
 app.MapCargaActividadesEndpoints();
