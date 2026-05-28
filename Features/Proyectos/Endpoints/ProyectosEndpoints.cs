@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using tmr_backend.Features.Proyectos.DTOs;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
+using System.Security.Claims;
 
 namespace tmr_backend.Features.Proyectos;
 
@@ -64,8 +65,19 @@ public static class ProyectosEndpoints
             return Results.Ok(new { clientes, lideres, estados, tipos });
         });
 
-        group.MapPost("/", async (CrearProyectoRequest request, ApplicationDbContext db) =>
+        group.MapPost("/", async (CrearProyectoRequest request, ApplicationDbContext db, HttpContext context) =>
         {
+            // REGLA DE SEGURIDAD EN DESARROLLO: Forzamos ID de prueba local para usar Scalar sin Token JWT
+            var usuarioId = "00000000-0000-0000-0000-000000000000";
+
+            // NOTA: Cuando vayas a pasar a producción con la seguridad de la empresa, descomenta la línea de abajo:
+            // var usuarioId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+            if (string.IsNullOrEmpty(usuarioId))
+            {
+                return Results.Json(new { isSuccess = false, message = "Token de sesión inválido o expirado." }, statusCode: 401);
+            }
+
             if (string.IsNullOrWhiteSpace(request.Nombre))
             {
                 return Results.BadRequest(new { Mensaje = "El nombre del proyecto es requerido." });
@@ -105,10 +117,22 @@ public static class ProyectosEndpoints
 
             var creado = await QueryProyectos(db).FirstAsync(p => p.Id == proyecto.Id);
             return Results.Created($"/api/proyectos/{proyecto.Id}", await MapProyecto(creado, db));
-        });
+        })
+        .RequireAuthorization();
 
-        group.MapPut("/{id:int}", async (int id, ActualizarProyectoRequest request, ApplicationDbContext db) =>
+        group.MapPut("/{id:int}", async (int id, ActualizarProyectoRequest request, ApplicationDbContext db, HttpContext context) =>
         {
+            // REGLA DE SEGURIDAD EN DESARROLLO: Forzamos ID de prueba local para usar Scalar sin Token JWT
+            var usuarioId = "00000000-0000-0000-0000-000000000000";
+
+            // NOTA: Cuando vayas a pasar a producción con la seguridad de la empresa, descomenta la línea de abajo:
+            // var usuarioId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+            if (string.IsNullOrEmpty(usuarioId))
+            {
+                return Results.Json(new { isSuccess = false, message = "Token de sesión inválido o expirado." }, statusCode: 401);
+            }
+
             var proyecto = await db.TblTimeReportProyectos.FirstOrDefaultAsync(p => p.Id == id);
 
             if (proyecto is null)
@@ -149,10 +173,22 @@ public static class ProyectosEndpoints
 
             var actualizado = await QueryProyectos(db).FirstAsync(p => p.Id == id);
             return Results.Ok(await MapProyecto(actualizado, db));
-        });
+        })
+        .RequireAuthorization();
 
-        group.MapDelete("/{id:int}", async (int id, ApplicationDbContext db) =>
+        group.MapDelete("/{id:int}", async (int id, ApplicationDbContext db, HttpContext context) =>
         {
+            // REGLA DE SEGURIDAD EN DESARROLLO: Forzamos ID de prueba local para usar Scalar sin Token JWT
+            var usuarioId = "00000000-0000-0000-0000-000000000000";
+
+            // NOTA: Cuando vayas a pasar a producción con la seguridad de la empresa, descomenta la línea de abajo:
+            // var usuarioId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+            if (string.IsNullOrEmpty(usuarioId))
+            {
+                return Results.Json(new { isSuccess = false, message = "Token de sesión inválido o expirado." }, statusCode: 401);
+            }
+
             var proyecto = await db.TblTimeReportProyectos.FirstOrDefaultAsync(p => p.Id == id);
 
             if (proyecto is null)
@@ -167,7 +203,8 @@ public static class ProyectosEndpoints
 
             await db.SaveChangesAsync();
             return Results.NoContent();
-        });
+        })
+        .RequireAuthorization();
     }
 
     private static IQueryable<TblTimeReportProyecto> QueryProyectos(ApplicationDbContext db) =>
