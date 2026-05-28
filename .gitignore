@@ -366,3 +366,6 @@ FodyWeavers.xsd
 
 .claude/
 blueprint.md
+
+# Configuración local con secretos (cadena de conexión y JWT)
+appsettings.Development.json
