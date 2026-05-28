@@ -6,6 +6,7 @@ using System.Linq;
 using tmr_backend.Features.Reportes.Domain;
 using tmr_backend.Features.Reportes.DTOs;
 using tmr_backend.Infrastructure.Database;
+using tmr_backend.Infrastructure.Database.Entities;
 
 namespace tmr_backend.Features.Reportes;
 
@@ -20,7 +21,7 @@ public static class ReportesEndpoints
         {
             try
             {
-                var count = await db.TimeReportActividadesDiarias.CountAsync();
+                var count = await db.TblTimeReportActividadDiaria.CountAsync();
                 return Results.Ok(new { message = "Conexión a DB y tabla exitosa", cantidadRegistros = count });
             }
             catch (System.Exception ex)
@@ -34,39 +35,39 @@ public static class ReportesEndpoints
             [AsParameters] ReporteHorasFiltroRequest filtro,
             ApplicationDbContext db) =>
         {
-            var query = db.TimeReportActividadesDiarias
-                .Include(a => a.Empleado)
-                .Include(a => a.Proyecto).ThenInclude(p => p.Cliente)
+            var query = db.TblTimeReportActividadDiaria
+                .Include(a => a.IdempleadoNavigation)
+                .Include(a => a.IdproyectoNavigation!).ThenInclude(p => p!.IdclienteNavigation)
                 .Where(a => a.Activo);
 
             if (!string.IsNullOrWhiteSpace(filtro.Cliente))
-                query = query.Where(a => a.Proyecto != null && a.Proyecto.Cliente != null && a.Proyecto.Cliente.NombreComercial.ToLower().Contains(filtro.Cliente.ToLower()));
+                query = query.Where(a => a.IdproyectoNavigation != null && a.IdproyectoNavigation.IdclienteNavigation != null && a.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial != null && a.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial.ToLower().Contains(filtro.Cliente.ToLower()));
 
             if (filtro.Mes.HasValue)
-                query = query.Where(a => a.FechaActividad.Month == filtro.Mes.Value);
+                query = query.Where(a => a.Fechaactividad.Month == filtro.Mes.Value);
 
             if (filtro.Anio.HasValue)
-                query = query.Where(a => a.FechaActividad.Year == filtro.Anio.Value);
+                query = query.Where(a => a.Fechaactividad.Year == filtro.Anio.Value);
 
             // Realizamos la agrupación
             var groupedQuery = query
                 .GroupBy(a => new {
-                    Cliente = a.Proyecto != null && a.Proyecto.Cliente != null ? a.Proyecto.Cliente.NombreComercial : "Sin Cliente",
-                    Mes = a.FechaActividad.Month,
-                    Anio = a.FechaActividad.Year
+                    Cliente = a.IdproyectoNavigation != null && a.IdproyectoNavigation.IdclienteNavigation != null ? a.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial : "Sin Cliente",
+                    Mes = a.Fechaactividad.Month,
+                    Anio = a.Fechaactividad.Year
                 })
                 .Select(g => new {
                     Cliente = g.Key.Cliente,
                     MesNum = g.Key.Mes,
                     Anio = g.Key.Anio.ToString(),
-                    Recursos = g.Select(x => x.IdEmpleado).Distinct().Count(),
-                    Horas = g.Sum(x => x.CantidadHoras)
+                    Recursos = g.Select(x => x.Idempleado).Distinct().Count(),
+                    Horas = g.Sum(x => x.Cantidadhoras)
                 });
 
             var total = await groupedQuery.CountAsync();
 
-            var minYear = await db.TimeReportActividadesDiarias.Where(a => a.Activo).MinAsync(a => (int?)a.FechaActividad.Year);
-            var maxYear = await db.TimeReportActividadesDiarias.Where(a => a.Activo).MaxAsync(a => (int?)a.FechaActividad.Year);
+            var minYear = await db.TblTimeReportActividadDiaria.Where(a => a.Activo).MinAsync(a => (int?)a.Fechaactividad.Year);
+            var maxYear = await db.TblTimeReportActividadDiaria.Where(a => a.Activo).MaxAsync(a => (int?)a.Fechaactividad.Year);
 
             var dbResult = await groupedQuery
                 .OrderBy(g => g.Anio).ThenBy(g => g.MesNum).ThenBy(g => g.Cliente)
@@ -93,41 +94,47 @@ public static class ReportesEndpoints
             [AsParameters] ReporteFechasFiltroRequest filtro,
             ApplicationDbContext db) =>
         {
-            var query = db.TimeReportActividadesDiarias
-                .Include(a => a.Empleado).ThenInclude(e => e.Persona)
-                .Include(a => a.Empleado).ThenInclude(e => e.Cargo)
-                .Include(a => a.Proyecto).ThenInclude(p => p.Cliente)
-                .Include(a => a.Proyecto).ThenInclude(p => p.Lider).ThenInclude(l => l.Persona)
+            var query = db.TblTimeReportActividadDiaria
+                .Include(a => a.IdempleadoNavigation).ThenInclude(e => e.IdpersonaNavigation)
+                .Include(a => a.IdempleadoNavigation).ThenInclude(e => e.IdcargoNavigation)
+                .Include(a => a.IdproyectoNavigation!).ThenInclude(p => p!.IdclienteNavigation)
+                .Include(a => a.IdproyectoNavigation!).ThenInclude(p => p!.IdliderNavigation!).ThenInclude(l => l!.IdpersonaNavigation)
                 .Where(a => a.Activo);
 
             if (filtro.FechaInicio.HasValue)
-                query = query.Where(a => a.FechaActividad >= filtro.FechaInicio.Value);
+            {
+                var inicioOnly = DateOnly.FromDateTime(filtro.FechaInicio.Value);
+                query = query.Where(a => a.Fechaactividad >= inicioOnly);
+            }
 
             if (filtro.FechaFin.HasValue)
-                query = query.Where(a => a.FechaActividad <= filtro.FechaFin.Value);
+            {
+                var finOnly = DateOnly.FromDateTime(filtro.FechaFin.Value);
+                query = query.Where(a => a.Fechaactividad <= finOnly);
+            }
 
             if (!string.IsNullOrWhiteSpace(filtro.Cliente))
-                query = query.Where(a => a.Proyecto != null && a.Proyecto.Cliente != null && a.Proyecto.Cliente.NombreComercial.ToLower().Contains(filtro.Cliente.ToLower()));
+                query = query.Where(a => a.IdproyectoNavigation != null && a.IdproyectoNavigation.IdclienteNavigation != null && a.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial != null && a.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial.ToLower().Contains(filtro.Cliente.ToLower()));
 
             if (!string.IsNullOrWhiteSpace(filtro.Lider))
-                query = query.Where(a => a.Proyecto != null && a.Proyecto.Lider != null && 
-                                        (a.Proyecto.Lider.Persona.PrimerNombre.ToLower().Contains(filtro.Lider.ToLower()) || 
-                                         a.Proyecto.Lider.Persona.ApellidoPaterno.ToLower().Contains(filtro.Lider.ToLower())));
+                query = query.Where(a => a.IdproyectoNavigation != null && a.IdproyectoNavigation.IdliderNavigation != null && 
+                                        (a.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Nombres.ToLower().Contains(filtro.Lider.ToLower()) || 
+                                         a.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Apellidos.ToLower().Contains(filtro.Lider.ToLower())));
 
             var total = await query.CountAsync();
 
             var resultado = await query
-                .OrderByDescending(a => a.FechaActividad)
+                .OrderByDescending(a => a.Fechaactividad)
                 .Skip((filtro.Page - 1) * filtro.PageSize)
                 .Take(filtro.PageSize)
                 .Select(a => new ReporteFechasResponse(
                     a.Id.ToString(),
-                    a.Proyecto != null && a.Proyecto.Cliente != null ? (a.Proyecto.Cliente.NombreComercial ?? "Sin Cliente") : "Sin Cliente",
-                    a.Proyecto != null && a.Proyecto.Lider != null ? (a.Proyecto.Lider.Persona.PrimerNombre + " " + a.Proyecto.Lider.Persona.ApellidoPaterno) : "Sin Lider",
-                    a.Empleado.Persona.PrimerNombre + " " + a.Empleado.Persona.ApellidoPaterno,
-                    a.Empleado.Cargo != null ? a.Empleado.Cargo.NombreCargo : "Sin Cargo",
-                    a.FechaActividad,
-                    a.FechaActividad
+                    a.IdproyectoNavigation != null && a.IdproyectoNavigation.IdclienteNavigation != null ? (a.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial ?? "Sin Cliente") : "Sin Cliente",
+                    a.IdproyectoNavigation != null && a.IdproyectoNavigation.IdliderNavigation != null ? (a.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Nombres + " " + a.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Apellidos) : "Sin Lider",
+                    a.IdempleadoNavigation.IdpersonaNavigation.Nombres + " " + a.IdempleadoNavigation.IdpersonaNavigation.Apellidos,
+                    a.IdempleadoNavigation.IdcargoNavigation != null ? a.IdempleadoNavigation.IdcargoNavigation.Nombrecargo : "Sin Cargo",
+                    new DateTime(a.Fechaactividad.Year, a.Fechaactividad.Month, a.Fechaactividad.Day),
+                    new DateTime(a.Fechaactividad.Year, a.Fechaactividad.Month, a.Fechaactividad.Day)
                 ))
                 .ToListAsync();
 
