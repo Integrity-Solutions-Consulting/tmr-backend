@@ -8,16 +8,9 @@ using tmr_backend.Features.Reportes.Domain;
 using tmr_backend.Features.Proyectos.Domain;
 using tmr_backend.Features.Lideres.Domain;
 using tmr_backend.Features.Clientes.Domain;
-using tmr_backend.Features.Auth.Domain;
 using tmr_backend.Features.CargaActividades.Domain;
 using tmr_backend.Features.Colaboradores.Domain;
-using tmr_backend.Features.Clientes.Domain;
-using tmr_backend.Features.Configuracion.Domain;
-using tmr_backend.Features.CargaActividades.Domain;
 using tmr_backend.Features.Dashboard.Domain;
-using tmr_backend.Features.Lideres.Domain;
-using tmr_backend.Features.Reportes.Domain;
-using tmr_backend.Features.TimeReport.Domain;
 
 namespace tmr_backend.Infrastructure.Database;
 
@@ -39,19 +32,12 @@ public partial class ApplicationDbContext : DbContext
     public DbSet<Proyecto> Proyectos { get; set; } = null!;
     public DbSet<Lider> Lideres { get; set; } = null!;
     public DbSet<Colaborador> Colaboradores { get; set; } = null!;
-    public DbSet<Cliente> Clientes { get; set; } = null!;
-    public DbSet<ConfiguracionSistema> ConfiguracionesSistema { get; set; } = null!;
     public DbSet<Actividad> Actividades { get; set; } = null!;
     public DbSet<DashboardItem> DashboardItems { get; set; } = null!;
 
     // ─────────────────────────────────────────────────────────────────────
     // DbSets - Entidades scaffoldeadas de la base de datos real (Inv_tmr_db)
     // ─────────────────────────────────────────────────────────────────────
-
-    // Administración
-    public DbSet<Lider> Lideres { get; set; } = null!;
-    public DbSet<Reporte> Reportes { get; set; } = null!;
-    public DbSet<RegistroTiempo> RegistrosTiempo { get; set; } = null!;
 
     // ── DbSets generados (compañeros) ─────────────────────
     public virtual DbSet<TblAdministracionApariencium> TblAdministracionApariencia { get; set; }
@@ -329,7 +315,7 @@ public partial class ApplicationDbContext : DbContext
                 .HasColumnName("activo");
             entity.Property(e => e.Apellidos)
                 .HasMaxLength(100)
-                .HasColumnName("apellidopaterno");
+                .HasColumnName("apellidos");
             entity.Property(e => e.Direccion)
                 .HasMaxLength(255)
                 .HasColumnName("direccion");
@@ -341,7 +327,7 @@ public partial class ApplicationDbContext : DbContext
                 .HasColumnName("fechacreacion");
             entity.Property(e => e.Id).UseIdentityAlwaysColumn().HasColumnName("id");
             entity.Property(e => e.Activo).HasDefaultValue(true).HasColumnName("activo");
-            entity.Property(e => e.Apellidos).HasMaxLength(100).HasColumnName("apellidopaterno");
+            entity.Property(e => e.Apellidos).HasMaxLength(100).HasColumnName("apellidos");
             entity.Property(e => e.Direccion).HasMaxLength(255).HasColumnName("direccion");
             entity.Property(e => e.Email).HasMaxLength(100).HasColumnName("email");
             entity.Property(e => e.Fechacreacion).HasDefaultValueSql("now()").HasColumnName("fechacreacion");
@@ -358,7 +344,7 @@ public partial class ApplicationDbContext : DbContext
                 .HasColumnName("ipmodificacion");
             entity.Property(e => e.Nombres)
                 .HasMaxLength(100)
-                .HasColumnName("primernombre");
+                .HasColumnName("nombres");
             entity.Property(e => e.Numeroidentificacion)
                 .HasMaxLength(20)
                 .HasColumnName("numeroidentificacion");
@@ -377,7 +363,7 @@ public partial class ApplicationDbContext : DbContext
 
             entity.Property(e => e.Ipcreacion).HasMaxLength(45).HasColumnName("ipcreacion");
             entity.Property(e => e.Ipmodificacion).HasMaxLength(45).HasColumnName("ipmodificacion");
-            entity.Property(e => e.Nombres).HasMaxLength(100).HasColumnName("primernombre");
+            entity.Property(e => e.Nombres).HasMaxLength(100).HasColumnName("nombres");
             entity.Property(e => e.Numeroidentificacion).HasMaxLength(20).HasColumnName("numeroidentificacion");
             entity.Property(e => e.Telefono).HasMaxLength(20).HasColumnName("telefono");
             entity.Property(e => e.Tipopersona).HasMaxLength(10).HasColumnName("tipopersona");
