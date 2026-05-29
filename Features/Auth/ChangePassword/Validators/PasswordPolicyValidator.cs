@@ -24,7 +24,9 @@ public class PasswordPolicyValidator : AbstractValidator<ChangePasswordRequest>
             .Matches(@"[a-z]")
             .WithMessage("La contraseña debe contener al menos una minúscula.")
             .Matches(@"[0-9]")
-            .WithMessage("La contraseña debe contener al menos un dígito.");
+            .WithMessage("La contraseña debe contener al menos un dígito.")
+            .Matches(@"[!@#$%^&*()_+\-=\[\]{};:'"",.<>?/\\|`~]")
+            .WithMessage("La contraseña debe contener al menos un símbolo especial.");
 
         RuleFor(x => x.ConfirmPassword)
             .NotEmpty()

@@ -30,6 +30,8 @@ using Microsoft.Extensions.Caching.Memory;
 using FluentValidation;
 using tmr_backend.Features.Configuracion.Register_Temp.Validators;
 using tmr_backend.Infrastructure.Shared;
+using tmr_backend.Features.Auth.Authorization;
+using Microsoft.AspNetCore.Authorization;
 
 using Microsoft.OpenApi;
 
@@ -58,8 +60,9 @@ builder.Services.AddOpenApi(options =>
 // builder.Services.AddDbContext<ApplicationDbContext>(options =>
 //     options.UseInMemoryDatabase("TmrDb"));
 
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"))
+           .AddInterceptors(sp.GetRequiredService<AuditInterceptor>()));
 
 builder.Services.Configure<JwtSettings>(
     builder.Configuration.GetSection("Jwt"));
@@ -75,6 +78,10 @@ builder.Services.AddScoped<ChangePasswordHandler>();
 builder.Services.AddScoped<GetCurrentUserHandler>();
 builder.Services.AddScoped<GetPermissionsHandler>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+builder.Services.AddScoped<AuditInterceptor>();
+
+// ── Authorization Handler (Fase 6) ────────────────────────
+builder.Services.AddScoped<IAuthorizationHandler, HasModulePermissionHandler>();
 
 // ── Memory Cache para blacklist de tokens ──────────────────
 builder.Services.AddMemoryCache();
@@ -155,7 +162,82 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-builder.Services.AddAuthorization();
+// ── Authorization Policies (Fase 6) ──────────────────────
+builder.Services.AddAuthorization(options =>
+{
+    // TimeReport Module
+    options.AddPolicy("CanViewTimeReport", policy =>
+        policy.Requirements.Add(new HasModulePermissionRequirement("TimeReport", "VIEW")));
+    
+    options.AddPolicy("CanCreateTimeReport", policy =>
+        policy.Requirements.Add(new HasModulePermissionRequirement("TimeReport", "CREATE")));
+    
+    options.AddPolicy("CanEditTimeReport", policy =>
+        policy.Requirements.Add(new HasModulePermissionRequirement("TimeReport", "EDIT")));
+    
+    options.AddPolicy("CanDeleteTimeReport", policy =>
+        policy.Requirements.Add(new HasModulePermissionRequirement("TimeReport", "DELETE")));
+    
+    // Proyectos Module
+    options.AddPolicy("CanViewProyectos", policy =>
+        policy.Requirements.Add(new HasModulePermissionRequirement("Proyectos", "VIEW")));
+    
+    options.AddPolicy("CanCreateProyectos", policy =>
+        policy.Requirements.Add(new HasModulePermissionRequirement("Proyectos", "CREATE")));
+    
+    options.AddPolicy("CanEditProyectos", policy =>
+        policy.Requirements.Add(new HasModulePermissionRequirement("Proyectos", "EDIT")));
+    
+    options.AddPolicy("CanDeleteProyectos", policy =>
+        policy.Requirements.Add(new HasModulePermissionRequirement("Proyectos", "DELETE")));
+    
+    // Usuarios Module
+    options.AddPolicy("CanViewUsuarios", policy =>
+        policy.Requirements.Add(new HasModulePermissionRequirement("Usuarios", "VIEW")));
+    
+    options.AddPolicy("CanCreateUsuarios", policy =>
+        policy.Requirements.Add(new HasModulePermissionRequirement("Usuarios", "CREATE")));
+    
+    options.AddPolicy("CanEditUsuarios", policy =>
+        policy.Requirements.Add(new HasModulePermissionRequirement("Usuarios", "EDIT")));
+    
+    options.AddPolicy("CanDeleteUsuarios", policy =>
+        policy.Requirements.Add(new HasModulePermissionRequirement("Usuarios", "DELETE")));
+    
+    // Reportes Module
+    options.AddPolicy("CanViewReportes", policy =>
+        policy.Requirements.Add(new HasModulePermissionRequirement("Reportes", "VIEW")));
+    
+    options.AddPolicy("CanCreateReportes", policy =>
+        policy.Requirements.Add(new HasModulePermissionRequirement("Reportes", "CREATE")));
+    
+    options.AddPolicy("CanEditReportes", policy =>
+        policy.Requirements.Add(new HasModulePermissionRequirement("Reportes", "EDIT")));
+    
+    options.AddPolicy("CanDeleteReportes", policy =>
+        policy.Requirements.Add(new HasModulePermissionRequirement("Reportes", "DELETE")));
+    
+    // Dashboard Module
+    options.AddPolicy("CanViewDashboard", policy =>
+        policy.Requirements.Add(new HasModulePermissionRequirement("Dashboard", "VIEW")));
+    
+    // Administración Module
+    options.AddPolicy("CanViewAdministracion", policy =>
+        policy.Requirements.Add(new HasModulePermissionRequirement("Administracion", "VIEW")));
+    
+    options.AddPolicy("CanCreateAdministracion", policy =>
+        policy.Requirements.Add(new HasModulePermissionRequirement("Administracion", "CREATE")));
+    
+    options.AddPolicy("CanEditAdministracion", policy =>
+        policy.Requirements.Add(new HasModulePermissionRequirement("Administracion", "EDIT")));
+    
+    options.AddPolicy("CanDeleteAdministracion", policy =>
+        policy.Requirements.Add(new HasModulePermissionRequirement("Administracion", "DELETE")));
+    
+    // Auditoría Module
+    options.AddPolicy("CanViewAuditoria", policy =>
+        policy.Requirements.Add(new HasModulePermissionRequirement("Auditoria", "VIEW")));
+});
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())

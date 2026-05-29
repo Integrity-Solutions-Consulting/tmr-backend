@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using tmr_backend.Features.Auth.Login.DTOs;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
@@ -16,17 +17,20 @@ public class LoginHandler
     private readonly ITokenService _tokenService;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IConfiguration _configuration;
 
     public LoginHandler(
         ApplicationDbContext db,
         ITokenService tokenService,
         IPasswordHasher passwordHasher,
-        IHttpContextAccessor httpContextAccessor)
+        IHttpContextAccessor httpContextAccessor,
+        IConfiguration configuration)
     {
         _db = db;
         _tokenService = tokenService;
         _passwordHasher = passwordHasher;
         _httpContextAccessor = httpContextAccessor;
+        _configuration = configuration;
     }
 
     public async Task<LoginResponse> Handle(LoginRequest request, CancellationToken ct)
@@ -82,6 +86,11 @@ public class LoginHandler
             employeeId
         );
 
+        // 7.5 Extraer el JTI del access token generado
+        var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+        var token = handler.ReadJwtToken(accessToken);
+        var jti = token.Claims.FirstOrDefault(c => c.Type == "jti")?.Value ?? Guid.NewGuid().ToString();
+
         // 8. Generar refresh token
         var (refreshToken, expiresAt) = _tokenService.GenerateRefreshToken();
         var refreshTokenHash = _tokenService.HashToken(refreshToken);
@@ -94,6 +103,7 @@ public class LoginHandler
         {
             Idusuario = usuario.Id,
             Tokensesion = refreshTokenHash,
+            UltimoJti = jti,
             Horaingreso = DateTime.UtcNow,
             Horasalida = null,
             Direccionip = ipCreacion,
@@ -114,8 +124,9 @@ public class LoginHandler
         // Guardar cambios en BD
         await _db.SaveChangesAsync(ct);
 
-        // 12. Calcular ExpiresIn en segundos (15 minutos por defecto)
-        int expiresIn = 15 * 60; // 900 segundos
+        // 12. Calcular ExpiresIn en segundos (leer desde configuración)
+        int accessTokenMinutes = _configuration.GetValue<int>("Jwt:AccessTokenMinutes", 15);
+        int expiresIn = accessTokenMinutes * 60; // Convertir minutos a segundos
 
         // 13. Construir response
         var userDto = new UserDto(

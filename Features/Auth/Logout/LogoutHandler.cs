@@ -34,8 +34,7 @@ public class LogoutHandler
         if (string.IsNullOrEmpty(jti))
             throw new UnauthorizedAccessException("JTI no encontrado en el token.");
 
-        // 1. Agregar el JTI a la tabla de blacklist (para invalidar inmediatamente)
-        // Usando el campo "Token" para almacenar el JTI
+        // 1. Agregar el JTI actual a la tabla de blacklist (para invalidar inmediatamente)
         var blacklistEntry = new TblAutenticacionTokenBlacklist
         {
             Token = jti,
@@ -47,12 +46,16 @@ public class LogoutHandler
 
         await _db.TblAutenticacionTokenBlacklists.AddAsync(blacklistEntry, ct);
 
-        // 2. Buscar y cerrar todas las sesiones activas del usuario
-        var sesionesActivas = await _db.TblAutenticacionSesions
-            .Where(s => s.Idusuario == userId && s.Estaactiva == true)
-            .ToListAsync(ct);
+        // 2. Buscar y cerrar SOLO la sesión activa que corresponde a este JTI específico
+        // (NO todas las sesiones del usuario, solo la actual)
+        var sesion = await _db.TblAutenticacionSesions
+            .FirstOrDefaultAsync(s => 
+                s.Idusuario == userId && 
+                s.Estaactiva == true && 
+                s.UltimoJti == jti, 
+                ct);
 
-        foreach (var sesion in sesionesActivas)
+        if (sesion != null)
         {
             sesion.Estaactiva = false;
             sesion.Horasalida = DateTime.UtcNow;

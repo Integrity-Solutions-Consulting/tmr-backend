@@ -1239,6 +1239,11 @@ public partial class ApplicationDbContext : DbContext
 
             entity.HasIndex(e => e.Idusuario, "idx_aut_sesion_usuario");
 
+            entity.HasIndex(e => e.UltimoJti, "idx_autenticacion_sesion_ultim_jti");
+
+            entity.HasIndex(e => new { e.Idusuario, e.UltimoJti }, "idx_autenticacion_sesion_user_jti")
+                .HasFilter("estaactiva = true");
+
             entity.Property(e => e.Id)
                 .UseIdentityAlwaysColumn()
                 .HasColumnName("id");
@@ -1276,6 +1281,9 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Ubicacioninfo)
                 .HasMaxLength(255)
                 .HasColumnName("ubicacioninfo");
+            entity.Property(e => e.UltimoJti)
+                .HasMaxLength(500)
+                .HasColumnName("ultim_jti");
             entity.Property(e => e.Usuariocreacion)
                 .HasMaxLength(50)
                 .HasColumnName("usuariocreacion");

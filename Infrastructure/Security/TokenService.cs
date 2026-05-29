@@ -31,7 +31,7 @@ public sealed class TokenService : ITokenService
         var issuer = _configuration["Jwt:Issuer"];
         var audience = _configuration["Jwt:Audience"];
         var expirationMinutes = _jwt.AccessTokenMinutes;
-        if (int.TryParse(_configuration["Jwt:AccessTokenExpirationMinutes"], out var parsedMinutes))
+        if (int.TryParse(_configuration["Jwt:AccessTokenMinutes"], out var parsedMinutes))
         {
             expirationMinutes = parsedMinutes;
         }
@@ -75,7 +75,7 @@ public sealed class TokenService : ITokenService
         var issuer = _configuration["Jwt:Issuer"];
         var audience = _configuration["Jwt:Audience"];
         var expirationMinutes = _jwt.AccessTokenMinutes;
-        if (int.TryParse(_configuration["Jwt:AccessTokenExpirationMinutes"], out var parsedMinutes))
+        if (int.TryParse(_configuration["Jwt:AccessTokenMinutes"], out var parsedMinutes))
         {
             expirationMinutes = parsedMinutes;
         }
