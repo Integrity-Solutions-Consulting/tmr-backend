@@ -1,13 +1,17 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace tmr_backend.Infrastructure.Database.Entities;
 
-public partial class TblAutenticacionInventarioToken
+public partial class TblAutenticacionRol
 {
     public int Id { get; set; }
 
-    public string? Token { get; set; }
+    public string Nombre { get; set; } = null!;
+
+    public string Descripcion { get; set; } = null!;
+
+    public bool Essistema { get; set; }
 
     public bool Activo { get; set; }
 
@@ -22,4 +26,6 @@ public partial class TblAutenticacionInventarioToken
     public string Ipcreacion { get; set; } = null!;
 
     public string? Ipmodificacion { get; set; }
+
+    public virtual ICollection<TblAutenticacionUsuarioRol> TblAutenticacionUsuarioRols { get; set; } = new List<TblAutenticacionUsuarioRol>();
 }

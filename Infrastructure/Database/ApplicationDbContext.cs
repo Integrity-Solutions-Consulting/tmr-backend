@@ -66,7 +66,7 @@ public partial class ApplicationDbContext : DbContext
 
     public virtual DbSet<TblAutenticacionAplicacion> TblAutenticacionAplicacions { get; set; }
 
-    public virtual DbSet<TblAutenticacionInventarioToken> TblAutenticacionInventarioTokens { get; set; }
+    public virtual DbSet<TblAutenticacionRefreshToken> TblAutenticacionRefreshTokens { get; set; }
 
     public virtual DbSet<TblAutenticacionMenu> TblAutenticacionMenus { get; set; }
 
@@ -98,7 +98,13 @@ public partial class ApplicationDbContext : DbContext
 
     public virtual DbSet<TblAutenticacionUsuarioModulo> TblAutenticacionUsuarioModulos { get; set; }
 
+    public virtual DbSet<TblAutenticacionRol> TblAutenticacionRols { get; set; }
+
     public virtual DbSet<TblAutenticacionUsuarioRol> TblAutenticacionUsuarioRols { get; set; }
+
+    public virtual DbSet<TblAutenticacionPermiso> TblAutenticacionPermisos { get; set; }
+
+    public virtual DbSet<TblAutenticacionRolPermiso> TblAutenticacionRolPermisos { get; set; }
 
     public virtual DbSet<TblInventarioAsignacionEquipo> TblInventarioAsignacionEquipos { get; set; }
 
@@ -146,7 +152,9 @@ public partial class ApplicationDbContext : DbContext
     {
         modelBuilder
             .HasPostgresExtension("pgcrypto")
-            .HasPostgresExtension("uuid-ossp");
+            .HasPostgresExtension("uuid-ossp")
+            .HasPostgresEnum("autenticacion", "audit_evento_enum", new[] { "LOGIN_OK", "LOGIN_FAIL", "LOGOUT", "REFRESH_OK", "REFRESH_FAIL", "TOKEN_REVOKE", "PASSWORD_CHANGE", "USER_CREATE", "USER_BLOCK" })
+            .HasPostgresEnum("autenticacion", "revocacion_razon_enum", new[] { "LOGOUT", "ADMIN_REVOKE", "PASSWORD_CHANGE", "SECURITY_BREACH", "EXPIRED" });
 
         modelBuilder.Entity<TblAdministracionApariencium>(entity =>
         {
@@ -879,11 +887,16 @@ public partial class ApplicationDbContext : DbContext
                 .HasColumnName("usuariomodificacion");
         });
 
-        modelBuilder.Entity<TblAutenticacionInventarioToken>(entity =>
+        modelBuilder.Entity<TblAutenticacionRefreshToken>(entity =>
         {
-            entity.HasKey(e => e.Id).HasName("pk_autenticacion_inventario_token");
+            entity.HasKey(e => e.Id).HasName("pk_autenticacion_refresh_token");
 
-            entity.ToTable("tbl_autenticacion_inventario_token", "autenticacion");
+            entity.ToTable("tbl_autenticacion_refresh_token", "autenticacion");
+
+            entity.HasIndex(e => e.Fechaexpiracion, "idx_aut_refresh_token_exp");
+            entity.HasIndex(e => e.Familiatoken, "idx_aut_refresh_token_familia");
+            entity.HasIndex(e => e.Idusuario, "idx_aut_refresh_token_usuario");
+            entity.HasIndex(e => e.Tokenhash, "uq_autenticacion_refresh_token_hash").IsUnique();
 
             entity.Property(e => e.Id)
                 .UseIdentityAlwaysColumn()
@@ -891,25 +904,28 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Activo)
                 .HasDefaultValue(true)
                 .HasColumnName("activo");
+            entity.Property(e => e.Estarevocado).HasColumnName("estarevocado");
+            entity.Property(e => e.Estausado).HasColumnName("estausado");
+            entity.Property(e => e.Familiatoken).HasColumnName("familiatoken");
             entity.Property(e => e.Fechacreacion)
                 .HasDefaultValueSql("now()")
                 .HasColumnName("fechacreacion");
-            entity.Property(e => e.Fechamodificacion).HasColumnName("fechamodificacion");
-            entity.Property(e => e.Ipcreacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipcreacion");
-            entity.Property(e => e.Ipmodificacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipmodificacion");
-            entity.Property(e => e.Token)
-                .HasMaxLength(1500)
-                .HasColumnName("token");
+            entity.Property(e => e.Fechaexpiracion).HasColumnName("fechaexpiracion");
+            entity.Property(e => e.Fechausado).HasColumnName("fechausado");
+            entity.Property(e => e.Idsesion).HasColumnName("idsesion");
+            entity.Property(e => e.Idusuario).HasColumnName("idusuario");
+            entity.Property(e => e.Tokenhash).HasColumnName("tokenhash");
             entity.Property(e => e.Usuariocreacion)
                 .HasMaxLength(50)
                 .HasColumnName("usuariocreacion");
-            entity.Property(e => e.Usuariomodificacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariomodificacion");
+
+            entity.HasOne(d => d.IdsesionNavigation).WithMany(p => p.TblAutenticacionRefreshTokens)
+                .HasForeignKey(d => d.Idsesion)
+                .HasConstraintName("fk_autenticacion_refresh_token_sesion");
+
+            entity.HasOne(d => d.IdusuarioNavigation).WithMany(p => p.TblAutenticacionRefreshTokens)
+                .HasForeignKey(d => d.Idusuario)
+                .HasConstraintName("fk_autenticacion_refresh_token_usuario");
         });
 
         modelBuilder.Entity<TblAutenticacionMenu>(entity =>
@@ -1052,7 +1068,7 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Icono)
                 .HasMaxLength(50)
                 .HasColumnName("icono");
-            entity.Property(e => e.Idsubmodulo).HasColumnName("idsubmodulo");
+            entity.Property(e => e.Idmodulopadre).HasColumnName("idmodulopadre");
             entity.Property(e => e.Ipcreacion)
                 .HasMaxLength(45)
                 .HasColumnName("ipcreacion");
@@ -1274,7 +1290,6 @@ public partial class ApplicationDbContext : DbContext
             entity.ToTable("tbl_autenticacion_sesion", "autenticacion");
 
             entity.HasIndex(e => e.Estaactiva, "idx_aut_sesion_activa");
-
             entity.HasIndex(e => e.Idusuario, "idx_aut_sesion_usuario");
 
             entity.Property(e => e.Id)
@@ -1283,24 +1298,20 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Activo)
                 .HasDefaultValue(true)
                 .HasColumnName("activo");
-            entity.Property(e => e.Agenteusuario)
-                .HasMaxLength(512)
-                .HasColumnName("agenteusuario");
+            entity.Property(e => e.Agenteusuario).HasColumnName("agenteusuario");
             entity.Property(e => e.Direccionip)
                 .HasMaxLength(45)
                 .HasColumnName("direccionip");
             entity.Property(e => e.Dispositivoinfo)
                 .HasMaxLength(255)
                 .HasColumnName("dispositivoinfo");
-            entity.Property(e => e.Estaactiva).HasColumnName("estaactiva");
+            entity.Property(e => e.Estaactiva)
+                .HasDefaultValue(true)
+                .HasColumnName("estaactiva");
             entity.Property(e => e.Fechacreacion)
                 .HasDefaultValueSql("now()")
                 .HasColumnName("fechacreacion");
             entity.Property(e => e.Fechamodificacion).HasColumnName("fechamodificacion");
-            entity.Property(e => e.Horaingreso)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("horaingreso");
-            entity.Property(e => e.Horasalida).HasColumnName("horasalida");
             entity.Property(e => e.Idusuario).HasColumnName("idusuario");
             entity.Property(e => e.Ipcreacion)
                 .HasMaxLength(45)
@@ -1308,12 +1319,14 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Ipmodificacion)
                 .HasMaxLength(45)
                 .HasColumnName("ipmodificacion");
-            entity.Property(e => e.Tokensesion)
-                .HasMaxLength(1000)
-                .HasColumnName("tokensesion");
+            entity.Property(e => e.Fechaexpiracion).HasColumnName("fechaexpiracion");
+            entity.Property(e => e.Revocadofecha).HasColumnName("revocadofecha");
             entity.Property(e => e.Ubicacioninfo)
                 .HasMaxLength(255)
                 .HasColumnName("ubicacioninfo");
+            entity.Property(e => e.Ultimaactividad)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("ultimaactividad");
             entity.Property(e => e.Usuariocreacion)
                 .HasMaxLength(50)
                 .HasColumnName("usuariocreacion");
@@ -1323,7 +1336,6 @@ public partial class ApplicationDbContext : DbContext
 
             entity.HasOne(d => d.IdusuarioNavigation).WithMany(p => p.TblAutenticacionSesions)
                 .HasForeignKey(d => d.Idusuario)
-                .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_autenticacion_sesion_usuario");
         });
 
@@ -1366,15 +1378,12 @@ public partial class ApplicationDbContext : DbContext
 
         modelBuilder.Entity<TblAutenticacionTokenBlacklist>(entity =>
         {
-            entity.HasKey(e => e.Id).HasName("pk_autenticacion_token_blacklist");
-
+            entity.HasKey(e => e.Jti);
             entity.ToTable("tbl_autenticacion_token_blacklist", "autenticacion");
 
-            entity.HasIndex(e => e.Token, "idx_aut_token_blacklist_token");
+            entity.HasIndex(e => e.Fechaexpiracion, "idx_aut_token_blacklist_exp");
+            entity.HasIndex(e => e.Jti, "uq_autenticacion_token_blacklist_jti").IsUnique();
 
-            entity.Property(e => e.Id)
-                .UseIdentityAlwaysColumn()
-                .HasColumnName("id");
             entity.Property(e => e.Activo)
                 .HasDefaultValue(true)
                 .HasColumnName("activo");
@@ -1382,10 +1391,19 @@ public partial class ApplicationDbContext : DbContext
                 .HasDefaultValueSql("now()")
                 .HasColumnName("fechacreacion");
             entity.Property(e => e.Fechaexpiracion).HasColumnName("fechaexpiracion");
-            entity.Property(e => e.Token).HasColumnName("token");
+            entity.Property(e => e.Fecharevocado)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("fecharevocado");
+            entity.Property(e => e.Idusuario).HasColumnName("idusuario");
+            entity.Property(e => e.Jti).HasColumnName("jti");
             entity.Property(e => e.Usuariocreacion)
                 .HasMaxLength(50)
                 .HasColumnName("usuariocreacion");
+
+            entity.HasOne(d => d.IdusuarioNavigation).WithMany()
+                .HasForeignKey(d => d.Idusuario)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_autenticacion_token_blacklist_usuario");
         });
 
         modelBuilder.Entity<TblAutenticacionUsuario>(entity =>
@@ -1402,11 +1420,15 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Activo)
                 .HasDefaultValue(true)
                 .HasColumnName("activo");
+            entity.Property(e => e.Bloqueadohasta).HasColumnName("bloqueadohasta");
             entity.Property(e => e.Debecambiarpassword).HasColumnName("debecambiarpassword");
             entity.Property(e => e.Email)
-                .HasMaxLength(100)
+                .HasMaxLength(255)
                 .HasColumnName("email");
-            entity.Property(e => e.Estaactivo).HasColumnName("estaactivo");
+            entity.Property(e => e.Emailverificado).HasColumnName("emailverificado");
+            entity.Property(e => e.Intentosfallidos)
+                .HasDefaultValue((short)0)
+                .HasColumnName("intentosfallidos");
             entity.Property(e => e.Fechacreacion)
                 .HasDefaultValueSql("now()")
                 .HasColumnName("fechacreacion");
@@ -1515,11 +1537,13 @@ public partial class ApplicationDbContext : DbContext
                 .HasConstraintName("fk_autenticacion_usuario_modulo_usuario");
         });
 
-        modelBuilder.Entity<TblAutenticacionUsuarioRol>(entity =>
+        modelBuilder.Entity<TblAutenticacionRol>(entity =>
         {
-            entity.HasKey(e => e.Id).HasName("pk_autenticacion_usuario_rol");
+            entity.HasKey(e => e.Id).HasName("pk_autenticacion_rol");
 
-            entity.ToTable("tbl_autenticacion_usuario_rol", "autenticacion");
+            entity.ToTable("tbl_autenticacion_rol", "autenticacion");
+
+            entity.HasIndex(e => e.Nombre, "uq_autenticacion_rol_nombre").IsUnique();
 
             entity.Property(e => e.Id)
                 .UseIdentityAlwaysColumn()
@@ -1527,11 +1551,48 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Activo)
                 .HasDefaultValue(true)
                 .HasColumnName("activo");
+            entity.Property(e => e.Descripcion).HasColumnName("descripcion");
+            entity.Property(e => e.Essistema).HasColumnName("essistema");
             entity.Property(e => e.Fechacreacion)
                 .HasDefaultValueSql("now()")
                 .HasColumnName("fechacreacion");
-            entity.Property(e => e.Idrol).HasColumnName("idrol");
+            entity.Property(e => e.Fechamodificacion).HasColumnName("fechamodificacion");
+            entity.Property(e => e.Ipcreacion)
+                .HasMaxLength(45)
+                .HasColumnName("ipcreacion");
+            entity.Property(e => e.Ipmodificacion)
+                .HasMaxLength(45)
+                .HasColumnName("ipmodificacion");
+            entity.Property(e => e.Nombre)
+                .HasMaxLength(50)
+                .HasColumnName("nombre");
+            entity.Property(e => e.Usuariocreacion)
+                .HasMaxLength(50)
+                .HasColumnName("usuariocreacion");
+            entity.Property(e => e.Usuariomodificacion)
+                .HasMaxLength(50)
+                .HasColumnName("usuariomodificacion");
+        });
+
+        modelBuilder.Entity<TblAutenticacionUsuarioRol>(entity =>
+        {
+            entity.HasKey(e => new { e.Idusuario, e.Idrol }).HasName("pk_autenticacion_usuario_rol");
+
+            entity.ToTable("tbl_autenticacion_usuario_rol", "autenticacion");
+
             entity.Property(e => e.Idusuario).HasColumnName("idusuario");
+            entity.Property(e => e.Idrol).HasColumnName("idrol");
+            entity.Property(e => e.Activo)
+                .HasDefaultValue(true)
+                .HasColumnName("activo");
+            entity.Property(e => e.Asignadoen)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("asignadoen");
+            entity.Property(e => e.Asignadopor).HasColumnName("asignadopor");
+            entity.Property(e => e.Fechacreacion)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("fechacreacion");
+            entity.Property(e => e.Fechaexpiracion).HasColumnName("fechaexpiracion");
             entity.Property(e => e.Ipcreacion)
                 .HasMaxLength(45)
                 .HasColumnName("ipcreacion");
@@ -1541,12 +1602,10 @@ public partial class ApplicationDbContext : DbContext
 
             entity.HasOne(d => d.IdrolNavigation).WithMany(p => p.TblAutenticacionUsuarioRols)
                 .HasForeignKey(d => d.Idrol)
-                .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_autenticacion_usuario_rol_rol");
 
             entity.HasOne(d => d.IdusuarioNavigation).WithMany(p => p.TblAutenticacionUsuarioRols)
                 .HasForeignKey(d => d.Idusuario)
-                .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_autenticacion_usuario_rol_usuario");
         });
 
@@ -2648,6 +2707,77 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Usuariomodificacion)
                 .HasMaxLength(50)
                 .HasColumnName("usuariomodificacion");
+        });
+
+        modelBuilder.Entity<TblAutenticacionPermiso>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("pk_autenticacion_permiso");
+
+            entity.ToTable("tbl_autenticacion_permiso", "autenticacion");
+
+            entity.HasIndex(e => e.Codigo, "uq_autenticacion_permiso_codigo").IsUnique();
+
+            entity.Property(e => e.Id)
+                .UseIdentityAlwaysColumn()
+                .HasColumnName("id");
+            entity.Property(e => e.Idmodulo).HasColumnName("idmodulo");
+            entity.Property(e => e.Codigo)
+                .HasMaxLength(100)
+                .HasColumnName("codigo");
+            entity.Property(e => e.Accion)
+                .HasMaxLength(50)
+                .HasColumnName("accion");
+            entity.Property(e => e.Descripcion).HasColumnName("descripcion");
+            entity.Property(e => e.Activo)
+                .HasDefaultValue(true)
+                .HasColumnName("activo");
+            entity.Property(e => e.Usuariocreacion)
+                .HasMaxLength(50)
+                .HasColumnName("usuariocreacion");
+            entity.Property(e => e.Fechacreacion)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("fechacreacion");
+            entity.Property(e => e.Ipcreacion)
+                .HasMaxLength(45)
+                .HasColumnName("ipcreacion");
+        });
+
+        modelBuilder.Entity<TblAutenticacionRolPermiso>(entity =>
+        {
+            // PK compuesta — la tabla NO tiene columna Id surrogate
+            entity.HasKey(e => new { e.Idrol, e.Idpermiso }).HasName("pk_autenticacion_rol_permiso");
+
+            entity.ToTable("tbl_autenticacion_rol_permiso", "autenticacion");
+
+            entity.Property(e => e.Idrol).HasColumnName("idrol");
+            entity.Property(e => e.Idpermiso).HasColumnName("idpermiso");
+            entity.Property(e => e.Otorgado)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("otorgado");
+            entity.Property(e => e.Activo)
+                .HasDefaultValue(true)
+                .HasColumnName("activo");
+            entity.Property(e => e.Usuariocreacion)
+                .HasMaxLength(50)
+                .HasColumnName("usuariocreacion");
+            entity.Property(e => e.Fechacreacion)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("fechacreacion");
+            entity.Property(e => e.Ipcreacion)
+                .HasMaxLength(45)
+                .HasColumnName("ipcreacion");
+
+            entity.HasOne(d => d.IdpermisoNavigation)
+                .WithMany(p => p.TblAutenticacionRolPermisos)
+                .HasForeignKey(d => d.Idpermiso)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_autenticacion_rol_permiso_permiso");
+
+            entity.HasOne(d => d.IdrolNavigation)
+                .WithMany()
+                .HasForeignKey(d => d.Idrol)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_autenticacion_rol_permiso_rol");
         });
 
         OnModelCreatingPartial(modelBuilder);
