@@ -33,35 +33,36 @@ public sealed class AuthService(
             throw new ValidationException(validation.Errors);
 
         var normalizedEmail = request.Email.ToLowerInvariant();
+        var contrseñaDefecto = "Int3gr1ty123!"; // Contraseña por defecto (debe cambiar en el primer login)
 
         var existe = await db.TblAutenticacionUsuarios
             .AnyAsync(u => u.Email == normalizedEmail, ct);
         if (existe)
             throw new ConflictException("El email ya está registrado.");
 
-        var hash = passwordHasher.Hash(request.Password);
+        var hash = passwordHasher.Hash(contrseñaDefecto);
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         try
         {
             var persona = new TblAdministracionPersona
             {
-                Idgenero             = 1,
-                Idnacionalidad       = 5,
-                Idtipoidentificacion = 25,
+                Idgenero             = request.IdGenero,
+                Idnacionalidad       = request.IdNacionalidad,
+                Idtipoidentificacion = request.IdTipoIdentificacion,
                 Numeroidentificacion = request.Numeroidentificacion ?? "0000000000",
-                Tipopersona          = "NATURAL",
+                Tipopersona          = request.TipoPersona ?? "NATURAL",
                 Nombres              = request.Nombres,
                 Apellidos            = request.Apellidos,
-                Fechanacimiento      = new DateOnly(1990, 1, 1),
+                Fechanacimiento      = DateOnly.Parse(request.FechaNacimiento),
                 Email                = normalizedEmail,
                 Telefono             = request.Telefono ?? "",
                 Direccion            = request.Direccion ?? "",
                 Activo               = true,
-                Usuariocreacion      = "system",
+                //Campos de autoria
+                Usuariocreacion      = request.Usuario,
                 Fechacreacion        = DateTime.UtcNow,
-                Usuariomodificacion  = "system",
-                Ipcreacion           = "127.0.0.1"
+                Ipcreacion           = request.IP
             };
             db.TblAdministracionPersonas.Add(persona);
             await db.SaveChangesAsync(ct);
@@ -76,9 +77,9 @@ public sealed class AuthService(
                 Bloqueadohasta       = null,
                 Debecambiarpassword  = true,
                 Activo               = true,
-                Usuariocreacion      = "system",
+                Usuariocreacion      = request.Usuario,
                 Fechacreacion        = DateTime.UtcNow,
-                Ipcreacion           = "127.0.0.1"
+                Ipcreacion           = request.IP
             };
             db.TblAutenticacionUsuarios.Add(usuario);
             await db.SaveChangesAsync(ct);
@@ -89,9 +90,9 @@ public sealed class AuthService(
                 Idrol           = 4,
                 Asignadoen      = DateTime.UtcNow,
                 Activo          = true,
-                Usuariocreacion = "system",
+                Usuariocreacion = request.Usuario,
                 Fechacreacion   = DateTime.UtcNow,
-                Ipcreacion      = "127.0.0.1"
+                Ipcreacion      = request.IP
             };
             db.TblAutenticacionUsuarioRols.Add(usuarioRol);
             await db.SaveChangesAsync(ct);
@@ -121,10 +122,10 @@ public sealed class AuthService(
         if (!validation.IsValid)
             throw new ValidationException(validation.Errors);
 
-        var normalizedEmail = request.Email.ToLowerInvariant();
+        var normalizedUser = request.User.ToLowerInvariant();
 
         var usuario = await db.TblAutenticacionUsuarios
-            .FirstOrDefaultAsync(u => u.Email == normalizedEmail && u.Activo, ct)
+            .FirstOrDefaultAsync(u => u.Email == normalizedUser && u.Activo, ct)
             ?? throw new UnauthorizedException("Credenciales inválidas.");
 
         // Cuenta bloqueada
@@ -158,12 +159,14 @@ public sealed class AuthService(
             .OrderBy(s => s.Fechacreacion)
             .ToListAsync(ct);
 
+        var usuarioModificacion = usuario.Email.Contains('@') ? usuario.Email.Split('@')[0] : usuario.Email;
+
         if (sesionesActivas.Count >= _jwt.MaxActiveSessions)
         {
             var masAntigua = sesionesActivas.First();
             masAntigua.Estaactiva          = false;
             masAntigua.Revocadofecha       = DateTime.UtcNow;
-            masAntigua.Usuariomodificacion = usuario.Email;
+            masAntigua.Usuariomodificacion = usuarioModificacion;
             masAntigua.Fechamodificacion   = DateTime.UtcNow;
 
             await db.TblAutenticacionRefreshTokens
@@ -184,7 +187,7 @@ public sealed class AuthService(
             Ultimaactividad  = DateTime.UtcNow,
             Fechaexpiracion  = DateTime.UtcNow.AddDays(_jwt.AbsoluteTimeoutDays),
             Activo           = true,
-            Usuariocreacion  = usuario.Email,
+            Usuariocreacion  = usuarioModificacion,
             Fechacreacion    = DateTime.UtcNow,
             Ipcreacion       = clientIp
         };
@@ -206,7 +209,7 @@ public sealed class AuthService(
             Estarevocado    = false,
             Fechaexpiracion = rtExpiry,
             Activo          = true,
-            Usuariocreacion = usuario.Email,
+            Usuariocreacion = usuarioModificacion,
             Fechacreacion   = DateTime.UtcNow
         };
         db.TblAutenticacionRefreshTokens.Add(refreshToken);
