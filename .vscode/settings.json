@@ -1,0 +1,6 @@
+{
+    "workbench.editor.autoLockGroups": {
+        "workbench.editor.chatSession": true,
+        "terminalEditor": false
+    }
+}
