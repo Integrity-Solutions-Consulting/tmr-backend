@@ -25,6 +25,8 @@ public partial class TblAutenticacionSesion
 
     public bool? Estaactiva { get; set; }
 
+    public string? UltimoJti { get; set; }
+
     public bool Activo { get; set; }
 
     public string Usuariocreacion { get; set; } = null!;

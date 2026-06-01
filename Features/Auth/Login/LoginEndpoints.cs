@@ -1,6 +1,7 @@
 using tmr_backend.Features.Auth.Login.DTOs;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.EntityFrameworkCore;
 
 namespace tmr_backend.Features.Auth.Login;
 
@@ -34,9 +35,14 @@ public static class LoginEndpoints
         {
             return Results.Unauthorized();
         }
+        catch (DbUpdateException dbEx)
+        {
+            var innerError = dbEx.InnerException?.Message ?? dbEx.Message;
+            return Results.BadRequest(new { error = "Database error during login", details = innerError });
+        }
         catch (Exception ex)
         {
-            return Results.BadRequest(new { error = ex.Message });
+            return Results.BadRequest(new { error = ex.Message, innerException = ex.InnerException?.Message });
         }
     }
 }

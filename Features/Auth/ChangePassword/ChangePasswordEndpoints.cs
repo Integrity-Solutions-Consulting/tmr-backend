@@ -34,6 +34,10 @@ public static class ChangePasswordEndpoints
         {
             return Results.Unauthorized();
         }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
         catch (Exception ex)
         {
             return Results.BadRequest(new { error = ex.Message });

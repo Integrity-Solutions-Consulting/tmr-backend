@@ -717,23 +717,55 @@ public partial class ApplicationDbContext : DbContext
             entity.ToTable("tbl_autenticacion_sesion", "autenticacion");
             entity.HasIndex(e => e.Estaactiva, "idx_aut_sesion_activa");
             entity.HasIndex(e => e.Idusuario, "idx_aut_sesion_usuario");
-            entity.Property(e => e.Id).UseIdentityAlwaysColumn().HasColumnName("id");
-            entity.Property(e => e.Activo).HasDefaultValue(true).HasColumnName("activo");
-            entity.Property(e => e.Agenteusuario).HasMaxLength(512).HasColumnName("agenteusuario");
-            entity.Property(e => e.Direccionip).HasMaxLength(45).HasColumnName("direccionip");
-            entity.Property(e => e.Dispositivoinfo).HasMaxLength(255).HasColumnName("dispositivoinfo");
+
+            entity.HasIndex(e => e.UltimoJti, "idx_autenticacion_sesion_ultim_jti");
+
+            entity.HasIndex(e => new { e.Idusuario, e.UltimoJti }, "idx_autenticacion_sesion_user_jti")
+                .HasFilter("estaactiva = true");
+
+            entity.Property(e => e.Id)
+                .UseIdentityAlwaysColumn()
+                .HasColumnName("id");
+            entity.Property(e => e.Activo)
+                .HasDefaultValue(true)
+                .HasColumnName("activo");
+            entity.Property(e => e.Agenteusuario)
+                .HasMaxLength(512)
+                .HasColumnName("agenteusuario");
+            entity.Property(e => e.Direccionip)
+                .HasMaxLength(45)
+                .HasColumnName("direccionip");
+            entity.Property(e => e.Dispositivoinfo)
+                .HasMaxLength(255)
+                .HasColumnName("dispositivoinfo");
             entity.Property(e => e.Estaactiva).HasColumnName("estaactiva");
             entity.Property(e => e.Fechacreacion).HasDefaultValueSql("now()").HasColumnName("fechacreacion");
             entity.Property(e => e.Fechamodificacion).HasColumnName("fechamodificacion");
             entity.Property(e => e.Horaingreso).HasDefaultValueSql("now()").HasColumnName("horaingreso");
             entity.Property(e => e.Horasalida).HasColumnName("horasalida");
             entity.Property(e => e.Idusuario).HasColumnName("idusuario");
-            entity.Property(e => e.Ipcreacion).HasMaxLength(45).HasColumnName("ipcreacion");
-            entity.Property(e => e.Ipmodificacion).HasMaxLength(45).HasColumnName("ipmodificacion");
-            entity.Property(e => e.Tokensesion).HasMaxLength(1000).HasColumnName("tokensesion");
-            entity.Property(e => e.Ubicacioninfo).HasMaxLength(255).HasColumnName("ubicacioninfo");
-            entity.Property(e => e.Usuariocreacion).HasMaxLength(50).HasColumnName("usuariocreacion");
-            entity.Property(e => e.Usuariomodificacion).HasMaxLength(50).HasColumnName("usuariomodificacion");
+            entity.Property(e => e.Ipcreacion)
+                .HasMaxLength(45)
+                .HasColumnName("ipcreacion");
+            entity.Property(e => e.Ipmodificacion)
+                .HasMaxLength(45)
+                .HasColumnName("ipmodificacion");
+            entity.Property(e => e.Tokensesion)
+                .HasMaxLength(1000)
+                .HasColumnName("tokensesion");
+            entity.Property(e => e.Ubicacioninfo)
+                .HasMaxLength(255)
+                .HasColumnName("ubicacioninfo");
+            entity.Property(e => e.UltimoJti)
+                .HasMaxLength(500)
+                .HasColumnName("ultim_jti");
+            entity.Property(e => e.Usuariocreacion)
+                .HasMaxLength(50)
+                .HasColumnName("usuariocreacion");
+            entity.Property(e => e.Usuariomodificacion)
+                .HasMaxLength(50)
+                .HasColumnName("usuariomodificacion");
+
             entity.HasOne(d => d.IdusuarioNavigation).WithMany(p => p.TblAutenticacionSesions)
                 .HasForeignKey(d => d.Idusuario).OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_autenticacion_sesion_usuario");
