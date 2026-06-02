@@ -73,7 +73,8 @@ builder.Services.AddCors(options =>
     {
         policy.WithOrigins("http://localhost:4200")  // URL del frontend Angular
               .AllowAnyHeader()
-              .AllowAnyMethod();
+              .AllowAnyMethod()
+              .AllowCredentials(); // ← necesario para que las cookies pasen
     });
 });
 
