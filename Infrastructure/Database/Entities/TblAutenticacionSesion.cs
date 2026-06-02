@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace tmr_backend.Infrastructure.Database.Entities;
@@ -9,23 +9,22 @@ public partial class TblAutenticacionSesion
 
     public int Idusuario { get; set; }
 
-    public string Tokensesion { get; set; } = null!;
-
-    public DateTime Horaingreso { get; set; }
-
-    public DateTime? Horasalida { get; set; }
+    public string? Dispositivoinfo { get; set; }
 
     public string? Direccionip { get; set; }
 
     public string? Agenteusuario { get; set; }
 
-    public string? Dispositivoinfo { get; set; }
-
     public string? Ubicacioninfo { get; set; }
 
-    public bool? Estaactiva { get; set; }
+    public bool Estaactiva { get; set; }
 
-    public string? UltimoJti { get; set; }
+    public DateTime Ultimaactividad { get; set; }
+
+    public DateTime? Fechaexpiracion { get; set; }
+
+    public DateTime? Revocadofecha { get; set; }
+    public RevocacionRazonEnum? Revocadorazon { get; set; }
 
     public bool Activo { get; set; }
 
@@ -42,4 +41,6 @@ public partial class TblAutenticacionSesion
     public string? Ipmodificacion { get; set; }
 
     public virtual TblAutenticacionUsuario IdusuarioNavigation { get; set; } = null!;
+
+    public virtual ICollection<TblAutenticacionRefreshToken> TblAutenticacionRefreshTokens { get; set; } = new List<TblAutenticacionRefreshToken>();
 }
