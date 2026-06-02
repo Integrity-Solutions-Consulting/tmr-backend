@@ -23,10 +23,10 @@ namespace tmr_backend.Features.Reportes.Domain
         [Column("tipopersona")]
         public string TipoPersona { get; set; } = null!;
         [Required]
-        [Column("primernombre")]
+        [Column("nombres")]
         public string PrimerNombre { get; set; } = null!;
         [Required]
-        [Column("apellidopaterno")]
+        [Column("apellidos")]
         public string ApellidoPaterno { get; set; } = null!;
         [Column("fechanacimiento")]
         public DateTime? FechaNacimiento { get; set; }

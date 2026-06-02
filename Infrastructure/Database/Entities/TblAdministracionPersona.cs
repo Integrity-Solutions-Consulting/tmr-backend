@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -18,10 +18,10 @@ public partial class TblAdministracionPersona
 
     public string Tipopersona { get; set; } = null!;
 
-    [Column("primernombre")]
+    [Column("nombres")]
     public string Nombres { get; set; } = null!;
 
-    [Column("apellidopaterno")]
+    [Column("apellidos")]
     public string Apellidos { get; set; } = null!;
 
     public DateOnly? Fechanacimiento { get; set; }
