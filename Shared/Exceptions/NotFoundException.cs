@@ -1,3 +1,6 @@
 namespace tmr_backend.Shared.Exceptions;
 
-public class NotFoundException(string message) : Exception(message);
+public class NotFoundException(string message, string? code = null) : Exception(message)
+{
+    public string? Code { get; } = code;
+}

@@ -1,5 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using tmr_backend.Infrastructure.Database;
+using tmr_backend.Infrastructure.Database.Entities;
 using tmr_backend.Features.Clientes;
 using tmr_backend.Features.Auth;
 using tmr_backend.Features.CargaActividades;
@@ -57,6 +59,7 @@ builder.Services.Configure<JwtSettings>(
 
 // ── Seguridad ─────────────────────────────────────────────
 builder.Services.AddMemoryCache();
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IPasswordHasher,   PasswordHasher>();
 builder.Services.AddScoped<ITokenService,     TokenService>();
 builder.Services.AddScoped<IAuthService,      AuthService>();

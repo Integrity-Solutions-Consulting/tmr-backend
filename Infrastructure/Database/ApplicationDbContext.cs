@@ -153,8 +153,7 @@ public partial class ApplicationDbContext : DbContext
         modelBuilder
             .HasPostgresExtension("pgcrypto")
             .HasPostgresExtension("uuid-ossp")
-            .HasPostgresEnum("autenticacion", "audit_evento_enum", new[] { "LOGIN_OK", "LOGIN_FAIL", "LOGOUT", "REFRESH_OK", "REFRESH_FAIL", "TOKEN_REVOKE", "PASSWORD_CHANGE", "USER_CREATE", "USER_BLOCK" })
-            .HasPostgresEnum("autenticacion", "revocacion_razon_enum", new[] { "LOGOUT", "ADMIN_REVOKE", "PASSWORD_CHANGE", "SECURITY_BREACH", "EXPIRED" });
+            .HasPostgresEnum("autenticacion", "audit_evento_enum", new[] { "LOGIN_OK", "LOGIN_FAIL", "LOGOUT", "REFRESH_OK", "REFRESH_FAIL", "TOKEN_REVOKE", "PASSWORD_CHANGE", "USER_CREATE", "USER_BLOCK" });
 
         modelBuilder.Entity<TblAdministracionApariencium>(entity =>
         {
@@ -1321,6 +1320,10 @@ public partial class ApplicationDbContext : DbContext
                 .HasColumnName("ipmodificacion");
             entity.Property(e => e.Fechaexpiracion).HasColumnName("fechaexpiracion");
             entity.Property(e => e.Revocadofecha).HasColumnName("revocadofecha");
+            entity.Property(e => e.Revocadorazon)
+                .HasColumnName("revocadorazon")
+                .HasMaxLength(50)
+                .HasConversion<string?>();
             entity.Property(e => e.Ubicacioninfo)
                 .HasMaxLength(255)
                 .HasColumnName("ubicacioninfo");

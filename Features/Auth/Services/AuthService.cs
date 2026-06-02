@@ -14,6 +14,7 @@ namespace tmr_backend.Features.Auth.Services;
 public sealed class AuthService(
     ApplicationDbContext db,
     ITokenService tokenService,
+    IHttpContextAccessor httpContextAccessor,
     IPasswordHasher passwordHasher,
     IValidator<RegisterRequest> registerValidator,
     IValidator<LoginRequest> loginValidator,
@@ -126,12 +127,13 @@ public sealed class AuthService(
 
         var usuario = await db.TblAutenticacionUsuarios
             .FirstOrDefaultAsync(u => u.Email == normalizedUser && u.Activo, ct)
-            ?? throw new UnauthorizedException("Credenciales inválidas.");
+            ?? throw new UnauthorizedException("Credenciales inválidas.", "INVALID_CREDENTIALS");
 
         // Cuenta bloqueada
         if (usuario.Bloqueadohasta.HasValue && usuario.Bloqueadohasta > DateTime.UtcNow)
             throw new UnauthorizedException(
-                $"Cuenta bloqueada temporalmente. Intente después de las {usuario.Bloqueadohasta:HH:mm} UTC.");
+                $"Cuenta bloqueada temporalmente. Intente después de las {usuario.Bloqueadohasta:HH:mm} UTC.",
+                "ACCOUNT_LOCKED");
 
         // Verificar password
         if (!passwordHasher.Verify(request.Password, usuario.Hashpassword))
@@ -143,7 +145,7 @@ public sealed class AuthService(
                 usuario.Intentosfallidos = 0;
             }
             await db.SaveChangesAsync(ct);
-            throw new UnauthorizedException("Credenciales inválidas.");
+            throw new UnauthorizedException("Credenciales inválidas.", "INVALID_CREDENTIALS");
         }
 
         // Credenciales OK — resetear contadores
@@ -226,40 +228,69 @@ public sealed class AuthService(
         string clientIp,
         CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(request.RefreshToken))
+            throw new UnauthorizedAccessException("Refresh token inválido.");
+
         var hash = tokenService.HashToken(request.RefreshToken);
 
         var rt = await db.TblAutenticacionRefreshTokens
             .FirstOrDefaultAsync(r => r.Tokenhash == hash, ct)
-            ?? throw new UnauthorizedException("Refresh token inválido.");
+            ?? throw new UnauthorizedException("Refresh token inválido.", "TOKEN_INVALID");
 
         // REUSE ATTACK — si ya fue usado, revocar toda la familia
         if (rt.Estausado)
         {
             await RevokeTokenFamilyInternalAsync(rt.Familiatoken, ct);
-            throw new UnauthorizedException("Refresh token reutilizado. Sesión revocada por seguridad.");
+            throw new UnauthorizedException("Refresh token reutilizado. Sesión revocada por seguridad.", "TOKEN_REUSED");
         }
 
         if (rt.Estarevocado)
-            throw new UnauthorizedException("Refresh token revocado.");
+            throw new UnauthorizedException("Refresh token revocado.", "TOKEN_REVOKED");
 
         if (rt.Fechaexpiracion < DateTime.UtcNow)
-            throw new UnauthorizedException("Refresh token expirado.");
+            throw new UnauthorizedException("Refresh token expirado.", "TOKEN_EXPIRED");
 
         // Idle + Absolute timeout — verificar antes de marcar RT como usado para evitar falso reuse attack
-        var sesion = await db.TblAutenticacionSesions.FindAsync([rt.Idsesion], ct);
+        var sesion = await db.TblAutenticacionSesions.FirstOrDefaultAsync(s => s.Id == rt.Idsesion, ct);
         if (sesion is not null)
         {
+            var currentUserIp = httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString();
+            if (!string.IsNullOrEmpty(sesion.Direccionip) && sesion.Direccionip != currentUserIp)
+            {
+                await RevokeTokenFamilyInternalAsync(rt.Familiatoken, ct);
+                throw new UnauthorizedException("Acceso desde dirección IP diferente. Inicia sesión nuevamente.", "IP_MISMATCH");
+            }
+
+            var currentUserAgent = httpContextAccessor.HttpContext?.Request.Headers["User-Agent"].ToString();
+            if (!string.IsNullOrEmpty(sesion.Agenteusuario) && sesion.Agenteusuario != currentUserAgent)
+            {
+                await RevokeTokenFamilyInternalAsync(rt.Familiatoken, ct);
+                throw new UnauthorizedAccessException("Acceso desde dispositivo diferente. Inicia sesión nuevamente.");
+            }
+
+            var recentRefreshCount = await db.TblAutenticacionSesions
+            .Where(s => s.Idusuario == sesion.Idusuario && 
+                   s.Fechamodificacion > DateTime.UtcNow.AddMinutes(-5) &&
+                   s.Estaactiva == true)
+            .CountAsync(ct);
+
+            if (recentRefreshCount > 10)
+            {
+                await RevokeTokenFamilyInternalAsync(rt.Familiatoken, ct);
+                throw new UnauthorizedAccessException("Demasiados intentos de refresh. Inicia sesión nuevamente.");
+            }
+
             var idleLimit = DateTime.UtcNow.AddDays(-_jwt.IdleTimeoutDays);
             if (sesion.Ultimaactividad < idleLimit)
             {
                 await RevokeTokenFamilyInternalAsync(rt.Familiatoken, ct);
-                throw new UnauthorizedException("Sesión expirada por inactividad.");
+                throw new UnauthorizedException("Sesión expirada por inactividad.", "SESSION_IDLE_TIMEOUT");
             }
 
             if (sesion.Fechaexpiracion.HasValue && sesion.Fechaexpiracion.Value < DateTime.UtcNow)
             {
                 await RevokeTokenFamilyInternalAsync(rt.Familiatoken, ct);
-                throw new UnauthorizedException("Sesión expirada. Inicia sesión nuevamente.");
+                throw new UnauthorizedException("Sesión expirada. Inicia sesión nuevamente.", "SESSION_EXPIRED");
             }
         }
 
@@ -274,11 +305,13 @@ public sealed class AuthService(
 
         var roles = await LoadUserRolesAsync(usuario.Id, ct);
 
+        var usuarioModificacion = usuario.Email.Contains('@') ? usuario.Email.Split('@')[0] : usuario.Email;
+
         // Actualizar actividad de sesión
         if (sesion is not null)
         {
             sesion.Ultimaactividad     = DateTime.UtcNow;
-            sesion.Usuariomodificacion = usuario.Email;
+            sesion.Usuariomodificacion = usuarioModificacion;
             sesion.Fechamodificacion   = DateTime.UtcNow;
         }
 
@@ -296,7 +329,7 @@ public sealed class AuthService(
             Estarevocado    = false,
             Fechaexpiracion = rtExpiry,
             Activo          = true,
-            Usuariocreacion = usuario.Email,
+            Usuariocreacion = usuarioModificacion,
             Fechacreacion   = DateTime.UtcNow
         };
         db.TblAutenticacionRefreshTokens.Add(newRt);
@@ -342,7 +375,7 @@ public sealed class AuthService(
         {
             rt.Estarevocado = true;
 
-            var sesion = await db.TblAutenticacionSesions.FindAsync([rt.Idsesion], ct);
+            var sesion = await db.TblAutenticacionSesions.FirstOrDefaultAsync(s => s.Id == rt.Idsesion, ct);
             if (sesion is not null)
             {
                 sesion.Estaactiva          = false;
@@ -372,10 +405,42 @@ public sealed class AuthService(
     // ─────────────────────────────────────────────────────────────────────────
     // Helpers privados
     // ─────────────────────────────────────────────────────────────────────────
-    private async Task RevokeTokenFamilyInternalAsync(Guid familyId, CancellationToken ct) =>
-        await db.TblAutenticacionRefreshTokens
+    private async Task RevokeTokenFamilyInternalAsync(Guid familyId, CancellationToken ct)
+    {
+        // Obtener todos los refresh tokens de la familia que no están revocados
+        var tokensToRevoke = await db.TblAutenticacionRefreshTokens
             .Where(r => r.Familiatoken == familyId && !r.Estarevocado)
-            .ExecuteUpdateAsync(s => s.SetProperty(r => r.Estarevocado, true), ct);
+            .ToListAsync(ct);
+
+        if (tokensToRevoke.Count == 0)
+            return;
+
+        // Obtener todas las sesiones asociadas
+        var sessionIds = tokensToRevoke.Select(t => t.Idsesion).Distinct().ToList();
+        var sessionsToRevoke = await db.TblAutenticacionSesions
+            .Where(s => sessionIds.Contains(s.Id) && s.Estaactiva)
+            .ToListAsync(ct);
+
+        // Revocar tokens
+        foreach (var token in tokensToRevoke)
+        {
+            token.Estarevocado = true;
+            token.Activo = false;
+        }
+
+        // Revocar sesiones
+        foreach (var sesion in sessionsToRevoke)
+        {
+            sesion.Estaactiva = false;
+            sesion.Activo = false;
+            sesion.Revocadofecha = DateTime.UtcNow;
+            sesion.Revocadorazon = RevocacionRazonEnum.ADMIN_REVOKE;
+            sesion.Usuariomodificacion = "system";
+            sesion.Fechamodificacion = DateTime.UtcNow;
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
 
     private async Task<List<string>> LoadUserRolesAsync(int idUsuario, CancellationToken ct) =>
         await db.TblAutenticacionUsuarioRols

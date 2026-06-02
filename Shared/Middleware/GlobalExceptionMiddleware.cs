@@ -38,9 +38,35 @@ public class GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExcep
             _                                     => (HttpStatusCode.InternalServerError, "Ocurrió un error inesperado")
         };
 
+        bool isBusinessException = exception is
+            FluentValidation.ValidationException or
+            Exceptions.ConflictException or
+            Exceptions.NotFoundException or
+            Exceptions.UnauthorizedException or
+            KeyNotFoundException or
+            UnauthorizedAccessException or
+            ArgumentException or
+            InvalidOperationException;
+
+        string? errorCode = exception switch
+        {
+            Exceptions.UnauthorizedException { Code: not null } uex => uex.Code,
+            Exceptions.ConflictException     { Code: not null } cex => cex.Code,
+            Exceptions.NotFoundException     { Code: not null } nex => nex.Code,
+            Exceptions.UnauthorizedException                        => "UNAUTHORIZED",
+            Exceptions.ConflictException                            => "CONFLICT",
+            Exceptions.NotFoundException                            => "NOT_FOUND",
+            FluentValidation.ValidationException                    => "VALIDATION_ERROR",
+            UnauthorizedAccessException                             => "UNAUTHORIZED",
+            KeyNotFoundException                                    => "NOT_FOUND",
+            ArgumentException                                       => "INVALID_ARGUMENT",
+            InvalidOperationException                               => "INVALID_OPERATION",
+            _                                                       => "SERVER_ERROR"
+        };
+
         IEnumerable<ApiError> errors = exception is FluentValidation.ValidationException fluentEx
-            ? fluentEx.Errors.Select(e => new ApiError(e.PropertyName, e.ErrorMessage))
-            : [new ApiError("server", env.IsDevelopment() ? exception.ToString() : exception.Message)];
+            ? fluentEx.Errors.Select(e => new ApiError(e.PropertyName, e.ErrorMessage, "VALIDATION_ERROR"))
+            : [new ApiError("server", isBusinessException || !env.IsDevelopment() ? exception.Message : exception.ToString(), errorCode)];
 
         var code = (int)statusCode;
 
