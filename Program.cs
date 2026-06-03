@@ -3,6 +3,9 @@ using Npgsql;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
 using tmr_backend.Features.Clientes;
+using tmr_backend.Features.Clientes.DTOs.Request;
+using tmr_backend.Features.Clientes.Services;
+using tmr_backend.Features.Clientes.Validators;
 using tmr_backend.Features.Auth;
 using tmr_backend.Features.Usuarios.Endpoints;
 using tmr_backend.Features.CargaActividades;
@@ -42,6 +45,7 @@ using tmr_backend.Shared.Wrappers;
 using Microsoft.AspNetCore.Authorization;
 using tmr_backend.Shared.Middleware;
 using Microsoft.OpenApi;
+
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -182,6 +186,15 @@ builder.Services.AddScoped<ICargarActividadesExcelHandler, CargarActividadesExce
 // ── Lideres ───────────────────────────────────────────────
 builder.Services.AddScoped<ILiderService,   LiderService>();
 
+
+// ── Servicios de Clientes (DI - SOLID) ─────────────
+builder.Services.AddScoped<IClienteService, ClienteService>();
+// ── Validadores de Clientes (FluentValidation) ───────
+builder.Services.AddScoped<IValidator<CrearClienteRequest>, CrearClienteRequestValidator>();
+builder.Services.AddScoped<IValidator<ActualizarClienteRequest>, ActualizarClienteRequestValidator>();
+
+
+// Register FluentValidation validators from the auth feature
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtSettings>()!;
@@ -260,6 +273,19 @@ builder.Services.AddCors(options =>
 // Los permisos granulares (PROYECTOS_CREATE, etc.) los genera PermissionPolicyProvider
 // dinámicamente a partir del claim "permission" inyectado por PermissionEnrichmentMiddleware.
 builder.Services.AddAuthorization();
+
+// ── CORS para el frontend Angular ─────────────────────────
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("PermitirFrontend", policy =>
+    {
+        policy.WithOrigins("http://localhost:4200")
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials(); // ← necesario para que las cookies pasen
+    });
+});
+
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
 
 // TU FEATURE
@@ -293,6 +319,8 @@ if (app.Environment.IsDevelopment())
         };
     });
 }
+
+app.UseCors("PermitirFrontend");
 
 app.UseHttpsRedirection();
 app.UseCors("PermitirAngular");
