@@ -12,10 +12,10 @@ using tmr_backend.Features.CargaActividades.Domain;
 using tmr_backend.Features.Colaboradores.Domain;
 using tmr_backend.Features.Configuracion.Domain;
 using tmr_backend.Features.Dashboard.Domain;
-using tmr_backend.Features.Lideres.Domain;
 using tmr_backend.Features.Proyectos.Domain;
 using tmr_backend.Features.Reportes.Domain;
 using tmr_backend.Features.TimeReport.Domain;
+using tmr_backend.Features.Lideres.Domain;
 
 namespace tmr_backend.Infrastructure.Database;
 
@@ -733,6 +733,17 @@ public partial class ApplicationDbContext : DbContext
             entity.HasOne(d => d.IdtipocontratoNavigation).WithMany(p => p.TblAdministracionEmpleadoIdtipocontratoNavigations)
                 .HasForeignKey(d => d.Idtipocontrato)
                 .HasConstraintName("fk_administracion_empleado_contrato");
+        });
+
+        modelBuilder.Entity<Lider>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Codigo).IsRequired().HasMaxLength(10);
+            entity.Property(e => e.Tipo).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.PrimerNombre).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Apellidos).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.CorreoElectronico).HasMaxLength(150);
+            entity.Property(e => e.Telefono).HasMaxLength(20);
         });
 
         modelBuilder.Entity<TblAdministracionLider>(entity =>
@@ -3208,3 +3219,4 @@ public partial class ApplicationDbContext : DbContext
 
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder);
 }
+ // Archivo modificado actualizado
