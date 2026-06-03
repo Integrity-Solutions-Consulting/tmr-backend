@@ -1,0 +1,80 @@
+📁 tmr_backend/
+│
+├── 📁 Features/
+│   │
+│   └── 📁 Auth/
+│       │
+│       ├── 📁 Login/
+│       │   ├── LoginEndpoint.cs               # POST /api/auth/login
+│       │   ├── 📁 DTOs/
+│       │   │   ├── LoginRequest.cs            # { Email, Password }
+│       │   │   └── LoginResponse.cs           # { AccessToken, RefreshToken }
+│       │   ├── LoginHandler.cs                # Valida credenciales (IPasswordHasher), obtiene roles (LINQ), genera tokens (ITokenService), guarda sesión hasheada (DbContext)
+│       │   └── LoginValidator.cs              # FluentValidation
+│       │
+│       ├── 📁 Refresh/
+│       │   ├── RefreshEndpoint.cs             # POST /api/auth/refresh
+│       │   ├── 📁 DTOs/
+│       │   │   ├── RefreshTokenRequest.cs     # { RefreshToken }
+│       │   │   └── RefreshTokenResponse.cs    # { NewAccessToken, NewRefreshToken }
+│       │   ├── RefreshHandler.cs              # Busca sesión por hash (LINQ), valida expiración, genera nuevos tokens, actualiza BD
+│       │   └── RefreshValidator.cs
+│       │
+│       ├── 📁 Logout/
+│       │   ├── LogoutEndpoint.cs              # POST /api/auth/logout
+│       │   ├── 📁 DTOs/
+│       │   │   └── LogoutRequest.cs           # { RefreshToken } (opcional)
+│       │   ├── LogoutHandler.cs               # Elimina o invalida sesión (LINQ + SaveChanges), agrega token a blacklist si aplica
+│       │   └── TokenBlacklistService.cs       # (opcional) lógica compartida
+│       │
+│       ├── 📁 ChangePassword/
+│       │   ├── ChangePasswordEndpoint.cs      # POST /api/auth/change-password
+│       │   ├── 📁 DTOs/
+│       │   │   └── ChangePasswordRequest.cs   # { OldPassword, NewPassword }
+│       │   ├── ChangePasswordHandler.cs       # Verifica old password (IPasswordHasher), actualiza hash, guarda historial (LINQ)
+│       │   └── 📁 Validators/
+│       │       ├── PasswordPolicyValidator.cs
+│       │       └── PasswordHistoryValidator.cs (consulta LINQ al historial)
+│       │
+│       ├── 📁 GetCurrentUser/                  # Opcional – datos actualizados no presentes en JWT
+│       │   ├── GetCurrentUserEndpoint.cs      # GET /api/auth/me
+│       │   ├── 📁 DTOs/
+│       │   │   └── CurrentUserResponse.cs     # { Id, Nombre, Email, Roles, Foto, etc. }
+│       │   └── GetCurrentUserHandler.cs       # Consulta usuario por ID (LINQ con Include/ThenInclude)
+│       │
+│       └── 📁 GetPermissions/                  # Opcional – permisos granulares o menú dinámico
+│           ├── GetPermissionsEndpoint.cs      # GET /api/auth/permissions
+│           ├── 📁 DTOs/
+│           │   └── UserPermissionsResponse.cs # { Roles, Modulos, Acciones, MenuItems }
+│           └── GetPermissionsHandler.cs       # Consulta roles/módulos/menú con LINQ y joins sobre DbContext
+│
+├── 📁 Infrastructure/
+│   │
+│   ├── 📁 Database/
+│   │   ├── 📁 Entities/
+│   │   │   ├── TblAutenticacionUsuario.cs      # Usuario (Id, Email, PasswordHash, etc.)
+│   │   │   ├── TblEmpleado.cs
+│   │   │   ├── TblPersona.cs
+│   │   │   ├── TblCargo.cs
+│   │   │   ├── TblSesion.cs                    # RefreshTokenHash, ExpiresAt, UsuarioId
+│   │   │   ├── TblTokenBlacklist.cs
+│   │   │   ├── TblPasswordHistorial.cs
+│   │   │   └── (relaciones: TblUsuarioRol, TblRol, etc.)
+│   │   ├── ApplicationDbContext.cs             # DbSet<T>, Fluent API config
+│   │   └── DbContextFactory.cs                 # opcional
+│   │
+│   ├── 📁 Security/
+│   │   ├── JwtSettings.cs                      # Settings: SecretKey, Issuer, Audience, AccessTokenMinutes, RefreshTokenDays
+│   │   ├── IPasswordHasher.cs
+│   │   ├── PasswordHasher.cs                   # BCrypt
+│   │   ├── ITokenService.cs
+│   │   ├── TokenService.cs                     # Genera Access Token (incluye roles como claims), genera Refresh Token (bytes aleatorios), hashea (SHA256)
+│   │   ├── JwtValidator.cs                     # (opcional) validaciones extra
+│   │   └── AuthenticationMiddleware.cs         # Extrae token del header, valida, establece HttpContext.User
+│   │
+│   └── 📁 Shared/
+│       ├── AuditInterceptor.cs                 # Interceptor de EF Core para auditoría automática
+│       └── CurrentUserService.cs               # Servicio para obtener el usuario autenticado desde HttpContext
+│
+├── 📁 Program.cs                                # Registro de servicios (DbContext, JwtSettings, Security, handlers), autenticación JWT, autorización
+└── 📁 appsettings.json                          # Conexión a BD, JWT:SecretKey, Issuer, Audience, AccessTokenMinutes, RefreshTokenDays

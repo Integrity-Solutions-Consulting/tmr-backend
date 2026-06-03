@@ -1,6 +1,7 @@
 using tmr_backend.Features.Lideres.DTOs.Request;
 using tmr_backend.Features.Lideres.DTOs.Response;
 
+using tmr_backend.Features.Lideres.DTOs.Response;
 namespace tmr_backend.Features.Lideres.Services;
 
 public interface ILiderService
@@ -13,4 +14,5 @@ public interface ILiderService
     Task<ContadoresLiderResponse> ObtenerContadoresAsync(CancellationToken ct);
     Task<IEnumerable<PersonaDisponibleResponse>> ObtenerPersonasDisponiblesAsync(CancellationToken ct);
     Task<IEnumerable<TipoLiderResponse>> ObtenerTiposAsync(CancellationToken ct);
+    Task<List<PersonaResponse>> ObtenerPersonasNoLideresAsync(CancellationToken ct);
 }

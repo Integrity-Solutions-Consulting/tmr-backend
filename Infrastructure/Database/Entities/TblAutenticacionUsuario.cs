@@ -15,7 +15,11 @@ public partial class TblAutenticacionUsuario
 
     public DateTime? Ultimologin { get; set; }
 
-    public bool? Estaactivo { get; set; }
+    public bool Emailverificado { get; set; }
+
+    public short Intentosfallidos { get; set; }
+
+    public DateTime? Bloqueadohasta { get; set; }
 
     public bool Debecambiarpassword { get; set; }
 
@@ -46,6 +50,8 @@ public partial class TblAutenticacionUsuario
     public virtual ICollection<TblAutenticacionPrivilegioUsuario> TblAutenticacionPrivilegioUsuarios { get; set; } = new List<TblAutenticacionPrivilegioUsuario>();
 
     public virtual ICollection<TblAutenticacionSesionApp> TblAutenticacionSesionApps { get; set; } = new List<TblAutenticacionSesionApp>();
+
+    public virtual ICollection<TblAutenticacionRefreshToken> TblAutenticacionRefreshTokens { get; set; } = new List<TblAutenticacionRefreshToken>();
 
     public virtual ICollection<TblAutenticacionSesion> TblAutenticacionSesions { get; set; } = new List<TblAutenticacionSesion>();
 
