@@ -4,6 +4,9 @@ using Microsoft.EntityFrameworkCore;
 using tmr_backend.Infrastructure.Database.Entities;
 
 using tmr_backend.Features.Clientes.Domain;
+using tmr_backend.Features.CargaActividades.Domain;
+using tmr_backend.Features.Colaboradores.Domain;
+using tmr_backend.Features.Dashboard.Domain;
 using tmr_backend.Features.Usuarios.Domain;
 using tmr_backend.Features.CargaActividades.Domain;
 using tmr_backend.Features.Colaboradores.Domain;
@@ -27,6 +30,7 @@ public partial class ApplicationDbContext : DbContext
     public DbSet<Usuario> Usuarios { get; set; } = null!;
     public DbSet<Actividad> Actividades { get; set; } = null!;
     public DbSet<Colaborador> Colaboradores { get; set; } = null!;
+    public DbSet<Actividad> Actividades { get; set; } = null!;
     public DbSet<ConfiguracionSistema> ConfiguracionesSistema { get; set; } = null!;
     public DbSet<DashboardItem> DashboardItems { get; set; } = null!;
 

@@ -100,6 +100,11 @@ public sealed class TokenService(IOptions<JwtSettings> jwtSettings, IConfigurati
         return (new JwtSecurityTokenHandler().WriteToken(token), jti);
     }
 
+
+    // ---------------------------------------------------------------
+    // REFRESH TOKEN — bytes aleatorios criptográficamente seguros
+    // ---------------------------------------------------------------
+    public (string Token, DateTime ExpiresAt) GenerateRefreshToken()
     public (string RawToken, string TokenHash, DateTime ExpiresAt) GenerateRefreshTokenRaw()
     {
         var expirationDays = _jwt.RefreshTokenDays;

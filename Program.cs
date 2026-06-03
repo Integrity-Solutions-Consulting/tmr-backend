@@ -8,7 +8,6 @@ using tmr_backend.Features.Usuarios.Endpoints;
 using tmr_backend.Features.CargaActividades;
 
 using tmr_backend.Features.Colaboradores;
-using tmr_backend.Features.Configuracion;
 using tmr_backend.Features.Dashboard;
 using tmr_backend.Features.Lideres;
 using tmr_backend.Features.Proyectos;
@@ -16,6 +15,12 @@ using tmr_backend.Features.Catalogos;
 using tmr_backend.Features.Reportes;
 using tmr_backend.Features.TimeReport;
 using tmr_backend.Features.HealthCheck.Services;
+using tmr_backend.Features.Configuracion.Usuarios.Application;
+using tmr_backend.Features.Configuracion.Usuarios.Endpoints;
+using tmr_backend.Features.Configuracion.Roles.Application;
+using tmr_backend.Features.Configuracion.Roles.Endpoints;
+using tmr_backend.Features.Configuracion.DiasFestivos.Application;
+using tmr_backend.Features.Configuracion.DiasFestivos.Endpoints;
 using tmr_backend.Features.HealthCheck.Endpoints;
 using Scalar.AspNetCore;
 using tmr_backend.Infrastructure.Security;
@@ -133,6 +138,11 @@ builder.Services.AddScoped<GetCurrentUserHandler>();
 builder.Services.AddScoped<GetPermissionsHandler>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 
+// ── Servicios de Configuración ─────────────────────────────
+builder.Services.AddScoped<IUsuariosConfigService, UsuariosConfigService>();
+builder.Services.AddScoped<IRolesConfigService, RolesConfigService>();
+builder.Services.AddScoped<IDiasFestivosService, DiasFestivosService>();
+
 // ── Memory Cache para blacklist de tokens ──────────────────
 builder.Services.AddMemoryCache();
 
@@ -142,6 +152,7 @@ builder.Services.AddMemoryCache();
 builder.Services.AddScoped<AuditInterceptor>();
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<ITokenService, TokenService>();
+// builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<IHealthCheckService, HealthCheckService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
@@ -264,12 +275,14 @@ app.MapAuthEndpoints();
 app.MapUsuariosEndpoints();
 app.MapCargaActividadesEndpoints();
 app.MapColaboradoresEndpoints();
-app.MapConfiguracionEndpoints();
 app.MapDashboardEndpoints();
 app.MapLideresEndpoints();
 app.MapProyectosEndpoints();
 app.MapCatalogosEndpoints();
 app.MapReportesEndpoints();
 app.MapTimeReportEndpoints();
+app.MapUsuariosConfigEndpoints();
+app.MapRolesConfigEndpoints();
+app.MapDiasFestivosEndpoints();
 
 app.Run();
