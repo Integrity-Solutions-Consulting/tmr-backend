@@ -1,6 +1,6 @@
 namespace tmr_backend.Features.Configuracion.Usuarios.DTOs;
 
-public record CreateUsuarioRequest(
+public record CrearUsuarioConfigRequest(
     string numeroidentificacion,
     string nombres,
     string apellidos,
@@ -78,8 +78,10 @@ public record PaginatedResponse<T>(
     int pagesize,
     int totalpages);
 
-public record CrearUsuarioResponse(
+public record CrearUsuarioConfigResponse(
     int id,
+    int idpersona,
+    int idusuario,
     string numeroidentificacion,
     string nombres,
     string apellidos,
