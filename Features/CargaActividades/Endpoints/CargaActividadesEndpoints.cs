@@ -172,7 +172,7 @@ public static class CargaActividadesEndpoints
         // NUEVA FUNCIONALIDAD: Carga Masiva de Actividades desde Planilla Excel
         // RUTA FINAL: POST /api/carga-actividades/excel
         // =============================================================================
-        group.MapPost("/excel", async ([FromForm] IFormFile file, HttpContext context, ICargarActividadesExcelHandler handler) =>
+        group.MapPost("/excel", async ([FromForm] IFormFile file, HttpContext context, [FromServices] ICargarActividadesExcelHandler handler) =>
         {
             try
             {
@@ -181,11 +181,7 @@ public static class CargaActividadesEndpoints
                     return Results.BadRequest(CargaActividadesResponse.Failure("El archivo Excel no fue proporcionado o está vacío."));
                 }
 
-                // REGLA DE SEGURIDAD EN DESARROLLO: Forzamos ID de prueba local para usar Scalar sin Token JWT
-                var colaboradorId = "00000000-0000-0000-0000-000000000000";
-
-                // NOTA: Cuando vayas a pasar a producción con la seguridad de la empresa, descomenta la línea de abajo:
-                // var colaboradorId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                var colaboradorId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
                 if (string.IsNullOrEmpty(colaboradorId))
                 {
@@ -218,6 +214,8 @@ public static class CargaActividadesEndpoints
             }
         })
         .WithName("CargarActividadesExcel")
+        .RequireAuthorization()
+        .DisableAntiforgery()
         .DisableAntiforgery(); // Desactiva la protección automática de formularios de .NET 10
     }
 }
