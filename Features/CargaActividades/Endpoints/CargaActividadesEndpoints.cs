@@ -172,7 +172,7 @@ public static class CargaActividadesEndpoints
         // NUEVA FUNCIONALIDAD: Carga Masiva de Actividades desde Planilla Excel
         // RUTA FINAL: POST /api/carga-actividades/excel
         // =============================================================================
-        group.MapPost("/excel", async ([FromForm] IFormFile file, HttpContext context, ICargarActividadesExcelHandler handler) =>
+        group.MapPost("/excel", async ([FromForm] IFormFile file, HttpContext context, [FromServices] ICargarActividadesExcelHandler handler) =>
         {
             try
             {

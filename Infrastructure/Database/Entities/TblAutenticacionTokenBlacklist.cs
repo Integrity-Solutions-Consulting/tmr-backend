@@ -1,13 +1,15 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace tmr_backend.Infrastructure.Database.Entities;
 
 public partial class TblAutenticacionTokenBlacklist
 {
-    public long Id { get; set; }
+    public string Jti { get; set; } = null!;
 
-    public string Token { get; set; } = null!;
+    public int? Idusuario { get; set; }
+
+    public DateTime Fecharevocado { get; set; }
 
     public DateTime? Fechaexpiracion { get; set; }
 
@@ -16,4 +18,6 @@ public partial class TblAutenticacionTokenBlacklist
     public string Usuariocreacion { get; set; } = null!;
 
     public DateTime Fechacreacion { get; set; }
+
+    public virtual TblAutenticacionUsuario? IdusuarioNavigation { get; set; }
 }
