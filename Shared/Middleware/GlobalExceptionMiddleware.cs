@@ -1,6 +1,9 @@
 using System.Net;
 using System.Text.Json;
 using FluentValidation;
+using UsuariosConfigDomainException = tmr_backend.Features.Configuracion.Usuarios.Domain.Exceptions.DomainException;
+using UsuarioEmailYaExisteException = tmr_backend.Features.Configuracion.Usuarios.Domain.Exceptions.UsuarioEmailYaExisteException;
+using UsuarioIdentificacionYaExisteException = tmr_backend.Features.Configuracion.Usuarios.Domain.Exceptions.UsuarioIdentificacionYaExisteException;
 using tmr_backend.Shared.Wrappers;
 
 namespace tmr_backend.Shared.Middleware;
@@ -30,6 +33,9 @@ public class GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExcep
             Exceptions.ConflictException          => (HttpStatusCode.Conflict,        "Conflicto con un recurso existente"),
             Exceptions.NotFoundException          => (HttpStatusCode.NotFound,        "Recurso no encontrado"),
             Exceptions.UnauthorizedException      => (HttpStatusCode.Unauthorized,    "No autorizado"),
+            UsuarioEmailYaExisteException         => (HttpStatusCode.Conflict,        "Conflicto con un recurso existente"),
+            UsuarioIdentificacionYaExisteException => (HttpStatusCode.Conflict,       "Conflicto con un recurso existente"),
+            UsuariosConfigDomainException         => (HttpStatusCode.BadRequest,      "Solicitud invÃ¡lida"),
 
             KeyNotFoundException                  => (HttpStatusCode.NotFound,        "Recurso no encontrado"),
             UnauthorizedAccessException           => (HttpStatusCode.Unauthorized,    "No autorizado"),
@@ -43,6 +49,7 @@ public class GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExcep
             Exceptions.ConflictException or
             Exceptions.NotFoundException or
             Exceptions.UnauthorizedException or
+            UsuariosConfigDomainException or
             KeyNotFoundException or
             UnauthorizedAccessException or
             ArgumentException or
@@ -53,6 +60,7 @@ public class GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExcep
             Exceptions.UnauthorizedException { Code: not null } uex => uex.Code,
             Exceptions.ConflictException     { Code: not null } cex => cex.Code,
             Exceptions.NotFoundException     { Code: not null } nex => nex.Code,
+            UsuariosConfigDomainException    { ErrorCode: not null } dex => dex.ErrorCode,
             Exceptions.UnauthorizedException                        => "UNAUTHORIZED",
             Exceptions.ConflictException                            => "CONFLICT",
             Exceptions.NotFoundException                            => "NOT_FOUND",

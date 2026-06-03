@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using tmr_backend.Features.Configuracion.Usuarios.Application;
 using tmr_backend.Features.Configuracion.Usuarios.DTOs;
 
@@ -11,7 +13,9 @@ public static class UsuariosConfigEndpoints
 {
     public static void MapUsuariosConfigEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/configuracion/usuarios").WithTags("Configuracion - Usuarios");
+        var group = app.MapGroup("/api/configuracion/usuarios")
+            .WithTags("Configuracion - Usuarios")
+            .RequireAuthorization();
 
         // GET /api/configuracion/usuarios
         group.MapGet("/", async ([AsParameters] ObtenerUsuariosQuery query, [FromServices] IUsuariosConfigService service) =>
@@ -32,40 +36,71 @@ public static class UsuariosConfigEndpoints
         .WithDescription("Obtiene el detalle completo de un usuario por el ID de Persona.");
 
         // POST /api/configuracion/usuarios
-        group.MapPost("/", async ([FromBody] CreateUsuarioRequest request, [FromServices] IUsuariosConfigService service) =>
+        group.MapPost("/", async ([FromBody] CrearUsuarioConfigRequest request, HttpContext context, [FromServices] IUsuariosConfigService service) =>
         {
-            // Nota: En un caso real, usuarioActual e ipActual vienen del HttpContext (JWT / Request)
-            var usuarioActual = "SYSTEM";
-            var ipActual = "127.0.0.1";
+            var usuarioActual = ObtenerUsuarioActual(context);
+            var ipActual = ObtenerIpActual(context);
+            var idUsuarioActual = ObtenerIdUsuarioActual(context);
             
-            var result = await service.CrearUsuarioAsync(request, usuarioActual, ipActual);
+            var result = await service.CrearUsuarioAsync(request, usuarioActual, ipActual, idUsuarioActual);
             return Results.Created($"/api/configuracion/usuarios/{result.id}", result);
         })
         .WithName("CrearUsuarioConfig")
         .WithDescription("Crea un nuevo usuario asignándole roles.");
 
         // PUT /api/configuracion/usuarios/{id}
-        group.MapPut("/{id:int}", async (int id, [FromBody] UpdateUsuarioRequest request, [FromServices] IUsuariosConfigService service) =>
+        group.MapPut("/{id:int}", async (int id, [FromBody] UpdateUsuarioRequest request, HttpContext context, [FromServices] IUsuariosConfigService service) =>
         {
-            var usuarioActual = "SYSTEM";
-            var ipActual = "127.0.0.1";
+            var usuarioActual = ObtenerUsuarioActual(context);
+            var ipActual = ObtenerIpActual(context);
+            var idUsuarioActual = ObtenerIdUsuarioActual(context);
 
-            var result = await service.ActualizarUsuarioAsync(id, request, usuarioActual, ipActual);
+            var result = await service.ActualizarUsuarioAsync(id, request, usuarioActual, ipActual, idUsuarioActual);
             return Results.Ok(result);
         })
         .WithName("ActualizarUsuarioConfig")
         .WithDescription("Actualiza datos personales y roles de un usuario.");
 
         // DELETE /api/configuracion/usuarios/{id}
-        group.MapDelete("/{id:int}", async (int id, [FromServices] IUsuariosConfigService service) =>
+        group.MapDelete("/{id:int}", async (int id, HttpContext context, [FromServices] IUsuariosConfigService service) =>
         {
-            var usuarioActual = "SYSTEM";
-            var ipActual = "127.0.0.1";
+            var usuarioActual = ObtenerUsuarioActual(context);
+            var ipActual = ObtenerIpActual(context);
 
             var result = await service.DesactivarUsuarioAsync(id, usuarioActual, ipActual);
             return Results.Ok(result);
         })
         .WithName("DesactivarUsuarioConfig")
         .WithDescription("Desactiva lógicamente a un usuario.");
+    }
+
+    private static string ObtenerUsuarioActual(HttpContext context)
+    {
+        var email = context.User.FindFirstValue(JwtRegisteredClaimNames.Email)
+            ?? context.User.FindFirstValue(ClaimTypes.Email);
+
+        if (!string.IsNullOrWhiteSpace(email))
+            return email.Contains('@') ? email.Split('@')[0] : email;
+
+        return context.User.FindFirstValue(JwtRegisteredClaimNames.Sub)
+            ?? context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? "SYSTEM";
+    }
+
+    private static string ObtenerIpActual(HttpContext context)
+    {
+        var forwardedFor = context.Request.Headers["X-Forwarded-For"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(forwardedFor))
+            return forwardedFor.Split(',')[0].Trim();
+
+        return context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    }
+
+    private static int? ObtenerIdUsuarioActual(HttpContext context)
+    {
+        var sub = context.User.FindFirstValue(JwtRegisteredClaimNames.Sub)
+            ?? context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        return int.TryParse(sub, out var idUsuario) ? idUsuario : null;
     }
 }

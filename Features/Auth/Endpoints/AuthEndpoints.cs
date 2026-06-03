@@ -3,6 +3,8 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using tmr_backend.Features.Auth.DTOs.Request;
 using tmr_backend.Features.Auth.DTOs.Response;
+using tmr_backend.Features.Auth.Register;
+using tmr_backend.Features.Auth.Register.DTOs;
 using tmr_backend.Features.Auth.Services;
 using tmr_backend.Shared.Wrappers;
 
@@ -21,6 +23,15 @@ public static class AuthEndpoints
             .WithSummary("Registrar nuevo usuario")
             .Produces<ApiResponse<RegisterResponse>>(StatusCodes.Status201Created)
             .Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
+            .Produces<ProblemDetails>(StatusCodes.Status409Conflict);
+
+        group.MapPost("/register-user", RegisterUser)
+            .WithName("RegisterUser")
+            .WithSummary("Registrar usuario administrativo")
+            .RequireAuthorization()
+            .Produces<ApiResponse<RegisterResponse>>(StatusCodes.Status201Created)
+            .Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
+            .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized)
             .Produces<ProblemDetails>(StatusCodes.Status409Conflict);
 
         group.MapPost("/login", Login)
@@ -73,6 +84,18 @@ public static class AuthEndpoints
         return Results.Created(
             $"/api/auth/{result.Id}",
             ApiResponse<RegisterResponse>.Ok(result, "Usuario registrado correctamente. Verifique su email."));
+    }
+
+    private static async Task<IResult> RegisterUser(
+        RegisterUserRequest request,
+        HttpContext context,
+        RegisterUserHandler handler,
+        CancellationToken ct)
+    {
+        var result = await handler.Handle(request, context, ct);
+        return Results.Created(
+            $"/api/auth/{result.Id}",
+            ApiResponse<RegisterResponse>.Ok(result, "Usuario administrativo registrado correctamente."));
     }
 
     private static async Task<IResult> Login(
