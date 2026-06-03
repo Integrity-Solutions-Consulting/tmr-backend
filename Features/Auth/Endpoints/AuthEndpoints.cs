@@ -14,28 +14,29 @@ public static class AuthEndpoints
     {
         var group = app.MapGroup("/api/auth").WithTags("Auth");
 
+        // ── Endpoints públicos (sin autenticación) ─────────────────────────
+
         group.MapPost("/register", Register)
             .WithName("Register")
             .WithSummary("Registrar nuevo usuario")
-            .RequireAuthorization()
             .Produces<ApiResponse<RegisterResponse>>(StatusCodes.Status201Created)
             .Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
             .Produces<ProblemDetails>(StatusCodes.Status409Conflict);
 
-        // ── Endpoints públicos (sin autenticación) ─────────────────────────
         group.MapPost("/login", Login)
             .WithName("Login")
-            .WithSummary("Iniciar sesión — AT + RT + FamilyId")
+            .WithSummary("Iniciar sesión — devuelve AT + RT + FamilyId")
             .Produces<ApiResponse<AuthResponse>>(StatusCodes.Status200OK)
             .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
 
         group.MapPost("/refresh-token", RefreshToken)
             .WithName("RefreshToken")
-            .WithSummary("Rotar RT expirado y obtener AT + RT")
+            .WithSummary("Rotar RT expirado y obtener nuevo par AT + RT")
             .Produces<ApiResponse<AuthResponse>>(StatusCodes.Status200OK)
             .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
 
         // ── Endpoints protegidos (requieren AT válido) ─────────────────────
+
         group.MapPost("/logout", Logout)
             .WithName("Logout")
             .WithSummary("Cerrar sesión — blacklist JTI + revocar RT")
@@ -45,6 +46,10 @@ public static class AuthEndpoints
 
         group.MapPost("/revoke-token", RevokeToken)
             .WithName("RevokeToken")
+            .WithSummary("Revocar toda la familia de tokens (todos los dispositivos)")
+            .RequireAuthorization()
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
             .WithSummary("Revocar toda la familia de tokens")
             .RequireAuthorization()
             .Produces(StatusCodes.Status204NoContent)
@@ -58,8 +63,16 @@ public static class AuthEndpoints
             .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Handlers
+    // ─────────────────────────────────────────────────────────────────────────
+
     private static async Task<IResult> Register(
         RegisterRequest request,
+        IAuthService authService,
+        CancellationToken ct)
+    {
+        var result = await authService.RegisterAsync(request, ct);
         HttpContext context,
         IAuthService authService,
         CancellationToken ct)
@@ -74,6 +87,64 @@ public static class AuthEndpoints
         LoginRequest request,
         HttpContext context,
         IAuthService authService,
+        CancellationToken ct)
+    {
+        var clientIp   = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var userAgent  = context.Request.Headers.UserAgent.ToString();
+        var deviceInfo = context.Request.Headers["X-Device-Info"].ToString();
+
+        var result = await authService.LoginAsync(
+            request, clientIp, userAgent,
+            string.IsNullOrEmpty(deviceInfo) ? null : deviceInfo, ct);
+
+        return Results.Ok(ApiResponse<AuthResponse>.Ok(result, "Sesión iniciada correctamente."));
+    }
+
+    private static async Task<IResult> RefreshToken(
+        RefreshTokenRequest request,
+        HttpContext context,
+        IAuthService authService,
+        CancellationToken ct)
+    {
+        var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var result   = await authService.RefreshTokenAsync(request, clientIp, ct);
+
+        return Results.Ok(ApiResponse<AuthResponse>.Ok(result, "Tokens renovados correctamente."));
+    }
+
+    private static async Task<IResult> Logout(
+        LogoutRequest request,
+        HttpContext context,
+        IAuthService authService,
+        CancellationToken ct)
+    {
+        var jti    = context.User.FindFirstValue(JwtRegisteredClaimNames.Jti);
+        var subRaw = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var expRaw = context.User.FindFirstValue("exp");
+
+        if (jti is null || !int.TryParse(subRaw, out var idUsuario))
+            return Results.Unauthorized();
+
+        var atExpiry = long.TryParse(expRaw, out var expSeconds)
+            ? DateTimeOffset.FromUnixTimeSeconds(expSeconds).UtcDateTime
+            : DateTime.UtcNow;
+
+        await authService.LogoutAsync(jti, idUsuario, atExpiry, request.RefreshToken, ct);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> RevokeToken(
+        RevokeTokenRequest request,
+        HttpContext context,
+        IAuthService authService,
+        CancellationToken ct)
+    {
+        var subRaw = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (!int.TryParse(subRaw, out var idUsuario))
+            return Results.Unauthorized();
+
+        await authService.RevokeTokenAsync(request, idUsuario, ct);
         CancellationToken ct)
     {
         var clientIp   = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";

@@ -1,5 +1,7 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using tmr_backend.Infrastructure.Database;
+using tmr_backend.Infrastructure.Database.Entities;
 using tmr_backend.Features.Clientes;
 using tmr_backend.Features.Auth;
 using tmr_backend.Features.Usuarios.Endpoints;
@@ -28,6 +30,7 @@ using tmr_backend.Features.Configuracion.Register_Temp.Services;
 using tmr_backend.Infrastructure.Shared;
 using tmr_backend.Features.Auth.Validators;
 using tmr_backend.Features.Auth.Services;
+using tmr_backend.Features.Lideres.Services;
 using tmr_backend.Shared.Wrappers;
 using Microsoft.AspNetCore.Authorization;
 using tmr_backend.Shared.Middleware;
@@ -35,6 +38,25 @@ using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddOpenApi(options =>
+{
+    // Le dice a OpenAPI que existe un esquema Bearer JWT
+    options.AddDocumentTransformer((document, context, ct) =>
+    {
+        document.Components ??= new OpenApiComponents();
+        document.Components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
+
+        document.Components.SecuritySchemes["Bearer"] = new OpenApiSecurityScheme
+        {
+            Type        = SecuritySchemeType.Http,
+            Scheme      = "bearer",
+            BearerFormat = "JWT",
+            Description = "Ingresa el token JWT. Ejemplo: eyJhbGci..."
+        };
+
+        return Task.CompletedTask;
+    });
+});
 JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
 // =========================
@@ -91,6 +113,14 @@ builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
 
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
 
+// ── Seguridad ─────────────────────────────────────────────
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<IPasswordHasher,   PasswordHasher>();
+builder.Services.AddScoped<ITokenService,     TokenService>();
+builder.Services.AddScoped<IAuthService,      AuthService>();
+builder.Services.AddScoped<ILiderService,     LiderService>();
+builder.Services.AddScoped<IPermissionService, PermissionService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<ITokenService,   TokenService>();
@@ -137,10 +167,20 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             IssuerSigningKey         = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.SecretKey)),
             ClockSkew                = TimeSpan.Zero
         };
+
         opt.Events = new JwtBearerEvents
         {
             OnChallenge = async context =>
             {
+                context.HandleResponse(); // evita la respuesta default de .NET
+                context.Response.StatusCode  = 401;
+                context.Response.ContentType = "application/json";
+
+                var response = ApiResponse<object>.Fail(
+                    401,
+                    "No autorizado. Token inválido o ausente.",
+                    [new ApiError("token", "El token JWT es inválido o ha expirado")]
+                );
                 context.HandleResponse();
                 context.Response.StatusCode  = 401;
                 context.Response.ContentType = "application/json";
@@ -152,6 +192,12 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             {
                 context.Response.StatusCode  = 403;
                 context.Response.ContentType = "application/json";
+
+                var response = ApiResponse<object>.Fail(
+                    403,
+                    "Acceso denegado. No tienes permisos suficientes.",
+                    [new ApiError("role", "Tu rol no tiene acceso a este recurso")]
+                );
                 var response = ApiResponse<object>.Fail(403, "Acceso denegado. No tienes permisos suficientes.",
                     [new ApiError("role", "Tu rol no tiene acceso a este recurso")]);
                 await context.Response.WriteAsJsonAsync(response);
@@ -159,6 +205,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
+// Los permisos granulares (PROYECTOS_CREATE, etc.) los genera PermissionPolicyProvider
+// dinámicamente a partir del claim "permission" inyectado por PermissionEnrichmentMiddleware.
 builder.Services.AddAuthorization();
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
 
@@ -167,11 +215,21 @@ builder.Services.AddScoped<ICargarActividadesExcelHandler, CargarActividadesExce
 
 var app = builder.Build();
 
+app.UseMiddleware<GlobalExceptionMiddleware>();
+app.UseAuthentication();
+app.UseMiddleware<JwtBlacklistMiddleware>();        // JTI blacklist — después de validar firma JWT
+app.UseMiddleware<PermissionEnrichmentMiddleware>(); // Carga permisos del usuario desde caché/BD
+app.UseAuthorization();
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
     app.MapScalarApiReference(options =>
     {
+        options.Title                  = "TMR Backend API";
+        options.Theme                  = ScalarTheme.Purple; // o el que uses
+        options.DefaultHttpClient      = new(ScalarTarget.Http, ScalarClient.Http11);
+        options.Authentication         = new ScalarAuthenticationOptions
         options.AddPreferredSecuritySchemes("Bearer")
                .AddHttpAuthentication("Bearer", http => { });
         options.Title                 = "TMR Backend API";

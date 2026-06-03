@@ -65,6 +65,9 @@ public sealed class TokenService(IOptions<JwtSettings> jwtSettings, IConfigurati
 
         var claims = new List<Claim>
         {
+            new(JwtRegisteredClaimNames.Sub,   user.Id.ToString()),
+            new(JwtRegisteredClaimNames.Email, user.Email),
+            new(JwtRegisteredClaimNames.Jti,   jti),
             new("sub", user.Id.ToString()),
             new("email", user.Email),
             new("jti", jti),
@@ -97,10 +100,7 @@ public sealed class TokenService(IOptions<JwtSettings> jwtSettings, IConfigurati
         return (new JwtSecurityTokenHandler().WriteToken(token), jti);
     }
 
-    // ---------------------------------------------------------------
-    // REFRESH TOKEN — bytes aleatorios criptográficamente seguros
-    // ---------------------------------------------------------------
-    public (string Token, DateTime ExpiresAt) GenerateRefreshToken()
+    public (string RawToken, string TokenHash, DateTime ExpiresAt) GenerateRefreshTokenRaw()
     {
         var expirationDays = _jwt.RefreshTokenDays;
         if (int.TryParse(_configuration["Jwt:RefreshTokenExpirationDays"], out var parsedDays))

@@ -6,6 +6,8 @@ public enum RevocacionRazonEnum
 {
     LOGOUT,
     ADMIN_REVOKE,
+    PASSWORD_CHANGE,
+    SECURITY_BREACH,
     SESSION_LIMIT,
     SESSION_IDLE_TIMEOUT,
     SESSION_EXPIRED,

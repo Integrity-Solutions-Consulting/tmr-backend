@@ -80,6 +80,12 @@ public class RegisterRequestValidator : AbstractValidator<RegisterRequest>
             .MaximumLength(255).WithMessage("La dirección no puede superar los 255 caracteres.")
             .When(x => x.Direccion is not null);
 
+        RuleFor(x => x.IP)
+            .NotEmpty().WithMessage("La IP es requerida.")
+            .MaximumLength(45).WithMessage("La IP no puede superar los 45 caracteres.")
+            .Must(ip => IPAddress.TryParse(ip, out _))
+            .WithMessage("La IP no tiene un formato válido.");
+
         RuleFor(x => x.Email)
             .NotEmpty().WithMessage("El email es requerido.")
             //.EmailAddress().WithMessage("El email no tiene un formato válido.")

@@ -1668,7 +1668,6 @@ public partial class ApplicationDbContext : DbContext
             entity.ToTable("tbl_autenticacion_sesion", "autenticacion");
 
             entity.HasIndex(e => e.Estaactiva, "idx_aut_sesion_activa");
-
             entity.HasIndex(e => e.Idusuario, "idx_aut_sesion_usuario");
 
             entity.Property(e => e.Id)

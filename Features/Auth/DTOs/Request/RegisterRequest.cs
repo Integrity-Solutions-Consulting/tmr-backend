@@ -13,6 +13,7 @@ public record RegisterRequest(
     string FechaNacimiento,
     string? Telefono,
     string? Direccion,
+    string IP,
     string Email,
     //string Password,
     string Usuario);
