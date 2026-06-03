@@ -15,7 +15,7 @@ public partial class TblAutenticacionModulo
 
     public int? Ordenvisualizacion { get; set; }
 
-    public int Idsubmodulo { get; set; }
+    public int Idmodulopadre { get; set; }
 
     public bool Activo { get; set; }
 
