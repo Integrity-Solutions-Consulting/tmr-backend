@@ -28,4 +28,6 @@ public partial class TblAutenticacionRol
     public string? Ipmodificacion { get; set; }
 
     public virtual ICollection<TblAutenticacionUsuarioRol> TblAutenticacionUsuarioRols { get; set; } = new List<TblAutenticacionUsuarioRol>();
+
+    public virtual ICollection<TblAutenticacionRolPermiso> TblAutenticacionRolPermisos { get; set; } = new List<TblAutenticacionRolPermiso>();
 }

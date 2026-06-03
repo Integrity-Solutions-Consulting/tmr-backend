@@ -3,13 +3,8 @@ using tmr_backend.Features.Lideres.DTOs.Response;
 using tmr_backend.Features.Lideres.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using tmr_backend.Features.Lideres.Domain;
-using tmr_backend.Features.Lideres.DTOs;
-using tmr_backend.Features.Lideres.DTOs.Response;
 using tmr_backend.Infrastructure.Database;
-using tmr_backend.Features.Lideres.Services;
 using tmr_backend.Shared.Wrappers;
-
 using FluentValidation;
 
 namespace tmr_backend.Features.Lideres;
@@ -19,194 +14,108 @@ public static class LideresEndpoints
     public static void MapLideresEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/lideres").WithTags("Lideres").RequireAuthorization();
-        var group = app.MapGroup("/api/lideres")
-            .WithTags("Lideres")
-            .RequireAuthorization();
 
+        // 1. Obtener todos los líderes para la grilla
         group.MapGet("/", async (ILiderService service, bool? activo, CancellationToken ct) =>
         {
             var lideres = await service.ObtenerTodosAsync(activo, ct);
-            var lideres = await db.TblAdministracionLiders
+            return Results.Ok(lideres);
+        });
+
+        // 2. Lookup de líderes activos (para combos en otros módulos)
+        group.MapGet("/lookup", async (ApplicationDbContext db, CancellationToken ct) =>
+        {
+            var lookup = await db.TblAdministracionLiders
                 .Where(l => l.Activo)
                 .OrderBy(l => l.IdpersonaNavigation.Nombres)
                 .Select(l => new LiderLookupResponse(
                     l.Id,
                     ((l.IdpersonaNavigation.Nombres ?? string.Empty) + " " + (l.IdpersonaNavigation.Apellidos ?? string.Empty)).Trim()))
-                .ToListAsync();
+                .ToListAsync(ct);
 
-            return Results.Ok(lideres);
-        }).RequireAuthorization("LIDERES_READ");
+            return Results.Ok(lookup);
+        });
 
+        // 3. Contadores
         group.MapGet("/contadores", async (ILiderService service, CancellationToken ct) =>
         {
             var contadores = await service.ObtenerContadoresAsync(ct);
             return Results.Ok(contadores);
-        group.MapGet("/{id:int}", async (int id, ApplicationDbContext db) =>
-        {
-            var lider = await db.TblAdministracionLiders
-                .Include(l => l.IdpersonaNavigation)
-                .FirstOrDefaultAsync(l => l.Id == id);
-
-            if (lider is null) return Results.NotFound();
-
-            return Results.Ok(new LiderResponse(lider.Id, lider.Nombre, lider.Descripcion, lider.Activo, lider.FechaCreacion));
-        }).RequireAuthorization("LIDERES_READ");
-            return Results.Ok(new LiderLookupResponse(
-                lider.Id,
-                ((lider.IdpersonaNavigation.Nombres ?? string.Empty) + " " + (lider.IdpersonaNavigation.Apellidos ?? string.Empty)).Trim()));
         });
 
+        // 4. Personas disponibles para ser líderes
         group.MapGet("/personas-disponibles", async (ILiderService service, CancellationToken ct) =>
         {
             var personas = await service.ObtenerPersonasDisponiblesAsync(ct);
             return Results.Ok(personas);
         });
-            try
-            {
-                var nuevoLider = Lider.Crear(request.Nombre, request.Descripcion);
-                
-                db.Lideres.Add(nuevoLider);
-                await db.SaveChangesAsync();
 
-                var response = new LiderResponse(nuevoLider.Id, nuevoLider.Nombre, nuevoLider.Descripcion, nuevoLider.Activo, nuevoLider.FechaCreacion);
-                return Results.Created($"/api/lideres/{nuevoLider.Id}", response);
-            }
-            catch (ArgumentException ex)
-            {
-                return Results.BadRequest(new { Mensaje = ex.Message });
-            }
-        }).RequireAuthorization("LIDERES_CREATE");
-
+        // 5. Tipos de líderes (catálogo ADM/TLI)
         group.MapGet("/tipos", async (ILiderService service, CancellationToken ct) =>
         {
             var tipos = await service.ObtenerTiposAsync(ct);
             return Results.Ok(tipos);
         });
-            var lider = await db.Lideres.FindAsync(id);
 
-            if (lider is null) return Results.NotFound();
-
-            try
-            {
-                lider.ActualizarDetalles(request.Nombre, request.Descripcion);
-                await db.SaveChangesAsync();
-
-                return Results.NoContent();
-            }
-            catch (ArgumentException ex)
-            {
-                return Results.BadRequest(new { Mensaje = ex.Message });
-            }
-        }).RequireAuthorization("LIDERES_UPDATE");
-
+        // 6. Obtener por ID
         group.MapGet("/{id:int}", async (int id, ILiderService service, CancellationToken ct) =>
         {
             var lider = await service.ObtenerPorIdAsync(id, ct);
             return lider is null ? Results.NotFound() : Results.Ok(lider);
         });
 
+        // 7. Crear líder
         group.MapPost("/", async (CrearLiderRequest request, ILiderService service, CancellationToken ct) =>
         {
             var lider = await service.CrearAsync(request, ct);
             return Results.Created($"/api/lideres/{lider.Id}", lider);
         });
 
+        // 8. Actualizar líder
         group.MapPut("/{id:int}", async (int id, ActualizarLiderRequest request, ILiderService service, CancellationToken ct) =>
         {
             var lider = await service.ActualizarAsync(id, request, ct);
             return lider is null ? Results.NotFound() : Results.Ok(lider);
         });
 
+        // 9. Eliminar (desactivar) líder
         group.MapDelete("/{id:int}", async (int id, ILiderService service, CancellationToken ct) =>
         {
             var resultado = await service.DesactivarAsync(id, ct);
             return resultado ? Results.NoContent() : Results.NotFound();
         });
-            return Results.NoContent();
-        }).RequireAuthorization("LIDERES_DELETE");;
 
+        // 10. Personas no líderes (Elisa - redundancia)
         group.MapGet("/personasNoLideres", PersonasNoLideres)
-        .WithName("PersonasNoLideres")
-        .WithDisplayName("Obtener personas que no son líderes")
-        .WithDescription("Obtiene una lista de personas que no están asignadas como líderes en el sistema.")
-        .Produces<AuthResponse>(StatusCodes.Status200OK)
-        .Produces(StatusCodes.Status404NotFound)
-        .Produces(StatusCodes.Status500InternalServerError) .RequireAuthorization("LIDERES_READ");
+             .WithName("PersonasNoLideres");
 
         group.MapGet("/personas", Personas)
-        .WithName("Personas")
-        .WithDisplayName("Obtener personas")
-        .WithDescription("Obtiene una lista de personas en el sistema.")
-        .Produces<AuthResponse>(StatusCodes.Status200OK)
-        .Produces(StatusCodes.Status404NotFound)
-        .Produces(StatusCodes.Status500InternalServerError) .RequireAuthorization("LIDERES_READ");    
+             .WithName("Personas");
     }
 
     private static async Task<IResult> PersonasNoLideres(
-        [FromServices] ILiderService liderService,
+        ILiderService liderService,
         CancellationToken ct)
     {
-        try
-        {
-            var personas = await liderService.ObtenerPersonasNoLideresAsync(ct);
-
-            return Results.Ok(ApiResponse<IEnumerable<PersonaResponse>>.Ok(
-                data:personas,
-                message:"Personas no líderes obtenidas exitosamente",
-                meta: new PaginationMeta(personas.Count, 1, personas.Count)
-            ));
-        }
-        catch (ValidationException ex)
-        {
-            return Results.BadRequest(new ProblemDetails
-            {
-                Title = "Validación fallida",
-                Detail = string.Join(", ", ex.Errors.Select(e => e.ErrorMessage)),
-                Status = StatusCodes.Status400BadRequest
-            });
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.Conflict(new ProblemDetails
-            {
-                Title = "Conflicto de datos",
-                Detail = ex.Message,
-                Status = StatusCodes.Status409Conflict
-            });
-        }
+        var personas = await liderService.ObtenerPersonasNoLideresAsync(ct);
+        return Results.Ok(ApiResponse<IEnumerable<PersonaResponse>>.Ok(
+            data: personas,
+            message: "Personas no líderes obtenidas exitosamente",
+            meta: new PaginationMeta(personas.Count, 1, personas.Count)
+        ));
     }
+
     private static async Task<IResult> Personas(
-        [FromServices] ILiderService liderService,
+        ILiderService liderService,
         CancellationToken ct)
     {
-        try
-        {
-            var personas = await liderService.ObtenerPersonasNoLideresAsync(ct);
+        var personas = await liderService.ObtenerPersonasNoLideresAsync(ct);
+        return Results.Ok(ApiResponse<IEnumerable<PersonaResponse>>.Ok(
+            data: personas,
+            message: "Personas no líderes obtenidas exitosamente",
+            meta: new PaginationMeta(personas.Count, 1, personas.Count)
+        ));
+    }
+}
 
-            return Results.Ok(ApiResponse<IEnumerable<PersonaResponse>>.Ok(
-                data:personas,
-                message:"Personas no líderes obtenidas exitosamente",
-                meta: new PaginationMeta(personas.Count, 1, personas.Count)
-            ));
-            //return Results.Ok(personas);
-        }
-        catch (ValidationException ex)
-        {
-            return Results.BadRequest(new ProblemDetails
-            {
-                Title = "Validación fallida",
-                Detail = string.Join(", ", ex.Errors.Select(e => e.ErrorMessage)),
-                Status = StatusCodes.Status400BadRequest
-            });
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.Conflict(new ProblemDetails
-            {
-                Title = "Conflicto de datos",
-                Detail = ex.Message,
-                Status = StatusCodes.Status409Conflict
-            });
-        }
-    }
-    }
+public record LiderLookupResponse(int Id, string NombreCompleto);

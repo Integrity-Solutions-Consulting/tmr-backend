@@ -50,10 +50,6 @@ public static class AuthEndpoints
             .RequireAuthorization()
             .Produces(StatusCodes.Status204NoContent)
             .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
-            .WithSummary("Revocar toda la familia de tokens")
-            .RequireAuthorization()
-            .Produces(StatusCodes.Status204NoContent)
-            .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
 
         group.MapPost("/change-password", ChangePassword)
             .WithName("ChangePassword")
@@ -69,10 +65,6 @@ public static class AuthEndpoints
 
     private static async Task<IResult> Register(
         RegisterRequest request,
-        IAuthService authService,
-        CancellationToken ct)
-    {
-        var result = await authService.RegisterAsync(request, ct);
         HttpContext context,
         IAuthService authService,
         CancellationToken ct)
@@ -145,71 +137,13 @@ public static class AuthEndpoints
             return Results.Unauthorized();
 
         await authService.RevokeTokenAsync(request, idUsuario, ct);
-        CancellationToken ct)
-    {
-        var clientIp   = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        var userAgent  = context.Request.Headers.UserAgent.ToString();
-        var deviceInfo = context.Request.Headers["X-Device-Info"].ToString();
-
-        var result = await authService.LoginAsync(
-            request, clientIp, userAgent,
-            string.IsNullOrEmpty(deviceInfo) ? null : deviceInfo, ct);
-
-        return Results.Ok(ApiResponse<AuthResponse>.Ok(result, "Sesión iniciada correctamente."));
-    }
-
-    private static async Task<IResult> RefreshToken(
-        RefreshTokenRequest request,
-        HttpContext context,
-        IAuthService authService,
-        CancellationToken ct)
-    {
-        var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        var result   = await authService.RefreshTokenAsync(request, clientIp, ct);
-
-        return Results.Ok(ApiResponse<AuthResponse>.Ok(result, "Tokens renovados correctamente."));
-    }
-
-    private static async Task<IResult> Logout(
-        LogoutRequest request,
-        HttpContext context,
-        IAuthService authService,
-        CancellationToken ct)
-    {
-        var jti    = context.User.FindFirstValue(JwtRegisteredClaimNames.Jti);
-        var subRaw = context.User.FindFirstValue(JwtRegisteredClaimNames.Sub);
-        var expRaw = context.User.FindFirstValue("exp");
-
-        if (jti is null || !int.TryParse(subRaw, out var idUsuario))
-            return Results.Unauthorized();
-
-        var atExpiry = long.TryParse(expRaw, out var expSeconds)
-            ? DateTimeOffset.FromUnixTimeSeconds(expSeconds).UtcDateTime
-            : DateTime.UtcNow;
-
-        await authService.LogoutAsync(jti, idUsuario, atExpiry, request.RefreshToken, ct);
-        return Results.NoContent();
-    }
-
-    private static async Task<IResult> RevokeToken(
-        RevokeTokenRequest request,
-        HttpContext context,
-        IAuthService authService,
-        CancellationToken ct)
-    {
-        var subRaw = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
-
-        if (!int.TryParse(subRaw, out var idUsuario))
-            return Results.Unauthorized();
-
-        await authService.RevokeTokenAsync(request, idUsuario, ct);
         return Results.NoContent();
     }
 
     private static async Task<IResult> ChangePassword(
         ChangePasswordRequest request,
-        IAuthService authService,
         HttpContext context,
+        IAuthService authService,
         CancellationToken ct)
     {
         await authService.ChangePasswordAsync(request, context, ct);

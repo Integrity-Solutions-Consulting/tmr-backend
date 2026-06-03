@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace tmr_backend.Infrastructure.Database.Entities;
@@ -60,4 +60,6 @@ public partial class TblAutenticacionUsuario
     public virtual ICollection<TblAutenticacionUsuarioModulo> TblAutenticacionUsuarioModulos { get; set; } = new List<TblAutenticacionUsuarioModulo>();
 
     public virtual ICollection<TblAutenticacionUsuarioRol> TblAutenticacionUsuarioRols { get; set; } = new List<TblAutenticacionUsuarioRol>();
+
+    public virtual ICollection<TblAutenticacionAuditLog> TblAutenticacionAuditLogs { get; set; } = new List<TblAutenticacionAuditLog>();
 }

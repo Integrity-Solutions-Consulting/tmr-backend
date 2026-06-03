@@ -9,7 +9,6 @@ using tmr_backend.Infrastructure.Database;
 
 namespace tmr_backend.Features.Clientes;
 
-
 public static class ClientesEndpoints
 {
     public static void MapClientesEndpoints(this IEndpointRouteBuilder app)
@@ -31,7 +30,6 @@ public static class ClientesEndpoints
             return Results.Ok(lista);
         });
 
-
         // =====================================================================
         // GET /api/clientes/{id}  - detalle
         // =====================================================================
@@ -42,30 +40,7 @@ public static class ClientesEndpoints
         {
             var detalle = await service.ObtenerPorIdAsync(id, ct);
             return detalle is null ? Results.NotFound() : Results.Ok(detalle);
-        var group = app.MapGroup("/api/clientes").WithTags("Clientes");
-
-        // 1. Obtener todos los clientes para combo dinámico
-        group.MapGet("/", async (ApplicationDbContext db) =>
-        {
-            var clientes = await db.TblAdministracionClientes
-                .Where(c => c.Activo)
-                .OrderBy(c => c.Nombrecomercial ?? c.Razonsocial)
-                .Select(c => new ClienteLookupResponse(c.Id, c.Nombrecomercial ?? c.Razonsocial ?? string.Empty))
-                .ToListAsync();
-
-            return Results.Ok(clientes);
         });
-
-        // 2. Obtener cliente por ID numérico
-        group.MapGet("/{id:int}", async (int id, ApplicationDbContext db) =>
-        {
-            var cliente = await db.TblAdministracionClientes.FindAsync(id);
-
-            if (cliente is null) return Results.NotFound();
-
-            return Results.Ok(new ClienteLookupResponse(cliente.Id, cliente.Nombrecomercial ?? cliente.Razonsocial ?? string.Empty));
-        });
-
 
         // =====================================================================
         // POST /api/clientes  - crear
@@ -99,7 +74,6 @@ public static class ClientesEndpoints
                 });
             }
         });
-
 
         // =====================================================================
         // PUT /api/clientes/{id}  - actualizar
@@ -135,7 +109,6 @@ public static class ClientesEndpoints
             }
         });
 
-
         // =====================================================================
         // DELETE /api/clientes/{id}  - eliminación lógica
         // =====================================================================
@@ -159,7 +132,6 @@ public static class ClientesEndpoints
                 });
             }
         });
-
 
         // =====================================================================
         // GET /api/clientes/tipos-identificacion
@@ -186,6 +158,5 @@ public static class ClientesEndpoints
 
             return Results.Ok(tipos);
         });
-
     }
 }

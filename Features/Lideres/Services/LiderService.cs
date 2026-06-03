@@ -196,4 +196,21 @@ public class LiderService : ILiderService
                 d.Descripcion))
             .ToListAsync(ct);
     }
+
+    public async Task<List<PersonaResponse>> ObtenerPersonasNoLideresAsync(CancellationToken ct)
+    {
+        var idsLideres = await _db.TblAdministracionLiders
+            .Select(l => l.Idpersona)
+            .ToListAsync(ct);
+
+        return await _db.TblAdministracionPersonas
+            .Where(p => p.Activo && !idsLideres.Contains(p.Id))
+            .Select(p => new PersonaResponse(
+                p.Id,
+                p.Nombres,
+                p.Apellidos,
+                p.Email ?? string.Empty
+            ))
+            .ToListAsync(ct);
+    }
 }

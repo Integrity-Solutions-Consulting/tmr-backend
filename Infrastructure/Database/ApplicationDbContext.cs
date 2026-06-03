@@ -8,10 +8,6 @@ using tmr_backend.Features.CargaActividades.Domain;
 using tmr_backend.Features.Colaboradores.Domain;
 using tmr_backend.Features.Dashboard.Domain;
 using tmr_backend.Features.Usuarios.Domain;
-using tmr_backend.Features.CargaActividades.Domain;
-using tmr_backend.Features.Colaboradores.Domain;
-using tmr_backend.Features.Configuracion.Domain;
-using tmr_backend.Features.Dashboard.Domain;
 using tmr_backend.Features.Proyectos.Domain;
 using tmr_backend.Features.Reportes.Domain;
 using tmr_backend.Features.TimeReport.Domain;
@@ -30,8 +26,6 @@ public partial class ApplicationDbContext : DbContext
     public DbSet<Usuario> Usuarios { get; set; } = null!;
     public DbSet<Actividad> Actividades { get; set; } = null!;
     public DbSet<Colaborador> Colaboradores { get; set; } = null!;
-    public DbSet<Actividad> Actividades { get; set; } = null!;
-    public DbSet<ConfiguracionSistema> ConfiguracionesSistema { get; set; } = null!;
     public DbSet<DashboardItem> DashboardItems { get; set; } = null!;
 
     // ─────────────────────────────────────────────────────────────────────
@@ -70,6 +64,16 @@ public partial class ApplicationDbContext : DbContext
     public virtual DbSet<TblAutenticacionTokenBlacklist> TblAutenticacionTokenBlacklists { get; set; } = null!;
     public virtual DbSet<TblAutenticacionUsuario> TblAutenticacionUsuarios { get; set; } = null!;
     public virtual DbSet<TblAutenticacionUsuarioRol> TblAutenticacionUsuarioRols { get; set; } = null!;
+    public virtual DbSet<TblAutenticacionAplicacion> TblAutenticacionAplicacions { get; set; } = null!;
+    public virtual DbSet<TblAutenticacionMenu> TblAutenticacionMenus { get; set; } = null!;
+    public virtual DbSet<TblAutenticacionMenuRol> TblAutenticacionMenuRols { get; set; } = null!;
+    public virtual DbSet<TblAutenticacionMenuUsuario> TblAutenticacionMenuUsuarios { get; set; } = null!;
+    public virtual DbSet<TblAutenticacionPrivilegioRol> TblAutenticacionPrivilegioRols { get; set; } = null!;
+    public virtual DbSet<TblAutenticacionPrivilegioUsuario> TblAutenticacionPrivilegioUsuarios { get; set; } = null!;
+    public virtual DbSet<TblAutenticacionRolModulo> TblAutenticacionRolModulos { get; set; } = null!;
+    public virtual DbSet<TblAutenticacionSesionApp> TblAutenticacionSesionApps { get; set; } = null!;
+    public virtual DbSet<TblAutenticacionUsuarioAplicacion> TblAutenticacionUsuarioAplicacions { get; set; } = null!;
+    public virtual DbSet<TblAutenticacionUsuarioModulo> TblAutenticacionUsuarioModulos { get; set; } = null!;
 
     // Inventario
     public virtual DbSet<TblInventarioAsignacionEquipo> TblInventarioAsignacionEquipos { get; set; } = null!;
@@ -100,120 +104,6 @@ public partial class ApplicationDbContext : DbContext
     public DbSet<Reporte> Reportes { get; set; } = null!;
     public DbSet<RegistroTiempo> RegistrosTiempo { get; set; } = null!;
 
-    public virtual DbSet<TblAdministracionApariencium> TblAdministracionApariencia { get; set; }
-
-    public virtual DbSet<TblAdministracionCargo> TblAdministracionCargos { get; set; }
-
-    public virtual DbSet<TblAdministracionCatalogo> TblAdministracionCatalogos { get; set; }
-
-    public virtual DbSet<TblAdministracionCatalogoDetalle> TblAdministracionCatalogoDetalles { get; set; }
-
-    public virtual DbSet<TblAdministracionCliente> TblAdministracionClientes { get; set; }
-
-    public virtual DbSet<TblAdministracionClienteUsuario> TblAdministracionClienteUsuarios { get; set; }
-
-    public virtual DbSet<TblAdministracionEmpleado> TblAdministracionEmpleados { get; set; }
-
-    public virtual DbSet<TblAdministracionLider> TblAdministracionLiders { get; set; }
-
-    public virtual DbSet<TblAdministracionPersona> TblAdministracionPersonas { get; set; }
-
-    public virtual DbSet<TblAdministracionRegistroAsignacion> TblAdministracionRegistroAsignacions { get; set; }
-
-    public virtual DbSet<TblAuditoriaAsignacionEquipo> TblAuditoriaAsignacionEquipos { get; set; }
-
-    public virtual DbSet<TblAuditoriaEmpleado> TblAuditoriaEmpleados { get; set; }
-
-    public virtual DbSet<TblAuditoriaEquipo> TblAuditoriaEquipos { get; set; }
-
-    public virtual DbSet<TblAuditoriaHistoricoGeneral> TblAuditoriaHistoricoGenerals { get; set; }
-
-    public virtual DbSet<TblAuditoriaSesionUsuario> TblAuditoriaSesionUsuarios { get; set; }
-
-    public virtual DbSet<TblAutenticacionAplicacion> TblAutenticacionAplicacions { get; set; }
-
-    public virtual DbSet<TblAutenticacionRefreshToken> TblAutenticacionRefreshTokens { get; set; }
-
-    public virtual DbSet<TblAutenticacionMenu> TblAutenticacionMenus { get; set; }
-
-    public virtual DbSet<TblAutenticacionMenuRol> TblAutenticacionMenuRols { get; set; }
-
-    public virtual DbSet<TblAutenticacionMenuUsuario> TblAutenticacionMenuUsuarios { get; set; }
-
-    public virtual DbSet<TblAutenticacionModulo> TblAutenticacionModulos { get; set; }
-
-    public virtual DbSet<TblAutenticacionPasswordHistorial> TblAutenticacionPasswordHistorials { get; set; }
-
-    public virtual DbSet<TblAutenticacionPreguntaUsuario> TblAutenticacionPreguntaUsuarios { get; set; }
-
-    public virtual DbSet<TblAutenticacionPrivilegioRol> TblAutenticacionPrivilegioRols { get; set; }
-
-    public virtual DbSet<TblAutenticacionPrivilegioUsuario> TblAutenticacionPrivilegioUsuarios { get; set; }
-
-    public virtual DbSet<TblAutenticacionRolModulo> TblAutenticacionRolModulos { get; set; }
-
-    public virtual DbSet<TblAutenticacionSesion> TblAutenticacionSesions { get; set; }
-
-    public virtual DbSet<TblAutenticacionSesionApp> TblAutenticacionSesionApps { get; set; }
-
-    public virtual DbSet<TblAutenticacionTokenBlacklist> TblAutenticacionTokenBlacklists { get; set; }
-
-    public virtual DbSet<TblAutenticacionUsuario> TblAutenticacionUsuarios { get; set; }
-
-    public virtual DbSet<TblAutenticacionUsuarioAplicacion> TblAutenticacionUsuarioAplicacions { get; set; }
-
-    public virtual DbSet<TblAutenticacionUsuarioModulo> TblAutenticacionUsuarioModulos { get; set; }
-
-    public virtual DbSet<TblAutenticacionRol> TblAutenticacionRols { get; set; }
-
-    public virtual DbSet<TblAutenticacionUsuarioRol> TblAutenticacionUsuarioRols { get; set; }
-
-    public virtual DbSet<TblAutenticacionPermiso> TblAutenticacionPermisos { get; set; }
-
-    public virtual DbSet<TblAutenticacionRolPermiso> TblAutenticacionRolPermisos { get; set; }
-
-    public virtual DbSet<TblInventarioAsignacionEquipo> TblInventarioAsignacionEquipos { get; set; }
-
-    public virtual DbSet<TblInventarioBajaEquipo> TblInventarioBajaEquipos { get; set; }
-
-    public virtual DbSet<TblInventarioCaracteristicaEquipo> TblInventarioCaracteristicaEquipos { get; set; }
-
-    public virtual DbSet<TblInventarioDetalleFactura> TblInventarioDetalleFacturas { get; set; }
-
-    public virtual DbSet<TblInventarioEmpresa> TblInventarioEmpresas { get; set; }
-
-    public virtual DbSet<TblInventarioEquipo> TblInventarioEquipos { get; set; }
-
-    public virtual DbSet<TblInventarioFactura> TblInventarioFacturas { get; set; }
-
-    public virtual DbSet<TblInventarioProveedor> TblInventarioProveedors { get; set; }
-
-    public virtual DbSet<TblInventarioReparacionEquipo> TblInventarioReparacionEquipos { get; set; }
-
-    public virtual DbSet<TblInventarioStockCategorium> TblInventarioStockCategoria { get; set; }
-
-    public virtual DbSet<TblTimeReportActividadDiarium> TblTimeReportActividadDiaria { get; set; }
-
-    public virtual DbSet<TblTimeReportEmpleadoProyecto> TblTimeReportEmpleadoProyectos { get; set; }
-
-    public virtual DbSet<TblTimeReportFeriado> TblTimeReportFeriados { get; set; }
-
-    public virtual DbSet<TblTimeReportHomologacionBanco> TblTimeReportHomologacionBancos { get; set; }
-
-    public virtual DbSet<TblTimeReportOutboxCargo> TblTimeReportOutboxCargos { get; set; }
-
-    public virtual DbSet<TblTimeReportPermiso> TblTimeReportPermisos { get; set; }
-
-    public virtual DbSet<TblTimeReportProyeccionHora> TblTimeReportProyeccionHoras { get; set; }
-
-    public virtual DbSet<TblTimeReportProyeccionHorasProyecto> TblTimeReportProyeccionHorasProyectos { get; set; }
-
-    public virtual DbSet<TblTimeReportProyecto> TblTimeReportProyectos { get; set; }
-
-    public virtual DbSet<TblTimeReportTipoActividad> TblTimeReportTipoActividads { get; set; }
-
-    public virtual DbSet<TblTimeReportTipoProyecto> TblTimeReportTipoProyectos { get; set; }
-
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder
@@ -221,8 +111,7 @@ public partial class ApplicationDbContext : DbContext
             .HasPostgresEnum("autenticacion", "audit_evento_enum", new[] { "LOGIN_OK", "LOGIN_FAIL", "LOGOUT", "REFRESH_OK", "REFRESH_FAIL", "TOKEN_REVOKE", "PASSWORD_CHANGE", "USER_CREATE", "USER_BLOCK" })
             .HasPostgresEnum("autenticacion", "revocacion_razon_enum", new[] { "LOGOUT", "ADMIN_REVOKE", "PASSWORD_CHANGE", "SECURITY_BREACH", "EXPIRED" })
             .HasPostgresExtension("pgcrypto")
-            .HasPostgresExtension("uuid-ossp")
-            .HasPostgresEnum("autenticacion", "audit_evento_enum", new[] { "LOGIN_OK", "LOGIN_FAIL", "LOGOUT", "REFRESH_OK", "REFRESH_FAIL", "TOKEN_REVOKE", "PASSWORD_CHANGE", "USER_CREATE", "USER_BLOCK" });
+            .HasPostgresExtension("uuid-ossp");
 
         modelBuilder.Entity<TblAdministracionApariencium>(entity =>
         {
@@ -507,6 +396,7 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Ipcreacion).HasMaxLength(45).HasColumnName("ipcreacion");
             entity.Property(e => e.Ipmodificacion).HasMaxLength(45).HasColumnName("ipmodificacion");
             entity.Property(e => e.Salario).HasPrecision(12, 2).HasColumnName("salario");
+            entity.Property(e => e.Aniosexperiencia).HasColumnName("aniosexperiencia");
             entity.Property(e => e.Usuariocreacion).HasMaxLength(50).HasColumnName("usuariocreacion");
             entity.Property(e => e.Usuariomodificacion).HasMaxLength(50).HasColumnName("usuariomodificacion");
             entity.HasOne(d => d.IdcargoNavigation).WithMany(p => p.TblAdministracionEmpleados)
@@ -524,228 +414,6 @@ public partial class ApplicationDbContext : DbContext
                 .HasForeignKey(d => d.Idtipocontrato).HasConstraintName("fk_administracion_empleado_contrato");
         });
 
-        modelBuilder.Entity<TblAdministracionLider>(entity =>
-        {
-            entity.HasKey(e => e.Id).HasName("pk_administracion_lider");
-            entity.ToTable("tbl_administracion_lider", "administracion");
-            entity.Property(e => e.Id).UseIdentityAlwaysColumn().HasColumnName("id");
-            entity.Property(e => e.Activo).HasDefaultValue(true).HasColumnName("activo");
-            entity.Property(e => e.Fechacreacion).HasDefaultValueSql("now()").HasColumnName("fechacreacion");
-            entity.Property(e => e.Fechamodificacion).HasColumnName("fechamodificacion");
-            entity.Property(e => e.Idpersona).HasColumnName("idpersona");
-            entity.Ignore(e => e.Idtipo);
-            entity.Ignore(e => e.IdtipoNavigation);
-            entity.Property(e => e.Ipcreacion).HasMaxLength(45).HasColumnName("ipcreacion");
-            entity.Property(e => e.Ipmodificacion).HasMaxLength(45).HasColumnName("ipmodificacion");
-            entity.Property(e => e.Usuariocreacion).HasMaxLength(50).HasColumnName("usuariocreacion");
-            entity.Property(e => e.Usuariomodificacion).HasMaxLength(50).HasColumnName("usuariomodificacion");
-            entity.HasOne(d => d.IdpersonaNavigation).WithMany(p => p.TblAdministracionLiders)
-                .HasForeignKey(d => d.Idpersona).OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_administracion_lider_persona");
-        });
-
-            entity.ToTable("tbl_administracion_cliente", "administracion");
-
-            entity.Property(e => e.Id)
-                .UseIdentityAlwaysColumn()
-                .HasColumnName("id");
-            entity.Property(e => e.Activo)
-                .HasDefaultValue(true)
-                .HasColumnName("activo");
-            entity.Property(e => e.Apellidos)
-                .HasMaxLength(100)
-                .HasColumnName("apellidos");
-            entity.Property(e => e.Direccion)
-                .HasMaxLength(255)
-                .HasColumnName("direccion");
-            entity.Property(e => e.Email)
-                .HasMaxLength(100)
-                .HasColumnName("email");
-            entity.Property(e => e.Fechacreacion)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("fechacreacion");
-            entity.Property(e => e.Id).UseIdentityAlwaysColumn().HasColumnName("id");
-            entity.Property(e => e.Activo).HasDefaultValue(true).HasColumnName("activo");
-            entity.Property(e => e.Apellidos).HasMaxLength(100).HasColumnName("apellidos");
-            entity.Property(e => e.Direccion).HasMaxLength(255).HasColumnName("direccion");
-            entity.Property(e => e.Email).HasMaxLength(100).HasColumnName("email");
-            entity.Property(e => e.Fechacreacion).HasDefaultValueSql("now()").HasColumnName("fechacreacion");
-            entity.Property(e => e.Fechamodificacion).HasColumnName("fechamodificacion");
-            entity.Property(e => e.Idtipoidentificacion).HasColumnName("idtipoidentificacion");
-            entity.Property(e => e.Ipcreacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipcreacion");
-            entity.Property(e => e.Ipmodificacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipmodificacion");
-            entity.Property(e => e.Nombrecomercial)
-                .HasMaxLength(100)
-                .HasColumnName("nombres");
-                .HasColumnName("nombrecomercial");
-            entity.Property(e => e.Nombres)
-                .HasMaxLength(150)
-                .HasColumnName("nombres");
-            entity.Property(e => e.Apellidos)
-                .HasMaxLength(150)
-                .HasColumnName("apellidos");
-            entity.Property(e => e.Numeroidentificacion)
-                .HasMaxLength(20)
-                .HasColumnName("numeroidentificacion");
-            entity.Property(e => e.Razonsocial)
-                .HasMaxLength(150)
-                .HasColumnName("razonsocial");
-            entity.Property(e => e.Telefono)
-                .HasMaxLength(20)
-                .HasColumnName("telefono");
-            entity.Property(e => e.Usuariocreacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariocreacion");
-            entity.Property(e => e.Usuariomodificacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariomodificacion");
-
-            entity.Property(e => e.Ipcreacion).HasMaxLength(45).HasColumnName("ipcreacion");
-            entity.Property(e => e.Ipmodificacion).HasMaxLength(45).HasColumnName("ipmodificacion");
-            entity.Property(e => e.Nombres).HasMaxLength(100).HasColumnName("nombres");
-            entity.Property(e => e.Numeroidentificacion).HasMaxLength(20).HasColumnName("numeroidentificacion");
-            entity.Property(e => e.Telefono).HasMaxLength(20).HasColumnName("telefono");
-            entity.Property(e => e.Tipopersona).HasMaxLength(10).HasColumnName("tipopersona");
-            entity.Property(e => e.Usuariocreacion).HasMaxLength(50).HasColumnName("usuariocreacion");
-            entity.Property(e => e.Usuariomodificacion).HasMaxLength(50).HasColumnName("usuariomodificacion");
-            entity.HasOne(d => d.IdgeneroNavigation).WithMany(p => p.TblAdministracionPersonaIdgeneroNavigations)
-                .HasForeignKey(d => d.Idgenero).HasConstraintName("fk_administracion_persona_genero");
-            entity.HasOne(d => d.IdnacionalidadNavigation).WithMany(p => p.TblAdministracionPersonaIdnacionalidadNavigations)
-                .HasForeignKey(d => d.Idnacionalidad).HasConstraintName("fk_administracion_persona_nacionalidad");
-            entity.HasOne(d => d.IdtipoidentificacionNavigation).WithMany(p => p.TblAdministracionPersonaIdtipoidentificacionNavigations)
-                .HasForeignKey(d => d.Idtipoidentificacion).HasConstraintName("fk_administracion_persona_tipo_identificacion");
-            entity.HasOne(d => d.IdtipoidentificacionNavigation).WithMany(p => p.TblAdministracionClientes)
-                .HasForeignKey(d => d.Idtipoidentificacion)
-                .HasConstraintName("fk_administracion_cliente_tipo_identificacion");
-        });
-
-        modelBuilder.Entity<TblAdministracionClienteUsuario>(entity =>
-        {
-            entity.HasKey(e => e.Id).HasName("pk_administracion_cliente_usuario");
-
-            entity.ToTable("tbl_administracion_cliente_usuario", "administracion");
-
-            entity.Property(e => e.Id)
-                .UseIdentityAlwaysColumn()
-                .HasColumnName("id");
-            entity.Property(e => e.Activo)
-                .HasDefaultValue(true)
-                .HasColumnName("activo");
-            entity.Property(e => e.Fechacreacion)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("fechacreacion");
-            entity.Property(e => e.Fechamodificacion).HasColumnName("fechamodificacion");
-            entity.Property(e => e.Idcliente).HasColumnName("idcliente");
-            entity.Property(e => e.Idusuario).HasColumnName("idusuario");
-            entity.Property(e => e.Ipcreacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipcreacion");
-            entity.Property(e => e.Ipmodificacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipmodificacion");
-            entity.Property(e => e.Usuariocreacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariocreacion");
-            entity.Property(e => e.Usuariomodificacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariomodificacion");
-
-            entity.HasOne(d => d.IdclienteNavigation).WithMany(p => p.TblAdministracionClienteUsuarios)
-                .HasForeignKey(d => d.Idcliente)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_administracion_cliente_usuario_cliente");
-
-            entity.HasOne(d => d.IdusuarioNavigation).WithMany(p => p.TblAdministracionClienteUsuarios)
-                .HasForeignKey(d => d.Idusuario)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_administracion_cliente_usuario_usuario");
-        });
-
-        modelBuilder.Entity<TblAdministracionEmpleado>(entity =>
-        {
-            entity.HasKey(e => e.Id).HasName("pk_administracion_empleado");
-
-            entity.ToTable("tbl_administracion_empleado", "administracion");
-
-            entity.HasIndex(e => e.Idpersona, "idx_adm_empleado_persona");
-
-            entity.HasIndex(e => e.Codigoempleado, "uq_administracion_empleado_codigo").IsUnique();
-
-            entity.Property(e => e.Id)
-                .UseIdentityAlwaysColumn()
-                .HasColumnName("id");
-            entity.Property(e => e.Activo)
-                .HasDefaultValue(true)
-                .HasColumnName("activo");
-            entity.Property(e => e.Codigoempleado)
-                .HasMaxLength(20)
-                .HasColumnName("codigoempleado");
-            entity.Property(e => e.Emailcorporativo)
-                .HasMaxLength(100)
-                .HasColumnName("emailcorporativo");
-            entity.Property(e => e.Fechacreacion)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("fechacreacion");
-            entity.Property(e => e.Fechaingreso).HasColumnName("fechaingreso");
-            entity.Property(e => e.Fechamodificacion).HasColumnName("fechamodificacion");
-            entity.Property(e => e.Fechaterminacion).HasColumnName("fechaterminacion");
-            entity.Property(e => e.Idcargo).HasColumnName("idcargo");
-            entity.Property(e => e.Idcategoriaempleado).HasColumnName("idcategoriaempleado");
-            entity.Property(e => e.Idempresacatalogo).HasColumnName("idempresacatalogo");
-            entity.Property(e => e.Idmodotrabajo).HasColumnName("idmodotrabajo");
-            entity.Property(e => e.Idpersona).HasColumnName("idpersona");
-            entity.Property(e => e.Idtipocontrato).HasColumnName("idtipocontrato");
-            entity.Property(e => e.Ipcreacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipcreacion");
-            entity.Property(e => e.Ipmodificacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipmodificacion");
-            entity.Property(e => e.Salario)
-                .HasPrecision(12, 2)
-                .HasColumnName("salario");
-
-            // Mapeo de la columna nueva AniosExperiencia (en BD se llama "aniosexperiencia")
-            entity.Property(e => e.Aniosexperiencia)
-                .HasColumnName("aniosexperiencia");
-
-            entity.Property(e => e.Usuariocreacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariocreacion");
-            entity.Property(e => e.Usuariomodificacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariomodificacion");
-
-            entity.HasOne(d => d.IdcargoNavigation).WithMany(p => p.TblAdministracionEmpleados)
-                .HasForeignKey(d => d.Idcargo)
-                .HasConstraintName("fk_administracion_empleado_cargo");
-
-            entity.HasOne(d => d.IdcategoriaempleadoNavigation).WithMany(p => p.TblAdministracionEmpleadoIdcategoriaempleadoNavigations)
-                .HasForeignKey(d => d.Idcategoriaempleado)
-                .HasConstraintName("fk_administracion_empleado_categoria");
-
-            entity.HasOne(d => d.IdempresacatalogoNavigation).WithMany(p => p.TblAdministracionEmpleadoIdempresacatalogoNavigations)
-                .HasForeignKey(d => d.Idempresacatalogo)
-                .HasConstraintName("fk_administracion_empleado_empresa");
-
-            entity.HasOne(d => d.IdmodotrabajoNavigation).WithMany(p => p.TblAdministracionEmpleadoIdmodotrabajoNavigations)
-                .HasForeignKey(d => d.Idmodotrabajo)
-                .HasConstraintName("fk_administracion_empleado_modo_trabajo");
-
-            entity.HasOne(d => d.IdpersonaNavigation).WithMany(p => p.TblAdministracionEmpleados)
-                .HasForeignKey(d => d.Idpersona)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_administracion_empleado_persona");
-
-            entity.HasOne(d => d.IdtipocontratoNavigation).WithMany(p => p.TblAdministracionEmpleadoIdtipocontratoNavigations)
-                .HasForeignKey(d => d.Idtipocontrato)
-                .HasConstraintName("fk_administracion_empleado_contrato");
-        });
-
         modelBuilder.Entity<Lider>(entity =>
         {
             entity.HasKey(e => e.Id);
@@ -760,39 +428,21 @@ public partial class ApplicationDbContext : DbContext
         modelBuilder.Entity<TblAdministracionLider>(entity =>
         {
             entity.HasKey(e => e.Id).HasName("pk_administracion_lider");
-
             entity.ToTable("tbl_administracion_lider", "administracion");
-
-            entity.Property(e => e.Id)
-                .UseIdentityAlwaysColumn()
-                .HasColumnName("id");
-            entity.Property(e => e.Activo)
-                .HasDefaultValue(true)
-                .HasColumnName("activo");
-            entity.Property(e => e.Fechacreacion)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("fechacreacion");
+            entity.Property(e => e.Id).UseIdentityAlwaysColumn().HasColumnName("id");
+            entity.Property(e => e.EsInterno).HasColumnName("EsInterno");
+            entity.Property(e => e.Activo).HasDefaultValue(true).HasColumnName("activo");
+            entity.Property(e => e.Fechacreacion).HasDefaultValueSql("now()").HasColumnName("fechacreacion");
             entity.Property(e => e.Fechamodificacion).HasColumnName("fechamodificacion");
             entity.Property(e => e.Idpersona).HasColumnName("idpersona");
             entity.Property(e => e.Idtipo).HasColumnName("idtipo");
-            entity.Property(e => e.Ipcreacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipcreacion");
-            entity.Property(e => e.Ipmodificacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipmodificacion");
-            entity.Property(e => e.Usuariocreacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariocreacion");
-            entity.Property(e => e.Usuariomodificacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariomodificacion");
-
+            entity.Property(e => e.Ipcreacion).HasMaxLength(45).HasColumnName("ipcreacion");
+            entity.Property(e => e.Ipmodificacion).HasMaxLength(45).HasColumnName("ipmodificacion");
+            entity.Property(e => e.Usuariocreacion).HasMaxLength(50).HasColumnName("usuariocreacion");
+            entity.Property(e => e.Usuariomodificacion).HasMaxLength(50).HasColumnName("usuariomodificacion");
             entity.HasOne(d => d.IdpersonaNavigation).WithMany(p => p.TblAdministracionLiders)
-                .HasForeignKey(d => d.Idpersona)
-                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasForeignKey(d => d.Idpersona).OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_administracion_lider_persona");
-
             entity.HasOne(d => d.IdtipoNavigation).WithMany(p => p.TblAdministracionLiders)
                 .HasForeignKey(d => d.Idtipo)
                 .HasConstraintName("fk_administracion_lider_tipo");
@@ -1123,6 +773,15 @@ public partial class ApplicationDbContext : DbContext
                 .HasDefaultValueSql("now()")
                 .HasColumnName("fechacreacion");
             entity.Property(e => e.Idusuario).HasColumnName("idusuario");
+
+            entity.HasOne(d => d.IdusuarioNavigation).WithMany(p => p.TblAutenticacionAuditLogs)
+                .HasForeignKey(d => d.Idusuario)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_autenticacion_audit_log_usuario");
+        });
+
+        modelBuilder.Entity<TblAutenticacionAplicacion>(entity =>
+        {
             entity.HasKey(e => e.Id).HasName("pk_autenticacion_aplicacion");
 
             entity.ToTable("tbl_autenticacion_aplicacion", "autenticacion");
@@ -1311,10 +970,6 @@ public partial class ApplicationDbContext : DbContext
                 .HasMaxLength(50)
                 .HasColumnName("usuariocreacion");
 
-            entity.HasOne(d => d.IdusuarioNavigation).WithMany(p => p.TblAutenticacionAuditLogs)
-                .HasForeignKey(d => d.Idusuario)
-                .OnDelete(DeleteBehavior.Cascade)
-                .HasConstraintName("fk_autenticacion_audit_log_usuario");
             entity.HasOne(d => d.IdmenuNavigation).WithMany(p => p.TblAutenticacionMenuUsuarios)
                 .HasForeignKey(d => d.Idmenu)
                 .OnDelete(DeleteBehavior.ClientSetNull)
@@ -1426,22 +1081,16 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Fechacreacion)
                 .HasDefaultValueSql("now()")
                 .HasColumnName("fechacreacion");
-            entity.Property(e => e.Fechamodificacion).HasColumnName("fechamodificacion");
             entity.Property(e => e.Idmodulo).HasColumnName("idmodulo");
             entity.Property(e => e.Ipcreacion)
                 .HasMaxLength(45)
                 .HasColumnName("ipcreacion");
-            entity.Property(e => e.Ipmodificacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipmodificacion");
             entity.Property(e => e.Usuariocreacion)
                 .HasMaxLength(50)
                 .HasColumnName("usuariocreacion");
-            entity.Property(e => e.Usuariomodificacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariomodificacion");
 
-            entity.HasOne(d => d.IdmoduloNavigation).WithMany(p => p.TblAutenticacionPermisos)
+            entity.HasOne<TblAutenticacionModulo>()
+                .WithMany()
                 .HasForeignKey(d => d.Idmodulo)
                 .OnDelete(DeleteBehavior.Restrict)
                 .HasConstraintName("fk_autenticacion_permiso_modulo");
@@ -1489,19 +1138,8 @@ public partial class ApplicationDbContext : DbContext
                 .HasConstraintName("fk_autenticacion_pregunta_usuario_usuario");
         });
 
-        modelBuilder.Entity<TblAutenticacionRefreshToken>(entity =>
+        modelBuilder.Entity<TblAutenticacionPrivilegioRol>(entity =>
         {
-            entity.HasKey(e => e.Id).HasName("pk_autenticacion_refresh_token");
-
-            entity.ToTable("tbl_autenticacion_refresh_token", "autenticacion");
-
-            entity.HasIndex(e => e.Fechaexpiracion, "idx_aut_refresh_token_exp");
-
-            entity.HasIndex(e => e.Familiatoken, "idx_aut_refresh_token_familia");
-
-            entity.HasIndex(e => e.Idusuario, "idx_aut_refresh_token_usuario");
-
-            entity.HasIndex(e => e.Tokenhash, "uq_autenticacion_refresh_token_hash").IsUnique();
             entity.HasKey(e => e.Id).HasName("pk_autenticacion_privilegio_rol");
 
             entity.ToTable("tbl_autenticacion_privilegio_rol", "autenticacion");
@@ -1547,17 +1185,6 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Activo)
                 .HasDefaultValue(true)
                 .HasColumnName("activo");
-            entity.Property(e => e.Estarevocado).HasColumnName("estarevocado");
-            entity.Property(e => e.Estausado).HasColumnName("estausado");
-            entity.Property(e => e.Familiatoken).HasColumnName("familiatoken");
-            entity.Property(e => e.Fechacreacion)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("fechacreacion");
-            entity.Property(e => e.Fechaexpiracion).HasColumnName("fechaexpiracion");
-            entity.Property(e => e.Fechausado).HasColumnName("fechausado");
-            entity.Property(e => e.Idsesion).HasColumnName("idsesion");
-            entity.Property(e => e.Idusuario).HasColumnName("idusuario");
-            entity.Property(e => e.Tokenhash).HasColumnName("tokenhash");
             entity.Property(e => e.Fechacreacion)
                 .HasDefaultValueSql("now()")
                 .HasColumnName("fechacreacion");
@@ -1570,13 +1197,6 @@ public partial class ApplicationDbContext : DbContext
                 .HasMaxLength(50)
                 .HasColumnName("usuariocreacion");
 
-            entity.HasOne(d => d.IdsesionNavigation).WithMany(p => p.TblAutenticacionRefreshTokens)
-                .HasForeignKey(d => d.Idsesion)
-                .HasConstraintName("fk_autenticacion_refresh_token_sesion");
-
-            entity.HasOne(d => d.IdusuarioNavigation).WithMany(p => p.TblAutenticacionRefreshTokens)
-                .HasForeignKey(d => d.Idusuario)
-                .HasConstraintName("fk_autenticacion_refresh_token_usuario");
             entity.HasOne(d => d.IdprivilegioNavigation).WithMany(p => p.TblAutenticacionPrivilegioUsuarios)
                 .HasForeignKey(d => d.Idprivilegio)
                 .OnDelete(DeleteBehavior.ClientSetNull)
@@ -1595,9 +1215,6 @@ public partial class ApplicationDbContext : DbContext
             entity.ToTable("tbl_autenticacion_rol", "autenticacion");
 
             entity.HasIndex(e => e.Nombre, "uq_autenticacion_rol_nombre").IsUnique();
-            entity.HasKey(e => e.Id).HasName("pk_autenticacion_rol_modulo");
-
-            entity.ToTable("tbl_autenticacion_rol_modulo", "autenticacion");
 
             entity.Property(e => e.Id)
                 .UseIdentityAlwaysColumn()
@@ -1626,6 +1243,52 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Usuariomodificacion)
                 .HasMaxLength(50)
                 .HasColumnName("usuariomodificacion");
+        });
+
+        modelBuilder.Entity<TblAutenticacionRolModulo>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("pk_autenticacion_rol_modulo");
+
+            entity.ToTable("tbl_autenticacion_rol_modulo", "autenticacion");
+
+            entity.Property(e => e.Id)
+                .UseIdentityAlwaysColumn()
+                .HasColumnName("id");
+            entity.Property(e => e.Activo)
+                .HasDefaultValue(true)
+                .HasColumnName("activo");
+            entity.Property(e => e.Fechacreacion)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("fechacreacion");
+            entity.Property(e => e.Fechamodificacion).HasColumnName("fechamodificacion");
+            entity.Property(e => e.Idmodulo).HasColumnName("idmodulo");
+            entity.Property(e => e.Idrol).HasColumnName("idrol");
+            entity.Property(e => e.Ipcreacion)
+                .HasMaxLength(45)
+                .HasColumnName("ipcreacion");
+            entity.Property(e => e.Ipmodificacion)
+                .HasMaxLength(45)
+                .HasColumnName("ipmodificacion");
+            entity.Property(e => e.Puedecrear).HasColumnName("puedecrear");
+            entity.Property(e => e.Puedeeditar).HasColumnName("puedeeditar");
+            entity.Property(e => e.Puedeeliminar).HasColumnName("puedeeliminar");
+            entity.Property(e => e.Puedever).HasColumnName("puedever");
+            entity.Property(e => e.Usuariocreacion)
+                .HasMaxLength(50)
+                .HasColumnName("usuariocreacion");
+            entity.Property(e => e.Usuariomodificacion)
+                .HasMaxLength(50)
+                .HasColumnName("usuariomodificacion");
+
+            entity.HasOne(d => d.IdmoduloNavigation).WithMany(p => p.TblAutenticacionRolModulos)
+                .HasForeignKey(d => d.Idmodulo)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_autenticacion_rol_modulo_modulo");
+
+            entity.HasOne(d => d.IdrolNavigation).WithMany(p => p.TblAutenticacionRolModulos)
+                .HasForeignKey(d => d.Idrol)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_autenticacion_rol_modulo_rol");
         });
 
         modelBuilder.Entity<TblAutenticacionRolPermiso>(entity =>
@@ -1659,32 +1322,6 @@ public partial class ApplicationDbContext : DbContext
             entity.HasOne(d => d.IdrolNavigation).WithMany(p => p.TblAutenticacionRolPermisos)
                 .HasForeignKey(d => d.Idrol)
                 .HasConstraintName("fk_autenticacion_rol_permiso_rol");
-            entity.Property(e => e.Ipcreacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipcreacion");
-            entity.Property(e => e.Ipmodificacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipmodificacion");
-            entity.Property(e => e.Puedecrear).HasColumnName("puedecrear");
-            entity.Property(e => e.Puedeeditar).HasColumnName("puedeeditar");
-            entity.Property(e => e.Puedeeliminar).HasColumnName("puedeeliminar");
-            entity.Property(e => e.Puedever).HasColumnName("puedever");
-            entity.Property(e => e.Usuariocreacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariocreacion");
-            entity.Property(e => e.Usuariomodificacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariomodificacion");
-
-            entity.HasOne(d => d.IdmoduloNavigation).WithMany(p => p.TblAutenticacionRolModulos)
-                .HasForeignKey(d => d.Idmodulo)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_autenticacion_rol_modulo_modulo");
-
-            entity.HasOne(d => d.IdrolNavigation).WithMany(p => p.TblAutenticacionRolModulos)
-                .HasForeignKey(d => d.Idrol)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_autenticacion_rol_modulo_rol");
         });
 
         modelBuilder.Entity<TblAutenticacionSesion>(entity =>
@@ -1749,16 +1386,8 @@ public partial class ApplicationDbContext : DbContext
                 .HasConstraintName("fk_autenticacion_sesion_usuario");
         });
 
-        modelBuilder.Entity<TblAutenticacionTokenBlacklist>(entity =>
+        modelBuilder.Entity<TblAutenticacionSesionApp>(entity =>
         {
-            entity
-                .HasNoKey()
-                .ToTable("tbl_autenticacion_token_blacklist", "autenticacion");
-
-            entity.HasIndex(e => e.Fechaexpiracion, "idx_aut_token_blacklist_exp");
-
-            entity.HasIndex(e => e.Jti, "uq_autenticacion_token_blacklist_jti").IsUnique();
-
             entity.HasKey(e => e.Id).HasName("pk_autenticacion_sesion_app");
 
             entity.ToTable("tbl_autenticacion_sesion_app", "autenticacion");
@@ -1773,15 +1402,8 @@ public partial class ApplicationDbContext : DbContext
                 .HasDefaultValueSql("now()")
                 .HasColumnName("fechacreacion");
             entity.Property(e => e.Fechaexpiracion).HasColumnName("fechaexpiracion");
-            entity.Property(e => e.Fecharevocado)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("fecharevocado");
             entity.Property(e => e.Idusuario).HasColumnName("idusuario");
-            entity.Property(e => e.Jti).HasColumnName("jti");
-            entity.Property(e => e.Usuariocreacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariocreacion");
-
+            entity.Property(e => e.Idaplicacion).HasColumnName("idaplicacion");
             entity.Property(e => e.Ipcreacion)
                 .HasMaxLength(45)
                 .HasColumnName("ipcreacion");
@@ -2034,7 +1656,7 @@ public partial class ApplicationDbContext : DbContext
                 .HasMaxLength(50)
                 .HasColumnName("usuariocreacion");
 
-            entity.HasOne(d => d.AsignadoporNavigation).WithMany(p => p.TblAutenticacionUsuarioRolAsignadoporNavigations)
+            entity.HasOne<TblAutenticacionUsuario>().WithMany()
                 .HasForeignKey(d => d.Asignadopor)
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("fk_autenticacion_usuario_rol_asignado_por");
@@ -2042,11 +1664,6 @@ public partial class ApplicationDbContext : DbContext
             entity.HasOne(d => d.IdrolNavigation).WithMany(p => p.TblAutenticacionUsuarioRols)
                 .HasForeignKey(d => d.Idrol)
                 .OnDelete(DeleteBehavior.Restrict)
-                .HasConstraintName("fk_autenticacion_usuario_rol_rol");
-
-            entity.HasOne(d => d.IdusuarioNavigation).WithMany(p => p.TblAutenticacionUsuarioRolIdusuarioNavigations)
-            entity.HasOne(d => d.IdrolNavigation).WithMany(p => p.TblAutenticacionUsuarioRols)
-                .HasForeignKey(d => d.Idrol)
                 .HasConstraintName("fk_autenticacion_usuario_rol_rol");
 
             entity.HasOne(d => d.IdusuarioNavigation).WithMany(p => p.TblAutenticacionUsuarioRols)

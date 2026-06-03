@@ -99,7 +99,7 @@ public sealed class ColaboradorService(
             .Include(e => e.IdpersonaNavigation)
                 .ThenInclude(p => p.IdgeneroNavigation)
             .Include(e => e.IdcargoNavigation)
-                .ThenInclude(c => c.IddepartamentoNavigation)  // departamento vía cargo
+                .ThenInclude(c => c!.IddepartamentoNavigation)  // departamento vía cargo
             .Include(e => e.IdempresacatalogoNavigation)       // asociación
             .Include(e => e.IdmodotrabajoNavigation)
             .Include(e => e.IdcategoriaempleadoNavigation)     // categoría

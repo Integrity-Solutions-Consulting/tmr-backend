@@ -87,7 +87,6 @@ public class UsuariosConfigService : IUsuariosConfigService
                 Idpersona = personaEntity.Id,
                 Email = usuarioDominio.Email,
                 Hashpassword = usuarioDominio.HashPassword,
-                Estaactivo = usuarioDominio.Activo,
                 Debecambiarpassword = usuarioDominio.DebeCambiarPassword,
                 Activo = usuarioDominio.Activo,
                 Usuariocreacion = usuarioDominio.UsuarioCreacion,
@@ -210,7 +209,6 @@ public class UsuariosConfigService : IUsuariosConfigService
             persona.Ipmodificacion = ipActual;
 
             usuario.Activo = false;
-            usuario.Estaactivo = false;
             usuario.Usuariomodificacion = usuarioActual;
             usuario.Fechamodificacion = DateTime.UtcNow;
             usuario.Ipmodificacion = ipActual;

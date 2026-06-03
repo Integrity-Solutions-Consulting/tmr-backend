@@ -1,7 +1,6 @@
 using tmr_backend.Features.Lideres.DTOs.Request;
 using tmr_backend.Features.Lideres.DTOs.Response;
 
-using tmr_backend.Features.Lideres.DTOs.Response;
 namespace tmr_backend.Features.Lideres.Services;
 
 public interface ILiderService
