@@ -5,7 +5,7 @@ namespace tmr_backend.Features.Auth.Services;
 
 public interface IAuthService
 {
-    Task<RegisterResponse> RegisterAsync(RegisterRequest request, CancellationToken ct);
+    Task<RegisterResponse> RegisterAsync(RegisterRequest request, HttpContext context, CancellationToken ct);
 
     Task<AuthResponse> LoginAsync(
         LoginRequest request,
@@ -27,4 +27,6 @@ public interface IAuthService
         CancellationToken ct);
 
     Task RevokeTokenAsync(RevokeTokenRequest request, int idUsuario, CancellationToken ct);
+
+    Task ChangePasswordAsync(ChangePasswordRequest request, HttpContext context, CancellationToken ct);
 }

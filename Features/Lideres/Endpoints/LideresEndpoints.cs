@@ -21,22 +21,31 @@ public static class LideresEndpoints
 
         group.MapGet("/", async (ApplicationDbContext db) =>
         {
-            var lideres = await db.Lideres
-                .Where(c => c.Activo)
-                .Select(c => new LiderResponse(c.Id, c.Nombre, c.Descripcion, c.Activo, c.FechaCreacion))
+            var lideres = await db.TblAdministracionLiders
+                .Where(l => l.Activo)
+                .OrderBy(l => l.IdpersonaNavigation.Nombres)
+                .Select(l => new LiderLookupResponse(
+                    l.Id,
+                    ((l.IdpersonaNavigation.Nombres ?? string.Empty) + " " + (l.IdpersonaNavigation.Apellidos ?? string.Empty)).Trim()))
                 .ToListAsync();
 
             return Results.Ok(lideres);
         }).RequireAuthorization("LIDERES_READ");
 
-        group.MapGet("/{id:guid}", async (Guid id, ApplicationDbContext db) =>
+        group.MapGet("/{id:int}", async (int id, ApplicationDbContext db) =>
         {
-            var lider = await db.Lideres.FindAsync(id);
+            var lider = await db.TblAdministracionLiders
+                .Include(l => l.IdpersonaNavigation)
+                .FirstOrDefaultAsync(l => l.Id == id);
 
             if (lider is null) return Results.NotFound();
 
             return Results.Ok(new LiderResponse(lider.Id, lider.Nombre, lider.Descripcion, lider.Activo, lider.FechaCreacion));
         }).RequireAuthorization("LIDERES_READ");
+            return Results.Ok(new LiderLookupResponse(
+                lider.Id,
+                ((lider.IdpersonaNavigation.Nombres ?? string.Empty) + " " + (lider.IdpersonaNavigation.Apellidos ?? string.Empty)).Trim()));
+        });
 
         group.MapPost("/", async (CrearLiderRequest request, ApplicationDbContext db) =>
         {

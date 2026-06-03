@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace tmr_backend.Infrastructure.Database.Entities;
@@ -17,8 +17,10 @@ public partial class TblAdministracionPersona
 
     public string Tipopersona { get; set; } = null!;
 
+    [Column("nombres")]
     public string Nombres { get; set; } = null!;
 
+    [Column("apellidos")]
     public string Apellidos { get; set; } = null!;
 
     public DateOnly? Fechanacimiento { get; set; }

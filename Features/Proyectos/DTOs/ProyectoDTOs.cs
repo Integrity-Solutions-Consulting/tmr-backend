@@ -1,7 +1,90 @@
 namespace tmr_backend.Features.Proyectos.DTOs;
 
-public record CrearProyectoRequest(string Nombre, string Descripcion);
+public record CrearProyectoRequest(
+    string? Codigo,
+    string Nombre,
+    string? Descripcion,
+    int? IdCliente,
+    string? Cliente,
+    int? IdTipoProyecto,
+    string? Tipo,
+    int? IdLider,
+    string? Lider,
+    int IdEstadoProyecto,
+    string? Estado,
+    DateOnly? FechaInicio,
+    DateOnly? FechaFin,
+    decimal? Presupuesto,
+    decimal? Horas,
+    List<ProyectoRecursoRequest>? Recursos
+);
 
-public record ProyectoResponse(Guid Id, string Nombre, string Descripcion, bool Activo, DateTime FechaCreacion);
+public record ActualizarProyectoRequest(
+    string? Codigo,
+    string Nombre,
+    string? Descripcion,
+    int? IdCliente,
+    string? Cliente,
+    int? IdTipoProyecto,
+    string? Tipo,
+    int? IdLider,
+    string? Lider,
+    int IdEstadoProyecto,
+    string? Estado,
+    DateOnly? FechaInicio,
+    DateOnly? FechaFin,
+    decimal? Presupuesto,
+    decimal? Horas,
+    List<ProyectoRecursoRequest>? Recursos
+);
 
-public record ActualizarProyectoRequest(string Nombre, string Descripcion);
+public record ProyectoResponse(
+    int Id,
+    string Codigo,
+    string Nombre,
+    string Descripcion,
+    int? IdCliente,
+    string Cliente,
+    int? IdTipoProyecto,
+    string Tipo,
+    int? IdLider,
+    string Lider,
+    string CargoLider,
+    decimal CostoHoraLider,
+    decimal HorasLider,
+    int IdEstadoProyecto,
+    string Estado,
+    DateOnly? FechaInicio,
+    DateOnly? FechaFin,
+    decimal Presupuesto,
+    decimal Horas,
+    int NumeroRecursos,
+    bool Activo,
+    DateTime FechaCreacion,
+    List<ProyectoRecursoResponse> Recursos
+);
+
+public record ProyectoRecursoRequest(
+    int? IdEmpleado,
+    string? Tipo,
+    string Nombre,
+    string Rol,
+    DateOnly? Entrada,
+    DateOnly? Salida,
+    decimal? CostoHora,
+    decimal? Horas
+);
+
+public record ProyectoRecursoResponse(
+    int Id,
+    int? IdEmpleado,
+    string Tipo,
+    string Nombre,
+    string Rol,
+    DateOnly? Entrada,
+    DateOnly? Salida,
+    decimal CostoHora,
+    decimal Horas
+);
+
+public record LookupDto(int Id, string Nombre);
