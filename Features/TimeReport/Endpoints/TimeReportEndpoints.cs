@@ -91,7 +91,7 @@ public static class TimeReportEndpoints
             var actividades = await db.TblTimeReportActividadDiaria
                 .Where(a => a.Activo && a.Idempleado == idEmpleado && a.Fechaactividad >= fechaInicio && a.Fechaactividad <= fechaFin)
                 .GroupBy(a => a.Fechaactividad)
-                .Select(g => new ActividadDiaDto(g.Key, g.Sum(x => x.Cantidadhoras)))
+                .Select(g => new ActividadDiaDto(g.Key, (int)g.Sum(x => x.Cantidadhoras)))
                 .ToListAsync();
 
             return Results.Ok(actividades);
@@ -112,10 +112,10 @@ public static class TimeReportEndpoints
             
             // Asumiendo 8 horas laborables por día (hasta hoy)
             var diasLaborables = hoy.DayNumber - inicioMes.DayNumber + 1;
-            var horasEsperadas = diasLaborables * 8m;
-            var horasPorRegistrar = Math.Max(0, horasEsperadas - horasMes);
+            var horasEsperadas = diasLaborables * 8;
+            var horasPorRegistrar = Math.Max(0, horasEsperadas - (int)horasMes);
 
-            return Results.Ok(new ResumenHorasDto(horasPorRegistrar, horasMes, horasSemana, horasMes));
+            return Results.Ok(new ResumenHorasDto(horasPorRegistrar, (int)horasMes, (int)horasSemana, (int)horasMes));
         });
 
         groupActividades.MapPost("/", async (CrearActividadDto request, ApplicationDbContext db) =>
