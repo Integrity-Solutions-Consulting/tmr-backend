@@ -702,6 +702,11 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Salario)
                 .HasPrecision(12, 2)
                 .HasColumnName("salario");
+
+            // Mapeo de la columna nueva AniosExperiencia (en BD se llama "aniosexperiencia")
+            entity.Property(e => e.Aniosexperiencia)
+                .HasColumnName("aniosexperiencia");
+
             entity.Property(e => e.Usuariocreacion)
                 .HasMaxLength(50)
                 .HasColumnName("usuariocreacion");

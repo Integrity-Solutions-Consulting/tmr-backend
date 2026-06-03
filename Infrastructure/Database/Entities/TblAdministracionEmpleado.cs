@@ -29,6 +29,9 @@ public partial class TblAdministracionEmpleado
 
     public decimal? Salario { get; set; }
 
+    // Años de experiencia del empleado (columna nueva agregada por script).
+    public int? Aniosexperiencia { get; set; }
+
     public bool Activo { get; set; }
 
     public string Usuariocreacion { get; set; } = null!;

@@ -12,6 +12,10 @@ public sealed class TokenService(IOptions<JwtSettings> jwtSettings, IConfigurati
 {
     private readonly JwtSettings _jwt = jwtSettings.Value;
 
+    // ---------------------------------------------------------------
+    // ACCESS TOKEN — JWT firmado con HS256
+    // ---------------------------------------------------------------
+    public string GenerateAccessTokenPorId(Guid userId, string email)
     public (string Token, string Jti) GenerateAccessToken(TblAutenticacionUsuario user, IEnumerable<string> roles)
     {
         var jti    = Guid.NewGuid().ToString();

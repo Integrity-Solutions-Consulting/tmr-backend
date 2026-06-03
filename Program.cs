@@ -8,6 +8,8 @@ using tmr_backend.Features.Usuarios.Endpoints;
 using tmr_backend.Features.CargaActividades;
 
 using tmr_backend.Features.Colaboradores;
+using tmr_backend.Features.Colaboradores.Services;
+using tmr_backend.Features.Configuracion;
 using tmr_backend.Features.Dashboard;
 using tmr_backend.Features.Lideres;
 using tmr_backend.Features.Proyectos;
@@ -40,6 +42,7 @@ using tmr_backend.Shared.Wrappers;
 using Microsoft.AspNetCore.Authorization;
 using tmr_backend.Shared.Middleware;
 using Microsoft.OpenApi;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -142,6 +145,10 @@ builder.Services.AddScoped<IPermissionService, PermissionService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<ITokenService,   TokenService>();
+builder.Services.AddScoped<IAuthService,    AuthService>();
+// ── Servicios de Colaboradores (DI - SOLID) ───────────────
+builder.Services.AddScoped<IColaboradorService, ColaboradorService>();
+builder.Services.AddScoped<ICodigoEmpleadoGenerator, CodigoEmpleadoGenerator>();
 builder.Services.AddScoped<IAuthService,     AuthService>();
 builder.Services.AddScoped<LoginHandler>();
 builder.Services.AddScoped<RefreshHandler>();
@@ -235,6 +242,21 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
+
+// ── CORS: permitir que el frontend Angular llame al backend ──
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("PermitirFrontend", policy =>
+    {
+        policy.WithOrigins("http://localhost:4200")  // URL del frontend Angular
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials(); // ← necesario para que las cookies pasen
+    });
+});
+
+
+
 // Los permisos granulares (PROYECTOS_CREATE, etc.) los genera PermissionPolicyProvider
 // dinámicamente a partir del claim "permission" inyectado por PermissionEnrichmentMiddleware.
 builder.Services.AddAuthorization();
@@ -289,6 +311,13 @@ app.UseAuthentication();
 app.UseMiddleware<JwtBlacklistMiddleware>();
 app.UseMiddleware<PermissionEnrichmentMiddleware>();
 app.UseAuthorization();
+
+app.UseCors("PermitirFrontend"); //cors
+
+// ── Activar autenticación y autorización (JWT) ──
+app.UseAuthentication();   // primero valida el token
+app.UseAuthorization();    // luego verifica permisos
+
 
 app.MapHealthCheckEndpoints();
 // Endpoints
