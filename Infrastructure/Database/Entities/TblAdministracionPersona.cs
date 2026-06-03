@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations.Schema;
 
 namespace tmr_backend.Infrastructure.Database.Entities;
 
@@ -57,4 +56,5 @@ public partial class TblAdministracionPersona
     public virtual ICollection<TblAdministracionLider> TblAdministracionLiders { get; set; } = new List<TblAdministracionLider>();
 
     public virtual ICollection<TblAutenticacionUsuario> TblAutenticacionUsuarios { get; set; } = new List<TblAutenticacionUsuario>();
+
 }
