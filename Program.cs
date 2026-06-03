@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Features.Clientes;
 using tmr_backend.Features.Auth;
@@ -23,6 +23,8 @@ using System.Text;
 using System.IdentityModel.Tokens.Jwt;
 using Microsoft.Extensions.Caching.Memory;
 using FluentValidation;
+using tmr_backend.Features.Configuracion.Register_Temp.Validators;
+using tmr_backend.Features.Configuracion.Register_Temp.Services;
 using tmr_backend.Infrastructure.Shared;
 using tmr_backend.Features.Auth.Validators;
 using tmr_backend.Features.Auth.Services;
@@ -56,6 +58,14 @@ builder.Services.AddOpenApi(options =>
         };
         return Task.CompletedTask;
     });
+}); 
+// =========================
+// SERVICES
+// =========================
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+
+// CORS
 });
 
 builder.Services.AddCors(options =>
@@ -63,6 +73,14 @@ builder.Services.AddCors(options =>
     options.AddPolicy("Frontend", policy =>
         policy.WithOrigins("http://localhost:4200", "https://localhost:4200")
               .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+    options.AddPolicy("Frontend", policy =>
+    {
+        policy.WithOrigins("http://localhost:4200")
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
               .AllowAnyMethod()
               .AllowCredentials());
 });
@@ -74,6 +92,22 @@ builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
 
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
+builder.Services.AddScoped<ITokenService,   TokenService>();
+builder.Services.AddScoped<IAuthService,     AuthService>();
+builder.Services.AddScoped<LoginHandler>();
+builder.Services.AddScoped<RefreshHandler>();
+builder.Services.AddScoped<LogoutHandler>();
+builder.Services.AddScoped<ChangePasswordHandler>();
+builder.Services.AddScoped<GetCurrentUserHandler>();
+builder.Services.AddScoped<GetPermissionsHandler>();
+builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+
+// ── Memory Cache para blacklist de tokens ──────────────────
+builder.Services.AddMemoryCache();
+
+// ── Health Check ──────────────────────────────────────────
+builder.Services.AddScoped<IHealthCheckService, HealthCheckService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<AuditInterceptor>();
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
@@ -128,6 +162,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
 
+// TU FEATURE
+builder.Services.AddScoped<ICargarActividadesExcelHandler, CargarActividadesExcelHandler>();
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -135,6 +172,8 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
     app.MapScalarApiReference(options =>
     {
+        options.AddPreferredSecuritySchemes("Bearer")
+               .AddHttpAuthentication("Bearer", http => { });
         options.Title                 = "TMR Backend API";
         options.Theme                 = ScalarTheme.Purple;
         options.DefaultHttpClient     = new(ScalarTarget.Http, ScalarClient.Http11);
@@ -146,6 +185,13 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// CORS
+app.UseCors("PermitirAngular");
+app.UseCors("Frontend");
+
+// Middleware de Autenticación y Autorización
+app.UseAuthentication();
 app.UseCors("Frontend");
 app.UseMiddleware<GlobalExceptionMiddleware>();
 app.UseAuthentication();
