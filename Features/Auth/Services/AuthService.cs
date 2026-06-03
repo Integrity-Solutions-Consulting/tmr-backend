@@ -1,6 +1,8 @@
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using tmr_backend.Features.Auth.DTOs.Request;
 using tmr_backend.Features.Auth.DTOs.Response;
 using tmr_backend.Features.Auth.Mappings;
@@ -8,7 +10,6 @@ using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
 using tmr_backend.Infrastructure.Security;
 using tmr_backend.Shared.Exceptions;
-using System.Security.Claims;
 
 namespace tmr_backend.Features.Auth.Services;
 
@@ -367,7 +368,7 @@ public sealed class AuthService(
         string jti,
         int idUser,
         DateTime atExpiry,
-        string rawRefreshToken,
+        string? rawRefreshToken,
         CancellationToken ct)
     {
         var usuario = await db.TblAutenticacionUsuarios
@@ -377,7 +378,7 @@ public sealed class AuthService(
         var usuarioEmail = usuario.Email.Contains('@') ? usuario.Email.Split('@')[0] : usuario.Email;
         var fecha = DateTime.UtcNow;
 
-        // 1. Blacklist del JTI (solo si no existe ya)
+        // 1. Blacklist del JTI (siempre se ejecuta para revocar el AT usado en logout)
         var jtiExiste = await db.TblAutenticacionTokenBlacklists
             .AnyAsync(b => b.Jti == jti, ct);
 
@@ -395,27 +396,41 @@ public sealed class AuthService(
             });
         }
 
-        // 2. Revocar RT actual y cerrar sesión
-        var hash = tokenService.HashToken(rawRefreshToken);
-        var rt = await db.TblAutenticacionRefreshTokens
-            .FirstOrDefaultAsync(r => r.Tokenhash == hash, ct);
+        // 2. Cerrar la sesión — buscar por RT o por la sesión más reciente activa
+        TblAutenticacionSesion? sesion = null;
 
-        if (rt is not null)
+        if (!string.IsNullOrWhiteSpace(rawRefreshToken))
         {
-            rt.Estarevocado = true;
-            rt.Activo       = false;
+            var hash = tokenService.HashToken(rawRefreshToken);
+            var rt = await db.TblAutenticacionRefreshTokens
+                .FirstOrDefaultAsync(r => r.Tokenhash == hash, ct);
 
-            var sesion = await db.TblAutenticacionSesions.FirstOrDefaultAsync(s => s.Id == rt.Idsesion, ct);
-            if (sesion is not null)
+            if (rt is not null)
             {
-                sesion.Estaactiva          = false;
-                sesion.Activo              = false;
-                sesion.Revocadofecha       = fecha;
-                sesion.Revocadorazon       = RevocacionRazonEnum.LOGOUT;
-                sesion.Usuariomodificacion = usuarioEmail;
-                sesion.Fechamodificacion   = fecha;
-                sesion.Ipmodificacion      = httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+                rt.Estarevocado = true;
+                rt.Activo       = false;
+                sesion = await db.TblAutenticacionSesions.FirstOrDefaultAsync(s => s.Id == rt.Idsesion, ct);
             }
+        }
+        else
+        {
+            // Si no se proporciona RT, buscar la sesión más reciente activa del usuario
+            sesion = await db.TblAutenticacionSesions
+                .Where(s => s.Idusuario == idUser && s.Estaactiva && s.Activo)
+                .OrderByDescending(s => s.Ultimaactividad)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        // Marcar la sesión como inactiva
+        if (sesion is not null)
+        {
+            sesion.Estaactiva          = false;
+            sesion.Activo              = false;
+            sesion.Revocadofecha       = fecha;
+            sesion.Revocadorazon       = RevocacionRazonEnum.LOGOUT;
+            sesion.Usuariomodificacion = usuarioEmail;
+            sesion.Fechamodificacion   = fecha;
+            sesion.Ipmodificacion      = httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         }
 
         await db.SaveChangesAsync(ct);
@@ -441,7 +456,7 @@ public sealed class AuthService(
     public async Task ChangePasswordAsync(ChangePasswordRequest request, HttpContext context, CancellationToken ct)
     {
         var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        var claim    = httpContextAccessor.HttpContext?.User.FindFirst(ClaimTypes.NameIdentifier) ?? httpContextAccessor.HttpContext?.User.FindFirst("sub");
+        var claim    = httpContextAccessor.HttpContext?.User.FindFirst(JwtRegisteredClaimNames.Sub);
 
         var userId = claim != null && int.TryParse(claim.Value, out var idUser) 
                 ? idUser 

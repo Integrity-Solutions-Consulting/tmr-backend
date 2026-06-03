@@ -23,7 +23,7 @@ public interface IAuthService
         string jti,
         int idUsuario,
         DateTime atExpiry,
-        string rawRefreshToken,
+        string? rawRefreshToken,
         CancellationToken ct);
 
     Task RevokeTokenAsync(RevokeTokenRequest request, int idUsuario, CancellationToken ct);
