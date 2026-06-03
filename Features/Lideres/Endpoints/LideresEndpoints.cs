@@ -1,3 +1,6 @@
+using tmr_backend.Features.Lideres.DTOs.Request;
+using tmr_backend.Features.Lideres.DTOs.Response;
+using tmr_backend.Features.Lideres.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using tmr_backend.Features.Lideres.Domain;
@@ -15,12 +18,14 @@ public static class LideresEndpoints
 {
     public static void MapLideresEndpoints(this IEndpointRouteBuilder app)
     {
+        var group = app.MapGroup("/api/lideres").WithTags("Lideres").RequireAuthorization();
         var group = app.MapGroup("/api/lideres")
             .WithTags("Lideres")
             .RequireAuthorization();
 
-        group.MapGet("/", async (ApplicationDbContext db) =>
+        group.MapGet("/", async (ILiderService service, bool? activo, CancellationToken ct) =>
         {
+            var lideres = await service.ObtenerTodosAsync(activo, ct);
             var lideres = await db.TblAdministracionLiders
                 .Where(l => l.Activo)
                 .OrderBy(l => l.IdpersonaNavigation.Nombres)
@@ -32,6 +37,10 @@ public static class LideresEndpoints
             return Results.Ok(lideres);
         }).RequireAuthorization("LIDERES_READ");
 
+        group.MapGet("/contadores", async (ILiderService service, CancellationToken ct) =>
+        {
+            var contadores = await service.ObtenerContadoresAsync(ct);
+            return Results.Ok(contadores);
         group.MapGet("/{id:int}", async (int id, ApplicationDbContext db) =>
         {
             var lider = await db.TblAdministracionLiders
@@ -47,8 +56,11 @@ public static class LideresEndpoints
                 ((lider.IdpersonaNavigation.Nombres ?? string.Empty) + " " + (lider.IdpersonaNavigation.Apellidos ?? string.Empty)).Trim()));
         });
 
-        group.MapPost("/", async (CrearLiderRequest request, ApplicationDbContext db) =>
+        group.MapGet("/personas-disponibles", async (ILiderService service, CancellationToken ct) =>
         {
+            var personas = await service.ObtenerPersonasDisponiblesAsync(ct);
+            return Results.Ok(personas);
+        });
             try
             {
                 var nuevoLider = Lider.Crear(request.Nombre, request.Descripcion);
@@ -65,8 +77,11 @@ public static class LideresEndpoints
             }
         }).RequireAuthorization("LIDERES_CREATE");
 
-        group.MapPut("/{id:guid}", async (Guid id, ActualizarLiderRequest request, ApplicationDbContext db) =>
+        group.MapGet("/tipos", async (ILiderService service, CancellationToken ct) =>
         {
+            var tipos = await service.ObtenerTiposAsync(ct);
+            return Results.Ok(tipos);
+        });
             var lider = await db.Lideres.FindAsync(id);
 
             if (lider is null) return Results.NotFound();
@@ -84,15 +99,29 @@ public static class LideresEndpoints
             }
         }).RequireAuthorization("LIDERES_UPDATE");
 
-        group.MapDelete("/{id:guid}", async (Guid id, ApplicationDbContext db) =>
+        group.MapGet("/{id:int}", async (int id, ILiderService service, CancellationToken ct) =>
         {
-            var lider = await db.Lideres.FindAsync(id);
+            var lider = await service.ObtenerPorIdAsync(id, ct);
+            return lider is null ? Results.NotFound() : Results.Ok(lider);
+        });
 
-            if (lider is null) return Results.NotFound();
+        group.MapPost("/", async (CrearLiderRequest request, ILiderService service, CancellationToken ct) =>
+        {
+            var lider = await service.CrearAsync(request, ct);
+            return Results.Created($"/api/lideres/{lider.Id}", lider);
+        });
 
-            lider.Desactivar();
-            await db.SaveChangesAsync();
+        group.MapPut("/{id:int}", async (int id, ActualizarLiderRequest request, ILiderService service, CancellationToken ct) =>
+        {
+            var lider = await service.ActualizarAsync(id, request, ct);
+            return lider is null ? Results.NotFound() : Results.Ok(lider);
+        });
 
+        group.MapDelete("/{id:int}", async (int id, ILiderService service, CancellationToken ct) =>
+        {
+            var resultado = await service.DesactivarAsync(id, ct);
+            return resultado ? Results.NoContent() : Results.NotFound();
+        });
             return Results.NoContent();
         }).RequireAuthorization("LIDERES_DELETE");;
 
@@ -180,4 +209,4 @@ public static class LideresEndpoints
             });
         }
     }
-}
+    }

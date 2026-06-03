@@ -38,6 +38,7 @@ public sealed class TokenService(IOptions<JwtSettings> jwtSettings, IConfigurati
 
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
+    public string GenerateAccessToken(TblAutenticacionUsuario user)
 
     /// <summary>
     /// Genera Access Token con claims completos (roles, nombre, employee_id, etc.)

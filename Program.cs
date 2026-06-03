@@ -64,6 +64,8 @@ builder.Services.AddOpenApi(options =>
 });
 JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
+builder.Services.AddDbContext<ApplicationDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 // =========================
 // SERVICES
 // =========================
@@ -118,6 +120,17 @@ builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
 
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
 
+// ── CORS ──────────────────────────────────────────────────
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("PermitirAngular", policy =>
+    {
+        policy.WithOrigins("http://localhost:4200")
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
+
 // ── Seguridad ─────────────────────────────────────────────
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpContextAccessor();
@@ -159,6 +172,9 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IPermissionService, PermissionService>();
 builder.Services.AddScoped<ICargarActividadesExcelHandler, CargarActividadesExcelHandler>();
 
+// ── Lideres ───────────────────────────────────────────────
+builder.Services.AddScoped<ILiderService,   LiderService>();
+
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtSettings>()!;
@@ -175,6 +191,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateIssuerSigningKey = true,
             ValidIssuer              = jwt.Issuer,
             ValidAudience            = jwt.Audience,
+            IssuerSigningKey         = new SymmetricSecurityKey(
+                                           Encoding.UTF8.GetBytes(jwt.SecretKey)),
+            ClockSkew                = TimeSpan.FromSeconds(5)
             IssuerSigningKey         = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.SecretKey)),
             ClockSkew                = TimeSpan.Zero
         };
@@ -254,6 +273,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseCors("PermitirAngular");
+app.UseAuthentication();
+app.UseAuthorization();
 
 // CORS
 app.UseCors("PermitirAngular");
