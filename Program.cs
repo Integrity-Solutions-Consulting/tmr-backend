@@ -3,11 +3,16 @@ using Npgsql;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
 using tmr_backend.Features.Clientes;
+using tmr_backend.Features.Clientes.DTOs.Request;
+using tmr_backend.Features.Clientes.Services;
+using tmr_backend.Features.Clientes.Validators;
 using tmr_backend.Features.Auth;
 using tmr_backend.Features.Usuarios.Endpoints;
 using tmr_backend.Features.CargaActividades;
 
 using tmr_backend.Features.Colaboradores;
+using tmr_backend.Features.Colaboradores.Services;
+using tmr_backend.Features.Configuracion;
 using tmr_backend.Features.Dashboard;
 using tmr_backend.Features.Lideres;
 using tmr_backend.Features.Proyectos;
@@ -40,6 +45,8 @@ using tmr_backend.Shared.Wrappers;
 using Microsoft.AspNetCore.Authorization;
 using tmr_backend.Shared.Middleware;
 using Microsoft.OpenApi;
+
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -142,6 +149,10 @@ builder.Services.AddScoped<IPermissionService, PermissionService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<ITokenService,   TokenService>();
+builder.Services.AddScoped<IAuthService,    AuthService>();
+// ── Servicios de Colaboradores (DI - SOLID) ───────────────
+builder.Services.AddScoped<IColaboradorService, ColaboradorService>();
+builder.Services.AddScoped<ICodigoEmpleadoGenerator, CodigoEmpleadoGenerator>();
 builder.Services.AddScoped<IAuthService,     AuthService>();
 builder.Services.AddScoped<LoginHandler>();
 builder.Services.AddScoped<RefreshHandler>();
@@ -175,6 +186,15 @@ builder.Services.AddScoped<ICargarActividadesExcelHandler, CargarActividadesExce
 // ── Lideres ───────────────────────────────────────────────
 builder.Services.AddScoped<ILiderService,   LiderService>();
 
+
+// ── Servicios de Clientes (DI - SOLID) ─────────────
+builder.Services.AddScoped<IClienteService, ClienteService>();
+// ── Validadores de Clientes (FluentValidation) ───────
+builder.Services.AddScoped<IValidator<CrearClienteRequest>, CrearClienteRequestValidator>();
+builder.Services.AddScoped<IValidator<ActualizarClienteRequest>, ActualizarClienteRequestValidator>();
+
+
+// Register FluentValidation validators from the auth feature
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtSettings>()!;
@@ -235,9 +255,37 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
+
+// ── CORS: permitir que el frontend Angular llame al backend ──
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("PermitirFrontend", policy =>
+    {
+        policy.WithOrigins("http://localhost:4200")  // URL del frontend Angular
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials(); // ← necesario para que las cookies pasen
+    });
+});
+
+
+
 // Los permisos granulares (PROYECTOS_CREATE, etc.) los genera PermissionPolicyProvider
 // dinámicamente a partir del claim "permission" inyectado por PermissionEnrichmentMiddleware.
 builder.Services.AddAuthorization();
+
+// ── CORS para el frontend Angular ─────────────────────────
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("PermitirFrontend", policy =>
+    {
+        policy.WithOrigins("http://localhost:4200")
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials(); // ← necesario para que las cookies pasen
+    });
+});
+
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
 
 // TU FEATURE
@@ -272,6 +320,8 @@ if (app.Environment.IsDevelopment())
     });
 }
 
+app.UseCors("PermitirFrontend");
+
 app.UseHttpsRedirection();
 app.UseCors("PermitirAngular");
 app.UseAuthentication();
@@ -289,6 +339,13 @@ app.UseAuthentication();
 app.UseMiddleware<JwtBlacklistMiddleware>();
 app.UseMiddleware<PermissionEnrichmentMiddleware>();
 app.UseAuthorization();
+
+app.UseCors("PermitirFrontend"); //cors
+
+// ── Activar autenticación y autorización (JWT) ──
+app.UseAuthentication();   // primero valida el token
+app.UseAuthorization();    // luego verifica permisos
+
 
 app.MapHealthCheckEndpoints();
 // Endpoints

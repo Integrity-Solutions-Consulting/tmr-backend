@@ -582,6 +582,12 @@ public partial class ApplicationDbContext : DbContext
                 .HasMaxLength(100)
                 .HasColumnName("nombres");
                 .HasColumnName("nombrecomercial");
+            entity.Property(e => e.Nombres)
+                .HasMaxLength(150)
+                .HasColumnName("nombres");
+            entity.Property(e => e.Apellidos)
+                .HasMaxLength(150)
+                .HasColumnName("apellidos");
             entity.Property(e => e.Numeroidentificacion)
                 .HasMaxLength(20)
                 .HasColumnName("numeroidentificacion");
@@ -702,6 +708,11 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Salario)
                 .HasPrecision(12, 2)
                 .HasColumnName("salario");
+
+            // Mapeo de la columna nueva AniosExperiencia (en BD se llama "aniosexperiencia")
+            entity.Property(e => e.Aniosexperiencia)
+                .HasColumnName("aniosexperiencia");
+
             entity.Property(e => e.Usuariocreacion)
                 .HasMaxLength(50)
                 .HasColumnName("usuariocreacion");
