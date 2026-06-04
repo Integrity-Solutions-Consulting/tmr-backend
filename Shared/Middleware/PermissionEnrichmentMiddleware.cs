@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using tmr_backend.Infrastructure.Security;
 
@@ -15,7 +16,7 @@ public sealed class PermissionEnrichmentMiddleware(RequestDelegate next)
     {
         if (ctx.User.Identity?.IsAuthenticated == true)
         {
-            var userIdClaim = ctx.User.FindFirst(ClaimTypes.NameIdentifier);
+            var userIdClaim = ctx.User.FindFirst(JwtRegisteredClaimNames.Sub);
 
             if (userIdClaim is not null && int.TryParse(userIdClaim.Value, out var userId))
             {

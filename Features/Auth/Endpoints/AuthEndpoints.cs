@@ -134,7 +134,7 @@ public static class AuthEndpoints
         CancellationToken ct)
     {
         var jti    = context.User.FindFirstValue(JwtRegisteredClaimNames.Jti);
-        var subRaw = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var subRaw = context.User.FindFirstValue(JwtRegisteredClaimNames.Sub);
         var expRaw = context.User.FindFirstValue("exp");
 
         if (jti is null || !int.TryParse(subRaw, out var idUsuario))
@@ -154,7 +154,7 @@ public static class AuthEndpoints
         IAuthService authService,
         CancellationToken ct)
     {
-        var subRaw = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var subRaw = context.User.FindFirstValue(JwtRegisteredClaimNames.Sub);
 
         if (!int.TryParse(subRaw, out var idUsuario))
             return Results.Unauthorized();
