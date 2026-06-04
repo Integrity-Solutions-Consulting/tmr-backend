@@ -4,8 +4,12 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using tmr_backend.Features.Auth.DTOs.Response;
+using tmr_backend.Features.Auth.Register;
+using tmr_backend.Features.Auth.Register.DTOs;
 using tmr_backend.Features.Configuracion.Usuarios.Application;
 using tmr_backend.Features.Configuracion.Usuarios.DTOs;
+using tmr_backend.Shared.Wrappers;
 
 namespace tmr_backend.Features.Configuracion.Usuarios.Endpoints;
 
@@ -72,6 +76,25 @@ public static class UsuariosConfigEndpoints
         })
         .WithName("DesactivarUsuarioConfig")
         .WithDescription("Desactiva lógicamente a un usuario.");
+        // POST /api/configuracion/usuarios/register-user
+        group.MapPost("/register-user", async (
+            [FromBody] RegisterUserRequest request,
+            HttpContext context,
+            [FromServices] RegisterUserHandler handler,
+            CancellationToken ct) =>
+        {
+            var result = await handler.Handle(request, context, ct);
+            return Results.Created(
+                $"/api/configuracion/usuarios/{result.Id}",
+                ApiResponse<RegisterResponse>.Ok(result, "Usuario administrativo registrado correctamente."));
+        })
+        .WithName("RegisterUserConfig")
+        .WithSummary("Registrar usuario administrativo")
+        .WithDescription("Crea un usuario administrativo con contraseña temporal. Requiere autenticación.")
+        .Produces<ApiResponse<RegisterResponse>>(StatusCodes.Status201Created)
+        .Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
+        .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized)
+        .Produces<ProblemDetails>(StatusCodes.Status409Conflict);
     }
 
     private static string ObtenerUsuarioActual(HttpContext context)
