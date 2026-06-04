@@ -17,8 +17,8 @@ public static class AuthEndpoints
         // ── Endpoints públicos (sin autenticación) ─────────────────────────
 
         group.MapPost("/register", Register)
-            .WithName("Register")
-            .WithSummary("Registrar nuevo usuario")
+            .WithName("RegistraUsuario")
+            .WithSummary("Registra usuario")
             .Produces<ApiResponse<RegisterResponse>>(StatusCodes.Status201Created)
             .Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
             .Produces<ProblemDetails>(StatusCodes.Status409Conflict);

@@ -45,6 +45,11 @@ public sealed class AuthService(
         if (existe)
             throw new ConflictException("El email ya está registrado.");
 
+        var rolExiste = await db.TblAutenticacionRols
+            .AnyAsync(r => r.Id == request.IdRol && r.Activo, ct);
+        if (!rolExiste)
+            throw new ValidationException("El rol enviado no existe o no esta activo.");
+
         var hash = passwordHasher.Hash(contraseniaDefecto);
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -92,7 +97,7 @@ public sealed class AuthService(
             var usuarioRol = new TblAutenticacionUsuarioRol
             {
                 Idusuario       = usuario.Id,
-                Idrol           = 4, // Rol Colaborador por defecto
+                Idrol           = request.IdRol,
                 Asignadoen      = fecha,
                 Activo          = true,
                 Usuariocreacion = request.Usuario,

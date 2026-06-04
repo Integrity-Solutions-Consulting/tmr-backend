@@ -30,6 +30,12 @@ public sealed class RegisterUserHandler(
         if (exists)
             throw new ConflictException("El email ya esta registrado.");
 
+        var roleExists = await db.TblAutenticacionRols
+            .AnyAsync(r => r.Id == request.IdRol && r.Activo, ct);
+
+        if (!roleExists)
+            throw new InvalidOperationException("El rol enviado no existe o no esta activo.");
+
         await using var tx = await db.Database.BeginTransactionAsync(ct);
 
         try
@@ -79,7 +85,7 @@ public sealed class RegisterUserHandler(
             var usuarioRol = new TblAutenticacionUsuarioRol
             {
                 Idusuario = usuario.Id,
-                Idrol = 4, // TODO: hacer dinamica la asignacion de rol.
+                Idrol = request.IdRol,
                 Asignadoen = now,
                 Activo = true,
                 Usuariocreacion = request.Usuario.Trim(),
@@ -115,6 +121,9 @@ public sealed class RegisterUserHandler(
 
     private static void Validate(RegisterUserRequest request)
     {
+        if (request.IdRol <= 0)
+            throw new InvalidOperationException("IdRol es requerido.");
+
         if (request.TipoIdentificacion is not ("C" or "R" or "P" or "O"))
             throw new InvalidOperationException("TipoIdentificacion debe ser C, R, P u O.");
 

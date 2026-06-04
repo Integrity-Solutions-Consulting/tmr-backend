@@ -39,19 +39,6 @@ public static class UsuariosConfigEndpoints
         .WithName("ObtenerUsuarioPorIdConfig")
         .WithDescription("Obtiene el detalle completo de un usuario por el ID de Persona.");
 
-        // POST /api/configuracion/usuarios
-        group.MapPost("/", async ([FromBody] CrearUsuarioConfigRequest request, HttpContext context, [FromServices] IUsuariosConfigService service) =>
-        {
-            var usuarioActual = ObtenerUsuarioActual(context);
-            var ipActual = ObtenerIpActual(context);
-            var idUsuarioActual = ObtenerIdUsuarioActual(context);
-            
-            var result = await service.CrearUsuarioAsync(request, usuarioActual, ipActual, idUsuarioActual);
-            return Results.Created($"/api/configuracion/usuarios/{result.id}", result);
-        })
-        .WithName("CrearUsuarioConfig")
-        .WithDescription("Crea un nuevo usuario asignándole roles.");
-
         // PUT /api/configuracion/usuarios/{id}
         group.MapPut("/{id:int}", async (int id, [FromBody] UpdateUsuarioRequest request, HttpContext context, [FromServices] IUsuariosConfigService service) =>
         {
@@ -75,7 +62,8 @@ public static class UsuariosConfigEndpoints
             return Results.Ok(result);
         })
         .WithName("DesactivarUsuarioConfig")
-        .WithDescription("Desactiva lógicamente a un usuario.");
+        .WithDescription("Desactiva logicamente a un usuario.");
+
         // POST /api/configuracion/usuarios/register-user
         group.MapPost("/register-user", async (
             [FromBody] RegisterUserRequest request,
@@ -90,7 +78,7 @@ public static class UsuariosConfigEndpoints
         })
         .WithName("RegisterUserConfig")
         .WithSummary("Registrar usuario administrativo")
-        .WithDescription("Crea un usuario administrativo con contraseña temporal. Requiere autenticación.")
+        .WithDescription("Crea un usuario administrativo con contrasena temporal. Requiere autenticacion.")
         .Produces<ApiResponse<RegisterResponse>>(StatusCodes.Status201Created)
         .Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
         .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized)
