@@ -39,6 +39,19 @@ public static class UsuariosConfigEndpoints
         .WithName("ObtenerUsuarioPorIdConfig")
         .WithDescription("Obtiene el detalle completo de un usuario por el ID de Persona.");
 
+        // POST /api/configuracion/usuarios
+        group.MapPost("/", async ([FromBody] CrearUsuarioConfigRequest request, HttpContext context, [FromServices] IUsuariosConfigService service) =>
+        {
+            var usuarioActual = ObtenerUsuarioActual(context);
+            var ipActual = ObtenerIpActual(context);
+            var idUsuarioActual = ObtenerIdUsuarioActual(context);
+
+            var result = await service.CrearUsuarioAsync(request, usuarioActual, ipActual, idUsuarioActual);
+            return Results.Created($"/api/configuracion/usuarios/{result.id}", result);
+        })
+        .WithName("CrearUsuarioConfig")
+        .WithDescription("Crea un nuevo usuario asignandole roles.");
+
         // PUT /api/configuracion/usuarios/{id}
         group.MapPut("/{id:int}", async (int id, [FromBody] UpdateUsuarioRequest request, HttpContext context, [FromServices] IUsuariosConfigService service) =>
         {

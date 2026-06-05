@@ -11,9 +11,13 @@ public interface IRolesConfigService
 {
     Task<SuccessResponse> CrearRolAsync(CreateRolRequest request, string usuarioActual, string ipActual);
     Task<SuccessResponse> ActualizarRolAsync(int id, UpdateRolRequest request, string usuarioActual, string ipActual);
+    Task<RolResponse> GetByIdAsync(int id);
     Task<RolResponse> ObtenerRolPorIdAsync(int id);
     Task<List<RolResponse>> ObtenerRolesAsync();
     Task<List<ModuloResponse>> ObtenerModulosAsync();
+    Task<SuccessResponse> ActualizarEstadoAsync(int id, ActivarRolRequest request, string usuarioActual, string ipActual);
+    Task<bool> TieneUsuariosAsignadosAsync(int id);
+    Task<SuccessResponse> EliminarRolAsync(int id, string usuarioActual, string ipActual);
 }
 
 public class RolesConfigService : IRolesConfigService
@@ -153,6 +157,11 @@ public class RolesConfigService : IRolesConfigService
 
     public async Task<RolResponse> ObtenerRolPorIdAsync(int id)
     {
+        return await GetByIdAsync(id);
+    }
+
+    public async Task<RolResponse> GetByIdAsync(int id)
+    {
         var rolEntity = await _dbContext.TblAutenticacionRols
             .FirstOrDefaultAsync(r => r.Id == id && r.Activo);
 
@@ -180,6 +189,82 @@ public class RolesConfigService : IRolesConfigService
             modulos: modulos,
             activo: rolEntity.Activo
         );
+    }
+
+    public async Task<SuccessResponse> ActualizarEstadoAsync(int id, ActivarRolRequest request, string usuarioActual, string ipActual)
+    {
+        var rolEntity = await _dbContext.TblAutenticacionRols
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (rolEntity == null)
+            throw new RolNoEncontradoException(id);
+
+        if (rolEntity.Essistema && !request.activo)
+            throw new DatosInvalidosRolException("No se puede desactivar un rol de sistema.");
+
+        if (!request.activo && await TieneUsuariosAsignadosAsync(id))
+            throw new DatosInvalidosRolException("No se puede desactivar un rol con usuarios asignados.");
+
+        var fecha = DateTime.UtcNow;
+        rolEntity.Activo = request.activo;
+        rolEntity.Usuariomodificacion = usuarioActual;
+        rolEntity.Fechamodificacion = fecha;
+        rolEntity.Ipmodificacion = ipActual;
+
+        _dbContext.TblAutenticacionRols.Update(rolEntity);
+        await _dbContext.SaveChangesAsync();
+
+        return new SuccessResponse(request.activo ? "Rol activado exitosamente." : "Rol desactivado exitosamente.");
+    }
+
+    public async Task<bool> TieneUsuariosAsignadosAsync(int id)
+    {
+        return await _dbContext.TblAutenticacionUsuarioRols
+            .AnyAsync(ur => ur.Idrol == id && ur.Activo && ur.IdusuarioNavigation.Activo);
+    }
+
+    public async Task<SuccessResponse> EliminarRolAsync(int id, string usuarioActual, string ipActual)
+    {
+        var rolEntity = await _dbContext.TblAutenticacionRols
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (rolEntity == null)
+            throw new RolNoEncontradoException(id);
+
+        if (rolEntity.Essistema)
+            throw new DatosInvalidosRolException("No se puede eliminar un rol de sistema.");
+
+        if (await TieneUsuariosAsignadosAsync(id))
+            throw new DatosInvalidosRolException("No se puede eliminar un rol con usuarios asignados.");
+
+        using var transaction = await _dbContext.Database.BeginTransactionAsync();
+        try
+        {
+            var fecha = DateTime.UtcNow;
+            rolEntity.Activo = false;
+            rolEntity.Usuariomodificacion = usuarioActual;
+            rolEntity.Fechamodificacion = fecha;
+            rolEntity.Ipmodificacion = ipActual;
+
+            var permisosRol = await _dbContext.TblAutenticacionRolPermisos
+                .Where(rp => rp.Idrol == id)
+                .ToListAsync();
+
+            foreach (var permisoRol in permisosRol)
+            {
+                permisoRol.Activo = false;
+            }
+
+            await _dbContext.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            return new SuccessResponse("Rol eliminado exitosamente.");
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
     }
 
     public async Task<List<RolResponse>> ObtenerRolesAsync()
