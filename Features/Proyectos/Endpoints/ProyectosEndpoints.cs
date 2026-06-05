@@ -76,7 +76,7 @@ public static class ProyectosEndpoints
                 .Select(c => new LookupDto(c.Id, c.Nombrecargo))
                 .ToListAsync();
 
-            return Results.Ok(new { clientes, lideres, empleados ,estados, tipos, cargos });
+            return Results.Ok(new { clientes, lideres, empleados , estados, tipos, cargos });
         });
 
         group.MapPost("/", async (CrearProyectoRequest request, ApplicationDbContext db, HttpContext context) =>
