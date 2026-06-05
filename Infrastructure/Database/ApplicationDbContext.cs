@@ -7,11 +7,11 @@ using tmr_backend.Features.Clientes.Domain;
 using tmr_backend.Features.CargaActividades.Domain;
 using tmr_backend.Features.Colaboradores.Domain;
 using tmr_backend.Features.Dashboard.Domain;
-using tmr_backend.Features.Usuarios.Domain;
 using tmr_backend.Features.Proyectos.Domain;
 using tmr_backend.Features.Reportes.Domain;
 using tmr_backend.Features.TimeReport.Domain;
 using tmr_backend.Features.Lideres.Domain;
+using tmr_backend.Features.Usuarios.Domain;
 
 namespace tmr_backend.Infrastructure.Database;
 
@@ -23,10 +23,10 @@ public partial class ApplicationDbContext : DbContext
     }
 
     public DbSet<Cliente> Clientes { get; set; } = null!;
-    public DbSet<Usuario> Usuarios { get; set; } = null!;
     public DbSet<Actividad> Actividades { get; set; } = null!;
     public DbSet<Colaborador> Colaboradores { get; set; } = null!;
     public DbSet<DashboardItem> DashboardItems { get; set; } = null!;
+    public DbSet<Usuario> Usuarios { get; set; } = null!;
 
     // ─────────────────────────────────────────────────────────────────────
     // DbSets - Entidades scaffoldeadas de la base de datos real (Inv_tmr_db)
@@ -2802,44 +2802,6 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Ipcreacion)
                 .HasMaxLength(45)
                 .HasColumnName("ipcreacion");
-        });
-
-        modelBuilder.Entity<TblAutenticacionRolPermiso>(entity =>
-        {
-            // PK compuesta — la tabla NO tiene columna Id surrogate
-            entity.HasKey(e => new { e.Idrol, e.Idpermiso }).HasName("pk_autenticacion_rol_permiso");
-
-            entity.ToTable("tbl_autenticacion_rol_permiso", "autenticacion");
-
-            entity.Property(e => e.Idrol).HasColumnName("idrol");
-            entity.Property(e => e.Idpermiso).HasColumnName("idpermiso");
-            entity.Property(e => e.Otorgado)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("otorgado");
-            entity.Property(e => e.Activo)
-                .HasDefaultValue(true)
-                .HasColumnName("activo");
-            entity.Property(e => e.Usuariocreacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariocreacion");
-            entity.Property(e => e.Fechacreacion)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("fechacreacion");
-            entity.Property(e => e.Ipcreacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipcreacion");
-
-            entity.HasOne(d => d.IdpermisoNavigation)
-                .WithMany(p => p.TblAutenticacionRolPermisos)
-                .HasForeignKey(d => d.Idpermiso)
-                .OnDelete(DeleteBehavior.Cascade)
-                .HasConstraintName("fk_autenticacion_rol_permiso_permiso");
-
-            entity.HasOne(d => d.IdrolNavigation)
-                .WithMany()
-                .HasForeignKey(d => d.Idrol)
-                .OnDelete(DeleteBehavior.Cascade)
-                .HasConstraintName("fk_autenticacion_rol_permiso_rol");
         });
 
         OnModelCreatingPartial(modelBuilder);

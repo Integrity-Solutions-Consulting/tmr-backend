@@ -1,20 +1,18 @@
-namespace tmr_backend.Features.Auth.DTOs.Request;
+namespace tmr_backend.Features.Auth.Register.DTOs;
 
-public record RegisterRequest(
+public sealed record RegisterUserRequest(
     int IdRol,
     int IdGenero,
     int IdNacionalidad,
     int IdTipoIdentificacion,
     string TipoIdentificacion,
-    string? Numeroidentificacion,
+    string Numeroidentificacion,
     string Nombres,
     string Apellidos,
     string CorreoContacto,
     string TipoPersona,
     string FechaNacimiento,
-    string? Telefono,
-    string? Direccion,
-    string IP,
+    string Telefono,
+    string Direccion,
     string Email,
-    //string Password,
     string Usuario);

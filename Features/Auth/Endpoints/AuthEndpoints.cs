@@ -17,11 +17,12 @@ public static class AuthEndpoints
         // ── Endpoints públicos (sin autenticación) ─────────────────────────
 
         group.MapPost("/register", Register)
-            .WithName("Register")
-            .WithSummary("Registrar nuevo usuario")
+            .WithName("RegistraUsuario")
+            .WithSummary("Registra usuario")
             .Produces<ApiResponse<RegisterResponse>>(StatusCodes.Status201Created)
             .Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
             .Produces<ProblemDetails>(StatusCodes.Status409Conflict);
+
 
         group.MapPost("/login", Login)
             .WithName("Login")
@@ -75,6 +76,7 @@ public static class AuthEndpoints
             ApiResponse<RegisterResponse>.Ok(result, "Usuario registrado correctamente. Verifique su email."));
     }
 
+
     private static async Task<IResult> Login(
         LoginRequest request,
         HttpContext context,
@@ -111,7 +113,7 @@ public static class AuthEndpoints
         CancellationToken ct)
     {
         var jti    = context.User.FindFirstValue(JwtRegisteredClaimNames.Jti);
-        var subRaw = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var subRaw = context.User.FindFirstValue(JwtRegisteredClaimNames.Sub);
         var expRaw = context.User.FindFirstValue("exp");
 
         if (jti is null || !int.TryParse(subRaw, out var idUsuario))
@@ -131,7 +133,7 @@ public static class AuthEndpoints
         IAuthService authService,
         CancellationToken ct)
     {
-        var subRaw = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var subRaw = context.User.FindFirstValue(JwtRegisteredClaimNames.Sub);
 
         if (!int.TryParse(subRaw, out var idUsuario))
             return Results.Unauthorized();

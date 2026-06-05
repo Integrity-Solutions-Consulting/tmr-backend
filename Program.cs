@@ -35,6 +35,7 @@ using System.IdentityModel.Tokens.Jwt;
 using Microsoft.Extensions.Caching.Memory;
 using FluentValidation;
 using tmr_backend.Infrastructure.Shared;
+using tmr_backend.Features.Auth.Register;
 using tmr_backend.Features.Auth.Validators;
 using tmr_backend.Features.Auth.Services;
 using tmr_backend.Features.Lideres.Services;
@@ -101,6 +102,7 @@ builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"))
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<RegisterUserHandler>();
 builder.Services.AddScoped<IPermissionService, PermissionService>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 
