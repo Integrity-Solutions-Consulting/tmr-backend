@@ -7,7 +7,6 @@ using tmr_backend.Features.Clientes.DTOs.Request;
 using tmr_backend.Features.Clientes.Services;
 using tmr_backend.Features.Clientes.Validators;
 using tmr_backend.Features.Auth;
-using tmr_backend.Features.Usuarios.Endpoints;
 using tmr_backend.Features.CargaActividades;
 using tmr_backend.Features.Colaboradores;
 using tmr_backend.Features.Colaboradores.Services;
@@ -226,7 +225,6 @@ if (app.Environment.IsDevelopment())
 app.MapHealthCheckEndpoints();
 app.MapClientesEndpoints();
 app.MapAuthEndpoints();
-app.MapUsuariosEndpoints();
 app.MapCargaActividadesEndpoints();
 app.MapColaboradoresEndpoints();
 app.MapDashboardEndpoints();

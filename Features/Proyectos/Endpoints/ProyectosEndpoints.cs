@@ -50,19 +50,33 @@ public static class ProyectosEndpoints
                 .Select(l => new LookupDto(l.Id, (l.IdpersonaNavigation.Nombres + " " + l.IdpersonaNavigation.Apellidos).Trim()))
                 .ToListAsync();
 
+            var empleados = await db.TblAdministracionEmpleados
+                .Where(e => e.Activo)
+                .OrderBy(e => e.IdpersonaNavigation.Nombres)
+                .Select(e => new LookupDto(e.Id, (e.IdpersonaNavigation.Nombres + " " + e.IdpersonaNavigation.Apellidos).Trim()))
+                .ToListAsync();
+
             var estados = await db.TblAdministracionCatalogoDetalles
-                .Where(d => d.Activo && d.Idcatalogo == 4)
-                .OrderBy(d => d.Orden)
+                .Include(d => d.IdcatalogoNavigation)
+                .Where(d => d.Activo && d.IdcatalogoNavigation.Codigo == "EPR")
+                .OrderBy(d => d.Valor)
                 .Select(d => new LookupDto(d.Id, d.Valor))
                 .ToListAsync();
 
             var tipos = await db.TblAdministracionCatalogoDetalles
-                .Where(d => d.Activo && d.Idcatalogo == 3)
-                .OrderBy(d => d.Orden)
+                .Include(d => d.IdcatalogoNavigation)
+                .Where(d => d.Activo && d.IdcatalogoNavigation.Codigo == "TPR")
+                .OrderBy(d => d.Valor)
                 .Select(d => new LookupDto(d.Id, d.Valor))
                 .ToListAsync();
 
-            return Results.Ok(new { clientes, lideres, estados, tipos });
+            var cargos = await db.TblAdministracionCargos
+                .Where(c => c.Activo && c.Iddepartamento==29) // cargos de departamento de desarrol
+                .OrderBy(c => c.Nombrecargo)
+                .Select(c => new LookupDto(c.Id, c.Nombrecargo))
+                .ToListAsync();
+
+            return Results.Ok(new { clientes, lideres, empleados ,estados, tipos, cargos });
         });
 
         group.MapPost("/", async (CrearProyectoRequest request, ApplicationDbContext db, HttpContext context) =>

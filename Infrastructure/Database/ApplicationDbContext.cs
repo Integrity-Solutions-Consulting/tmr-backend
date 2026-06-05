@@ -11,7 +11,7 @@ using tmr_backend.Features.Proyectos.Domain;
 using tmr_backend.Features.Reportes.Domain;
 using tmr_backend.Features.TimeReport.Domain;
 using tmr_backend.Features.Lideres.Domain;
-using tmr_backend.Features.Usuarios.Domain;
+
 
 namespace tmr_backend.Infrastructure.Database;
 
@@ -26,7 +26,6 @@ public partial class ApplicationDbContext : DbContext
     public DbSet<Actividad> Actividades { get; set; } = null!;
     public DbSet<Colaborador> Colaboradores { get; set; } = null!;
     public DbSet<DashboardItem> DashboardItems { get; set; } = null!;
-    public DbSet<Usuario> Usuarios { get; set; } = null!;
 
     // ─────────────────────────────────────────────────────────────────────
     // DbSets - Entidades scaffoldeadas de la base de datos real (Inv_tmr_db)
