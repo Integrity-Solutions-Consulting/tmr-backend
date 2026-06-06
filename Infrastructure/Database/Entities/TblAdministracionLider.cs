@@ -5,8 +5,7 @@ namespace tmr_backend.Infrastructure.Database.Entities;
 
 public partial class TblAdministracionLider
 {
-    //agregue bool es interno
-    public bool EsInterno { get; set; }  // true = Interno, false = Externo
+
     public int Id { get; set; }
 
     public int Idpersona { get; set; }

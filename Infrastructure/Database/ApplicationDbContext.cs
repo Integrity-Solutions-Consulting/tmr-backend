@@ -429,7 +429,6 @@ public partial class ApplicationDbContext : DbContext
             entity.HasKey(e => e.Id).HasName("pk_administracion_lider");
             entity.ToTable("tbl_administracion_lider", "administracion");
             entity.Property(e => e.Id).UseIdentityAlwaysColumn().HasColumnName("id");
-            entity.Property(e => e.EsInterno).HasColumnName("EsInterno");
             entity.Property(e => e.Activo).HasDefaultValue(true).HasColumnName("activo");
             entity.Property(e => e.Fechacreacion).HasDefaultValueSql("now()").HasColumnName("fechacreacion");
             entity.Property(e => e.Fechamodificacion).HasColumnName("fechamodificacion");
