@@ -88,3 +88,4 @@ public record ProyectoRecursoResponse(
 );
 
 public record LookupDto(int Id, string Nombre);
+public record CargoLookupDto(int Id, string Nombre, int? IdDepartamento);

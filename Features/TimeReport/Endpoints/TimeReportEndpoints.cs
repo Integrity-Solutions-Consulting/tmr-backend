@@ -79,6 +79,24 @@ public static class TimeReportEndpoints
             return Results.NoContent();
         });
         // ─────────────────────────────────────────────
+        // TIPOS DE ACTIVIDAD
+        // ─────────────────────────────────────────────
+        group.MapGet("/tipos-actividad", async (ApplicationDbContext db) =>
+        {
+            var tiposActividad = await db.TblTimeReportTipoActividads
+                .Where(t => t.Activo)
+                .Select(t => new TipoActividadDto(
+                    t.Id,
+                    t.Nombretipo,
+                    t.Descripcion
+                ))
+                .OrderBy(t => t.Nombre)
+                .ToListAsync();
+
+            return Results.Ok(tiposActividad);
+        });
+
+        // ─────────────────────────────────────────────
         // ACTIVIDADES
         // ─────────────────────────────────────────────
         var groupActividades = app.MapGroup("/api/time-report/actividades").WithTags("TimeReport - Actividades");

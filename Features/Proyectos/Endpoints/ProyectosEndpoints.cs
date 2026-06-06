@@ -70,13 +70,22 @@ public static class ProyectosEndpoints
                 .Select(d => new LookupDto(d.Id, d.Valor))
                 .ToListAsync();
 
-            var cargos = await db.TblAdministracionCargos
-                .Where(c => c.Activo && c.Iddepartamento==29) // cargos de departamento de desarrol
-                .OrderBy(c => c.Nombrecargo)
-                .Select(c => new LookupDto(c.Id, c.Nombrecargo))
+
+            var departamentos = await db.TblAdministracionCatalogoDetalles
+                .Include(d => d.IdcatalogoNavigation)
+                .Where(d => d.Activo && d.IdcatalogoNavigation.Codigo == "DEP")
+                .OrderBy(d => d.Orden)
+                .Select(d => new LookupDto(d.Id, d.Valor))
                 .ToListAsync();
 
-            return Results.Ok(new { clientes, lideres, empleados , estados, tipos, cargos });
+            var cargos = await db.TblAdministracionCargos
+                .Where(c => c.Activo)
+                .OrderBy(c => c.Nombrecargo)
+                .Select(c => new { id = c.Id, nombre = c.Nombrecargo, idDepartamento = c.Iddepartamento })
+                .ToListAsync();
+
+
+            return Results.Ok(new { clientes, lideres, empleados , estados, tipos, departamentos, cargos });
         });
 
         group.MapPost("/", async (CrearProyectoRequest request, ApplicationDbContext db, HttpContext context) =>

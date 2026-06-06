@@ -25,3 +25,9 @@ public record ResumenHorasDto(
     decimal HorasSemana,
     decimal HorasMes
 );
+
+public record TipoActividadDto(
+    int Id,
+    string Nombre,
+    string? Descripcion = null
+);
