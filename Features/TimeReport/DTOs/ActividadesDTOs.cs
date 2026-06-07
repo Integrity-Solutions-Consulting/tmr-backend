@@ -7,7 +7,7 @@ public record CrearActividadDto(
     int? IdProyecto,
     int IdTipoActividad,
     string? CodigoRequerimiento,
-    int CantidadHoras,
+    decimal CantidadHoras,
     DateOnly FechaActividad,
     string DescripcionActividad,
     string? Notas,
@@ -16,12 +16,17 @@ public record CrearActividadDto(
 
 public record ActividadDiaDto(
     DateOnly Fecha,
-    int TotalHoras
+    decimal TotalHoras
 );
 
 public record ResumenHorasDto(
-    int HorasPorRegistrar,
-    int HorasRegistradas,
-    int HorasSemana,
-    int HorasMes
+    decimal HorasPorRegistrar,
+    decimal HorasRegistradas,
+    decimal HorasSemana,
+    decimal HorasMes
+);
+
+public record ProyectoLookupDto(
+    int Id,
+    string Nombre
 );

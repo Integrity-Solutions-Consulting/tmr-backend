@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 using tmr_backend.Features.TimeReport.Domain;
 using tmr_backend.Features.TimeReport.DTOs;
 using tmr_backend.Infrastructure.Database;
@@ -83,6 +84,95 @@ public static class TimeReportEndpoints
         // ─────────────────────────────────────────────
         var groupActividades = app.MapGroup("/api/time-report/actividades").WithTags("TimeReport - Actividades");
 
+        groupActividades.MapGet("/tipos-actividad", async (ApplicationDbContext db) =>
+        {
+            var tipos = await db.TblTimeReportTipoActividads
+                .Where(t => t.Activo)
+                .Select(t => new { Id = t.Id, Nombre = t.Nombretipo })
+                .ToListAsync();
+            return Results.Ok(tipos);
+        });
+
+        groupActividades.MapGet("/proyectos-disponibles", async (ClaimsPrincipal user, ApplicationDbContext db) =>
+        {
+            // Si no está autenticado (desarrollo local / testing sin JWT), devolvemos todos los proyectos activos
+            if (user.Identity?.IsAuthenticated != true)
+            {
+                var todosProyectos = await db.TblTimeReportProyectos
+                    .AsNoTracking()
+                    .Where(p => p.Activo)
+                    .Select(p => new ProyectoLookupDto(p.Id, p.Nombre))
+                    .ToListAsync();
+                return Results.Ok(todosProyectos);
+            }
+
+            var userIdClaim = user.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value 
+                              ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var usuarioAutenticadoId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var roles = user.FindAll(ClaimTypes.Role).Select(r => r.Value.ToUpper()).ToList();
+
+            var usuarioDb = await db.TblAutenticacionUsuarios
+                .AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Id == usuarioAutenticadoId && u.Activo);
+
+            if (usuarioDb == null) return Results.NotFound("Usuario no encontrado.");
+
+            var empleado = await db.TblAdministracionEmpleados
+                .AsNoTracking()
+                .FirstOrDefaultAsync(e => e.Idpersona == usuarioDb.Idpersona && e.Activo);
+
+            if (empleado == null) return Results.NotFound("Empleado no encontrado.");
+
+            if (roles.Contains("ADMINISTRADOR") || roles.Contains("RECURSOS HUMANOS") || roles.Contains("RECURSOS_HUMANOS"))
+            {
+                var proyectos = await db.TblTimeReportProyectos
+                    .AsNoTracking()
+                    .Where(p => p.Activo)
+                    .Select(p => new ProyectoLookupDto(p.Id, p.Nombre))
+                    .ToListAsync();
+                return Results.Ok(proyectos);
+            }
+            else if (roles.Contains("GERENTE"))
+            {
+                var proyectos = await db.TblTimeReportProyectos
+                    .AsNoTracking()
+                    .Where(p => p.Activo && p.Idlider != null)
+                    .Select(p => new ProyectoLookupDto(p.Id, p.Nombre))
+                    .ToListAsync();
+                return Results.Ok(proyectos);
+            }
+            else if (roles.Contains("LIDER"))
+            {
+                var lider = await db.TblAdministracionLiders
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(l => l.Idpersona == empleado.Idpersona && l.Activo);
+
+                if (lider == null) return Results.Ok(new List<ProyectoLookupDto>());
+
+                var proyectos = await db.TblTimeReportProyectos
+                    .AsNoTracking()
+                    .Where(p => p.Activo && p.Idlider == lider.Id)
+                    .Select(p => new ProyectoLookupDto(p.Id, p.Nombre))
+                    .ToListAsync();
+                return Results.Ok(proyectos);
+            }
+            else
+            {
+                var proyectos = await db.TblTimeReportEmpleadoProyectos
+                    .AsNoTracking()
+                    .Where(ep => ep.Idempleado == empleado.Id && ep.Activo && ep.IdproyectoNavigation.Activo)
+                    .Select(ep => new ProyectoLookupDto(ep.Idproyecto, ep.IdproyectoNavigation.Nombre))
+                    .Distinct()
+                    .ToListAsync();
+                return Results.Ok(proyectos);
+            }
+        });
+
         groupActividades.MapGet("/calendario", async (int idEmpleado, int anio, int mes, ApplicationDbContext db) =>
         {
             var fechaInicio = new DateOnly(anio, mes, 1);
@@ -91,7 +181,7 @@ public static class TimeReportEndpoints
             var actividades = await db.TblTimeReportActividadDiaria
                 .Where(a => a.Activo && a.Idempleado == idEmpleado && a.Fechaactividad >= fechaInicio && a.Fechaactividad <= fechaFin)
                 .GroupBy(a => a.Fechaactividad)
-                .Select(g => new ActividadDiaDto(g.Key, (int)g.Sum(x => x.Cantidadhoras)))
+                .Select(g => new ActividadDiaDto(g.Key, g.Sum(x => x.Cantidadhoras)))
                 .ToListAsync();
 
             return Results.Ok(actividades);
@@ -112,10 +202,10 @@ public static class TimeReportEndpoints
             
             // Asumiendo 8 horas laborables por día (hasta hoy)
             var diasLaborables = hoy.DayNumber - inicioMes.DayNumber + 1;
-            var horasEsperadas = diasLaborables * 8;
-            var horasPorRegistrar = Math.Max(0, horasEsperadas - (int)horasMes);
+            var horasEsperadas = diasLaborables * 8m;
+            var horasPorRegistrar = Math.Max(0m, horasEsperadas - horasMes);
 
-            return Results.Ok(new ResumenHorasDto(horasPorRegistrar, (int)horasMes, (int)horasSemana, (int)horasMes));
+            return Results.Ok(new ResumenHorasDto(horasPorRegistrar, horasMes, horasSemana, horasMes));
         });
 
         groupActividades.MapPost("/", async (CrearActividadDto request, ApplicationDbContext db) =>
@@ -161,6 +251,14 @@ public static class TimeReportEndpoints
         {
             var query = db.TblAdministracionEmpleados
                 .Where(e => e.Activo)
+                .Include(e => e.IdpersonaNavigation)
+                .Include(e => e.TblTimeReportEmpleadoProyectos)
+                    .ThenInclude(ep => ep.IdproyectoNavigation)
+                        .ThenInclude(p => p.IdclienteNavigation)
+                .Include(e => e.TblTimeReportEmpleadoProyectos)
+                    .ThenInclude(ep => ep.IdproyectoNavigation)
+                        .ThenInclude(p => p.IdliderNavigation)
+                            .ThenInclude(l => l.IdpersonaNavigation)
                 .AsQueryable();
 
             if (!string.IsNullOrEmpty(filtro.Busqueda))
@@ -168,18 +266,89 @@ public static class TimeReportEndpoints
                 query = query.Where(e => e.IdpersonaNavigation.Nombres.Contains(filtro.Busqueda) || e.IdpersonaNavigation.Apellidos.Contains(filtro.Busqueda));
             }
 
-            // Simplificación del JOIN para Seguimiento
-            var colaboradores = await query.Select(e => new SeguimientoColaboradorDto(
-                e.Id,
-                e.IdpersonaNavigation.Nombres + " " + e.IdpersonaNavigation.Apellidos,
-                "Proyecto X", // Debería venir de un JOIN con TblTimeReportEmpleadoProyecto
-                "Cliente Y",
-                "Líder Z",
-                db.TblTimeReportActividadDiaria.Where(a => a.Idempleado == e.Id && a.Fechaactividad >= filtro.FechaDesde && a.Fechaactividad <= filtro.FechaHasta).Sum(a => (decimal?)a.Cantidadhoras) ?? 0,
-                "Completado",
-                db.TblTimeReportActividadDiaria.Where(a => a.Idempleado == e.Id && a.Fechaactividad >= filtro.FechaDesde && a.Fechaactividad <= filtro.FechaHasta).Select(a => a.Fechaactividad).Distinct().Count(),
-                0
-            )).ToListAsync();
+            if (!string.IsNullOrEmpty(filtro.ClienteSeleccionado))
+            {
+                query = query.Where(e => e.TblTimeReportEmpleadoProyectos.Any(ep => 
+                    ep.Activo && ep.IdproyectoNavigation.Activo && ep.IdproyectoNavigation.IdclienteNavigation != null &&
+                    (ep.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial == filtro.ClienteSeleccionado || 
+                     ep.IdproyectoNavigation.IdclienteNavigation.Razonsocial == filtro.ClienteSeleccionado)));
+            }
+
+            var employees = await query.ToListAsync();
+
+            // Fetch feriados in the range
+            var feriados = await db.TblTimeReportFeriados
+                .Where(f => f.Activo && f.Fechaferiado >= filtro.FechaDesde && f.Fechaferiado <= filtro.FechaHasta)
+                .Select(f => f.Fechaferiado)
+                .ToListAsync();
+
+            // Fetch activities for these employees in the range
+            var empIds = employees.Select(e => e.Id).ToList();
+            var actividades = await db.TblTimeReportActividadDiaria
+                .Where(a => a.Activo && empIds.Contains(a.Idempleado) && a.Fechaactividad >= filtro.FechaDesde && a.Fechaactividad <= filtro.FechaHasta)
+                .ToListAsync();
+
+            var colaboradores = new List<SeguimientoColaboradorDto>();
+
+            foreach (var e in employees)
+            {
+                var empActividades = actividades.Where(a => a.Idempleado == e.Id).ToList();
+                var nroHoras = empActividades.Sum(a => a.Cantidadhoras);
+                var diasConReporte = empActividades.Select(a => a.Fechaactividad).Distinct().Count();
+
+                // Calculate working days in the range
+                var workingDays = 0;
+                var current = filtro.FechaDesde;
+                while (current <= filtro.FechaHasta)
+                {
+                    var dayOfWeek = current.ToDateTime(TimeOnly.MinValue).DayOfWeek;
+                    var isWeekend = dayOfWeek == DayOfWeek.Saturday || dayOfWeek == DayOfWeek.Sunday;
+                    var isFeriado = feriados.Contains(current);
+                    if (!isWeekend && !isFeriado)
+                    {
+                        workingDays++;
+                    }
+                    current = current.AddDays(1);
+                }
+
+                var diasACompletar = Math.Max(0, workingDays - diasConReporte);
+
+                // Determine Estado
+                var estado = "Pendiente";
+                if (empActividades.Any())
+                {
+                    var allApproved = empActividades.All(a => a.Fechaaprobacion != null);
+                    estado = allApproved ? "Completo" : "En progreso";
+                }
+
+                // Project details
+                var empProys = e.TblTimeReportEmpleadoProyectos.Where(ep => ep.Activo).ToList();
+                var proyectosStr = empProys.Any() 
+                    ? string.Join(", ", empProys.Select(ep => ep.IdproyectoNavigation.Nombre).Distinct()) 
+                    : "Sin Proyecto";
+
+                var clientesStr = empProys.Any()
+                    ? string.Join(", ", empProys.Where(ep => ep.IdproyectoNavigation.IdclienteNavigation != null).Select(ep => ep.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial ?? ep.IdproyectoNavigation.IdclienteNavigation.Razonsocial).Distinct())
+                    : "Sin Cliente";
+                if (string.IsNullOrWhiteSpace(clientesStr)) clientesStr = "Sin Cliente";
+
+                var lideresStr = empProys.Any()
+                    ? string.Join(", ", empProys.Where(ep => ep.IdproyectoNavigation.IdliderNavigation != null).Select(ep => ep.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Nombres + " " + ep.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Apellidos).Distinct())
+                    : "Sin Líder";
+                if (string.IsNullOrWhiteSpace(lideresStr)) lideresStr = "Sin Líder";
+
+                colaboradores.Add(new SeguimientoColaboradorDto(
+                    e.Id,
+                    e.IdpersonaNavigation.Nombres + " " + e.IdpersonaNavigation.Apellidos,
+                    proyectosStr,
+                    clientesStr,
+                    lideresStr,
+                    nroHoras,
+                    estado,
+                    diasConReporte,
+                    diasACompletar
+                ));
+            }
 
             return Results.Ok(colaboradores);
         });

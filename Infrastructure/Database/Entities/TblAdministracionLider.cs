@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace tmr_backend.Infrastructure.Database.Entities;
@@ -6,6 +6,7 @@ namespace tmr_backend.Infrastructure.Database.Entities;
 public partial class TblAdministracionLider
 {
     //agregue bool es interno
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
     public bool EsInterno { get; set; }  // true = Interno, false = Externo
     public int Id { get; set; }
 
