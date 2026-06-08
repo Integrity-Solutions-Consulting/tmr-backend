@@ -180,8 +180,22 @@ public static class TimeReportEndpoints
 
             var actividades = await db.TblTimeReportActividadDiaria
                 .Where(a => a.Activo && a.Idempleado == idEmpleado && a.Fechaactividad >= fechaInicio && a.Fechaactividad <= fechaFin)
-                .GroupBy(a => a.Fechaactividad)
-                .Select(g => new ActividadDiaDto(g.Key, g.Sum(x => x.Cantidadhoras)))
+                .Include(a => a.IdproyectoNavigation)
+                .Include(a => a.IdtipoactividadNavigation)
+                .Select(a => new CalendarioActividadDto(
+                    a.Id,
+                    a.Idempleado,
+                    a.Idproyecto,
+                    a.IdproyectoNavigation != null ? a.IdproyectoNavigation.Nombre : "Sin Proyecto",
+                    a.Idtipoactividad,
+                    a.IdtipoactividadNavigation != null ? a.IdtipoactividadNavigation.Nombretipo : "Otro",
+                    a.Codigorequerimiento,
+                    a.Cantidadhoras,
+                    a.Fechaactividad,
+                    a.Descripcionactividad,
+                    a.Notas,
+                    a.Esbillable
+                ))
                 .ToListAsync();
 
             return Results.Ok(actividades);
@@ -240,6 +254,56 @@ public static class TimeReportEndpoints
             await db.SaveChangesAsync();
 
             return Results.Created($"/api/time-report/actividades/{nuevaActividad.Id}", nuevaActividad);
+        });
+
+        groupActividades.MapPut("/{id:int}", async (int id, ActualizarActividadDto request, ApplicationDbContext db) =>
+        {
+            var actividad = await db.TblTimeReportActividadDiaria.FindAsync(id);
+
+            if (actividad is null) return Results.NotFound();
+
+            // Validar horas registradas en el día si cambia la fecha o la cantidad de horas
+            var totalHorasDia = await db.TblTimeReportActividadDiaria
+                .Where(a => a.Activo && a.Id != id && a.Idempleado == actividad.Idempleado && a.Fechaactividad == request.FechaActividad)
+                .SumAsync(a => a.Cantidadhoras);
+
+            if (totalHorasDia + request.CantidadHoras > 24)
+            {
+                return Results.BadRequest(new { Mensaje = "No puede registrar más de 24 horas en un mismo día." });
+            }
+
+            actividad.Idproyecto = request.IdProyecto;
+            actividad.Idtipoactividad = request.IdTipoActividad;
+            actividad.Codigorequerimiento = request.CodigoRequerimiento;
+            actividad.Cantidadhoras = request.CantidadHoras;
+            actividad.Fechaactividad = request.FechaActividad;
+            actividad.Descripcionactividad = request.DescripcionActividad;
+            actividad.Notas = request.Notas;
+            actividad.Esbillable = request.EsBillable ?? true;
+            actividad.Fechamodificacion = DateTime.UtcNow;
+            actividad.Usuariomodificacion = "Sistema";
+            actividad.Ipmodificacion = "127.0.0.1";
+
+            await db.SaveChangesAsync();
+
+            return Results.NoContent();
+        });
+
+        groupActividades.MapDelete("/{id:int}", async (int id, ApplicationDbContext db) =>
+        {
+            var actividad = await db.TblTimeReportActividadDiaria.FindAsync(id);
+
+            if (actividad is null) return Results.NotFound();
+
+            // Eliminación lógica
+            actividad.Activo = false;
+            actividad.Fechamodificacion = DateTime.UtcNow;
+            actividad.Usuariomodificacion = "Sistema";
+            actividad.Ipmodificacion = "127.0.0.1";
+
+            await db.SaveChangesAsync();
+
+            return Results.NoContent();
         });
 
         // ─────────────────────────────────────────────
