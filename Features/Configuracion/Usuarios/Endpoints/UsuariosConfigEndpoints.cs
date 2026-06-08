@@ -65,6 +65,18 @@ public static class UsuariosConfigEndpoints
         .WithName("ActualizarUsuarioConfig")
         .WithDescription("Actualiza datos personales y roles de un usuario.");
 
+        // PATCH /api/configuracion/usuarios/{id}
+        group.MapPatch("/{id:int}", async (int id, [FromBody] ActivarUsuarioRequest request, HttpContext context, [FromServices] IUsuariosConfigService service) =>
+        {
+            var usuarioActual = ObtenerUsuarioActual(context);
+            var ipActual = ObtenerIpActual(context);
+
+            var result = await service.ActualizarEstadoUsuarioAsync(id, request, usuarioActual, ipActual);
+            return Results.Ok(result);
+        })
+        .WithName("ActualizarEstadoUsuarioConfig")
+        .WithDescription("Activa o desactiva logicamente a un usuario.");
+
         // DELETE /api/configuracion/usuarios/{id}
         group.MapDelete("/{id:int}", async (int id, HttpContext context, [FromServices] IUsuariosConfigService service) =>
         {

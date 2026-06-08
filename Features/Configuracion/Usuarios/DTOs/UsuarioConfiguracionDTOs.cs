@@ -24,6 +24,8 @@ public record UpdateUsuarioRequest(
     string? direccion = null,
     List<int>? rolesids = null);
 
+public record ActivarUsuarioRequest(bool activo);
+
 public record ChangePasswordRequest(
     string passwordactual,
     string passwordnueva,
