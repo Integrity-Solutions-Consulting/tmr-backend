@@ -26,8 +26,7 @@ public record ResumenHorasDto(
     decimal HorasMes
 );
 
-public record TipoActividadDto(
+public record ProyectoLookupDto(
     int Id,
-    string Nombre,
-    string? Descripcion = null
+    string Nombre
 );
