@@ -147,6 +147,7 @@ public sealed class AuthService(
         var normalizedUser = request.User.ToLowerInvariant();
 
         var usuario = await db.TblAutenticacionUsuarios
+            .Include(u => u.IdpersonaNavigation)
             .FirstOrDefaultAsync(u => u.Email == normalizedUser && u.Activo, ct)
             ?? throw new UnauthorizedException("Credenciales inválidas.", "INVALID_CREDENTIALS");
         
@@ -327,6 +328,7 @@ public sealed class AuthService(
         await db.SaveChangesAsync(ct);
 
         var usuario = await db.TblAutenticacionUsuarios
+            .Include(u => u.IdpersonaNavigation)
             .FirstOrDefaultAsync(u => u.Id == rt.Idusuario && u.Activo, ct)
             ?? throw new UnauthorizedException("Usuario no encontrado o inactivo.");
 
@@ -563,4 +565,23 @@ public sealed class AuthService(
             .Include(ur => ur.IdrolNavigation)
             .Select(ur => ur.IdrolNavigation.Nombre)
             .ToListAsync(ct);
+
+    public async Task<string[]> GetUserModulesAsync(int idUsuario, CancellationToken ct)
+    {
+        var roleIds = await db.TblAutenticacionUsuarioRols
+            .Where(ur => ur.Idusuario == idUsuario && ur.Activo)
+            .Select(ur => ur.Idrol)
+            .ToListAsync(ct);
+
+        var query = from rp in db.TblAutenticacionRolPermisos
+                    join p in db.TblAutenticacionPermisos on rp.Idpermiso equals p.Id
+                    join m in db.TblAutenticacionModulos on p.Idmodulo equals m.Id
+                    where roleIds.Contains(rp.Idrol)
+                       && rp.Activo
+                       && p.Activo
+                       && m.Activo
+                    select m.Nombremodulo;
+
+        return await query.Distinct().ToArrayAsync(ct);
+    }
 }

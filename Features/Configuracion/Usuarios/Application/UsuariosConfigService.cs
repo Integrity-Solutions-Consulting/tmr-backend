@@ -13,6 +13,7 @@ public interface IUsuariosConfigService
 {
     Task<CrearUsuarioConfigResponse> CrearUsuarioAsync(CrearUsuarioConfigRequest request, string usuarioActual, string ipActual, int? idUsuarioActual);
     Task<SuccessResponse> ActualizarUsuarioAsync(int idPersona, UpdateUsuarioRequest request, string usuarioActual, string ipActual, int? idUsuarioActual);
+    Task<SuccessResponse> ActualizarEstadoUsuarioAsync(int idPersona, ActivarUsuarioRequest request, string usuarioActual, string ipActual);
     Task<SuccessResponse> DesactivarUsuarioAsync(int idPersona, string usuarioActual, string ipActual);
     Task<UsuarioDetalleResponse> ObtenerUsuarioPorIdAsync(int idPersona);
     Task<PaginatedResponse<UsuarioListaResponse>> ObtenerUsuariosPaginadosAsync(ObtenerUsuariosQuery query);
@@ -230,6 +231,43 @@ public class UsuariosConfigService : IUsuariosConfigService
             await transaction.CommitAsync();
 
             return new SuccessResponse("Usuario actualizado correctamente.", DateTime.UtcNow);
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
+    public async Task<SuccessResponse> ActualizarEstadoUsuarioAsync(int idPersona, ActivarUsuarioRequest request, string usuarioActual, string ipActual)
+    {
+        var persona = await _dbContext.TblAdministracionPersonas.FindAsync(idPersona);
+        if (persona == null)
+            throw new UsuarioNoEncontradoException(idPersona);
+
+        var usuario = await _dbContext.TblAutenticacionUsuarios.FirstOrDefaultAsync(u => u.Idpersona == idPersona);
+        if (usuario == null)
+            throw new DatosInvalidosException("La persona no tiene un usuario de autenticacion vinculado.");
+
+        using var transaction = await _dbContext.Database.BeginTransactionAsync();
+        try
+        {
+            var fecha = DateTime.UtcNow;
+
+            persona.Activo = request.activo;
+            persona.Usuariomodificacion = usuarioActual;
+            persona.Fechamodificacion = fecha;
+            persona.Ipmodificacion = ipActual;
+
+            usuario.Activo = request.activo;
+            usuario.Usuariomodificacion = usuarioActual;
+            usuario.Fechamodificacion = fecha;
+            usuario.Ipmodificacion = ipActual;
+
+            await _dbContext.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            return new SuccessResponse(request.activo ? "Usuario activado correctamente." : "Usuario desactivado correctamente.", DateTime.UtcNow);
         }
         catch
         {

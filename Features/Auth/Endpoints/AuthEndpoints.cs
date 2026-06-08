@@ -58,6 +58,13 @@ public static class AuthEndpoints
             .RequireAuthorization()
             .Produces(StatusCodes.Status200OK)
             .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
+
+        group.MapGet("/modules", GetModules)
+            .WithName("GetModules")
+            .WithSummary("Obtener módulos asignados al usuario")
+            .RequireAuthorization()
+            .Produces<ApiResponse<string[]>>(StatusCodes.Status200OK)
+            .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -150,5 +157,20 @@ public static class AuthEndpoints
     {
         await authService.ChangePasswordAsync(request, context, ct);
         return Results.NoContent();
+    }
+
+    private static async Task<IResult> GetModules(
+        HttpContext context,
+        IAuthService authService,
+        CancellationToken ct)
+    {
+        var subRaw = context.User.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                  ?? context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (!int.TryParse(subRaw, out var idUsuario))
+            return Results.Unauthorized();
+
+        var modules = await authService.GetUserModulesAsync(idUsuario, ct);
+        return Results.Ok(ApiResponse<string[]>.Ok(modules, "Módulos cargados correctamente."));
     }
 }

@@ -29,4 +29,6 @@ public interface IAuthService
     Task RevokeTokenAsync(RevokeTokenRequest request, int idUsuario, CancellationToken ct);
 
     Task ChangePasswordAsync(ChangePasswordRequest request, HttpContext context, CancellationToken ct);
+
+    Task<string[]> GetUserModulesAsync(int idUsuario, CancellationToken ct);
 }

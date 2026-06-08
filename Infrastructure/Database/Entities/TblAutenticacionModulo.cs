@@ -31,7 +31,5 @@ public partial class TblAutenticacionModulo
 
     public string? Ipmodificacion { get; set; }
 
-    public virtual ICollection<TblAutenticacionRolModulo> TblAutenticacionRolModulos { get; set; } = new List<TblAutenticacionRolModulo>();
-
     public virtual ICollection<TblAutenticacionUsuarioModulo> TblAutenticacionUsuarioModulos { get; set; } = new List<TblAutenticacionUsuarioModulo>();
 }
