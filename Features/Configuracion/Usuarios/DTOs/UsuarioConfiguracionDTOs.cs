@@ -17,6 +17,8 @@ public record CrearUsuarioConfigRequest(
 public record UpdateUsuarioRequest(
     string nombres,
     string apellidos,
+    string? email = null,
+    string? password = null,
     int? idgenero = null,
     int? idnacionalidad = null,
     DateOnly? fechanacimiento = null,

@@ -184,11 +184,23 @@ public class UsuariosConfigService : IUsuariosConfigService
         if (usuario == null)
             throw new DatosInvalidosException("La persona no tiene un usuario de autenticación vinculado.");
 
+        // Validar que el email no esté usado por otro usuario (si se proporciona)
+        if (!string.IsNullOrWhiteSpace(request.email))
+        {
+            var normalizedEmail = request.email.Trim().ToLowerInvariant();
+            var emailExiste = await _dbContext.TblAutenticacionUsuarios
+                .AnyAsync(u => u.Email == normalizedEmail && u.Id != usuario.Id);
+            
+            if (emailExiste)
+                throw new UsuarioEmailYaExisteException(request.email);
+        }
+
         using var transaction = await _dbContext.Database.BeginTransactionAsync();
         try
         {
             var fecha = DateTime.UtcNow;
 
+            // Actualizar datos personales
             persona.Nombres = request.nombres;
             persona.Apellidos = request.apellidos;
             persona.Idgenero = request.idgenero;
@@ -202,6 +214,42 @@ public class UsuariosConfigService : IUsuariosConfigService
 
             _dbContext.TblAdministracionPersonas.Update(persona);
 
+            // Actualizar datos de autenticación si se proporcionan
+            if (!string.IsNullOrWhiteSpace(request.email))
+            {
+                usuario.Email = request.email.Trim().ToLowerInvariant();
+                // Actualizar también el email en la persona si es diferente
+                if (persona.Email != usuario.Email)
+                {
+                    persona.Email = usuario.Email;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.password))
+            {
+                var nuevoHash = _passwordHasher.Hash(request.password);
+                usuario.Hashpassword = nuevoHash;
+                
+                // Guardar en historial de contraseñas
+                _dbContext.TblAutenticacionPasswordHistorials.Add(new TblAutenticacionPasswordHistorial
+                {
+                    Idusuario = usuario.Id,
+                    Hashpassword = nuevoHash,
+                    Fechacambio = fecha,
+                    Activo = true,
+                    Usuariocreacion = usuarioActual,
+                    Fechacreacion = fecha,
+                    Ipcreacion = ipActual
+                });
+            }
+
+            usuario.Usuariomodificacion = usuarioActual;
+            usuario.Fechamodificacion = fecha;
+            usuario.Ipmodificacion = ipActual;
+
+            _dbContext.TblAutenticacionUsuarios.Update(usuario);
+
+            // Actualizar roles si se proporcionan
             if (request.rolesids != null)
             {
                 await ValidarRolesAsync(request.rolesids);
