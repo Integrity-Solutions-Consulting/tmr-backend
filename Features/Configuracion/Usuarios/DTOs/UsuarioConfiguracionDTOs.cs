@@ -1,5 +1,5 @@
 namespace tmr_backend.Features.Configuracion.Usuarios.DTOs;
-
+ 
 public record CrearUsuarioConfigRequest(
     string numeroidentificacion,
     string nombres,
@@ -13,12 +13,10 @@ public record CrearUsuarioConfigRequest(
     string? telefono = null,
     string? direccion = null,
     List<int>? rolesids = null);
-
+ 
 public record UpdateUsuarioRequest(
     string nombres,
     string apellidos,
-    string? email = null,
-    string? password = null,
     int? idgenero = null,
     int? idnacionalidad = null,
     DateOnly? fechanacimiento = null,
@@ -29,17 +27,17 @@ public record UpdateUsuarioRequest(
     string? email = null,
     string? nombreusuario = null,
     string? password = null);
-
+ 
 public record ActivarUsuarioRequest(bool activo);
-
+ 
 public record ChangePasswordRequest(
     string passwordactual,
     string passwordnueva,
     string confirmarpassword);
-
+ 
 public record AsignarRolesRequest(
     List<int> rolesids);
-
+ 
 public record UsuarioListaResponse(
     int id,
     string numeroidentificacion,
@@ -49,7 +47,7 @@ public record UsuarioListaResponse(
     List<string> roles,
     bool activo,
     DateTime? ultimologin);
-
+ 
 public record UsuarioDetalleResponse(
     int id,
     string numeroidentificacion,
@@ -73,19 +71,19 @@ public record UsuarioDetalleResponse(
     string usuariocreacion,
     DateTime? fechamodificacion,
     string? usuariomodificacion);
-
+ 
 public record RolResponse(
     int id,
     string nombre,
     string? descripcion);
-
+ 
 public record PaginatedResponse<T>(
     List<T> items,
     int totalcount,
     int pagenumber,
     int pagesize,
     int totalpages);
-
+ 
 public record CrearUsuarioConfigResponse(
     int id,
     int idpersona,
@@ -98,18 +96,19 @@ public record CrearUsuarioConfigResponse(
     bool activo,
     bool debecambiarpassword,
     DateTime fechacreacion);
-
+ 
 public record ErrorResponse(
     string mensaje,
     string? errorcode = null,
     DateTime timestamp = default);
-
+ 
 public record SuccessResponse(
     string mensaje,
     DateTime timestamp = default);
-
+ 
 public record ObtenerUsuariosQuery(
     string? search = null,
     bool? activo = null,
     int pagenumber = 1,
     int pagesize = 10);
+ 
