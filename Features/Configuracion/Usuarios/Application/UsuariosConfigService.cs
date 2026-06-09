@@ -35,6 +35,7 @@ public class UsuariosConfigService : IUsuariosConfigService
         _crearUsuarioValidator = crearUsuarioValidator;
     }
 
+    // ── CREAR USUARIO ────────────────────────────────────────────────────────
     public async Task<CrearUsuarioConfigResponse> CrearUsuarioAsync(CrearUsuarioConfigRequest request, string usuarioActual, string ipActual, int? idUsuarioActual)
     {
         var validation = await _crearUsuarioValidator.ValidateAsync(request);
@@ -148,7 +149,6 @@ public class UsuariosConfigService : IUsuariosConfigService
             });
 
             await _dbContext.SaveChangesAsync();
-
             await transaction.CommitAsync();
 
             var roles = await ObtenerRolesPorIdsAsync(usuarioDominio.RolesIds);
@@ -174,34 +174,77 @@ public class UsuariosConfigService : IUsuariosConfigService
         }
     }
 
+    // ── ACTUALIZAR USUARIO (datos personales + autenticación + roles) ────────
     public async Task<SuccessResponse> ActualizarUsuarioAsync(int idPersona, UpdateUsuarioRequest request, string usuarioActual, string ipActual, int? idUsuarioActual)
     {
         var persona = await _dbContext.TblAdministracionPersonas.FindAsync(idPersona);
         if (persona == null)
             throw new UsuarioNoEncontradoException(idPersona);
 
-        var usuario = await _dbContext.TblAutenticacionUsuarios.FirstOrDefaultAsync(u => u.Idpersona == idPersona);
+        var usuario = await _dbContext.TblAutenticacionUsuarios
+            .FirstOrDefaultAsync(u => u.Idpersona == idPersona);
         if (usuario == null)
             throw new DatosInvalidosException("La persona no tiene un usuario de autenticación vinculado.");
+
+        // ── Validar unicidad de email ANTES de abrir transacción ──────────────
+        if (!string.IsNullOrWhiteSpace(request.email))
+        {
+            var normalizedEmailCheck = request.email.Trim().ToLowerInvariant();
+            var emailDuplicado = await _dbContext.TblAutenticacionUsuarios
+                .AnyAsync(u => u.Email == normalizedEmailCheck && u.Id != usuario.Id);
+
+            if (emailDuplicado)
+                throw new DatosInvalidosException($"El correo '{request.email}' ya está registrado por otro usuario.");
+        }
 
         using var transaction = await _dbContext.Database.BeginTransactionAsync();
         try
         {
             var fecha = DateTime.UtcNow;
 
+            // ── 1. Actualizar datos personales ────────────────────────────────
             persona.Nombres = request.nombres;
             persona.Apellidos = request.apellidos;
             persona.Idgenero = request.idgenero;
             persona.Idnacionalidad = request.idnacionalidad;
             persona.Fechanacimiento = request.fechanacimiento;
-            persona.Telefono = request.telefono;
-            persona.Direccion = request.direccion;
+            persona.Telefono = string.IsNullOrWhiteSpace(request.telefono) ? null : request.telefono.Trim();
+            persona.Direccion = string.IsNullOrWhiteSpace(request.direccion) ? null : request.direccion.Trim();
             persona.Usuariomodificacion = usuarioActual;
             persona.Fechamodificacion = fecha;
             persona.Ipmodificacion = ipActual;
 
-            _dbContext.TblAdministracionPersonas.Update(persona);
+            // ── 2. Actualizar datos de autenticación ──────────────────────────
+            if (!string.IsNullOrWhiteSpace(request.email))
+            {
+                var normalizedEmail = request.email.Trim().ToLowerInvariant();
+                usuario.Email = normalizedEmail;
+                persona.Email = normalizedEmail; // mantener sincronía
+            }
 
+            if (!string.IsNullOrWhiteSpace(request.password))
+            {
+                usuario.Hashpassword = _passwordHasher.Hash(request.password);
+                usuario.Debecambiarpassword = false;
+
+                // Registrar en historial de contraseñas
+                _dbContext.TblAutenticacionPasswordHistorials.Add(new TblAutenticacionPasswordHistorial
+                {
+                    Idusuario = usuario.Id,
+                    Hashpassword = usuario.Hashpassword,
+                    Fechacambio = fecha,
+                    Activo = true,
+                    Usuariocreacion = usuarioActual,
+                    Fechacreacion = fecha,
+                    Ipcreacion = ipActual ?? "127.0.0.1"
+                });
+            }
+
+            usuario.Usuariomodificacion = usuarioActual;
+            usuario.Fechamodificacion = fecha;
+            usuario.Ipmodificacion = ipActual;
+
+            // ── 3. Actualizar roles si se enviaron ────────────────────────────
             if (request.rolesids != null)
             {
                 await ValidarRolesAsync(request.rolesids);
@@ -209,7 +252,7 @@ public class UsuariosConfigService : IUsuariosConfigService
                 var rolesActuales = await _dbContext.TblAutenticacionUsuarioRols
                     .Where(r => r.Idusuario == usuario.Id)
                     .ToListAsync();
-                
+
                 _dbContext.TblAutenticacionUsuarioRols.RemoveRange(rolesActuales);
 
                 var nuevosRoles = request.rolesids.Distinct().Select(rolId => new TblAutenticacionUsuarioRol
@@ -221,7 +264,7 @@ public class UsuariosConfigService : IUsuariosConfigService
                     Activo = true,
                     Usuariocreacion = usuarioActual,
                     Fechacreacion = fecha,
-                    Ipcreacion = ipActual
+                    Ipcreacion = ipActual ?? "127.0.0.1"
                 }).ToList();
 
                 _dbContext.TblAutenticacionUsuarioRols.AddRange(nuevosRoles);
@@ -239,13 +282,15 @@ public class UsuariosConfigService : IUsuariosConfigService
         }
     }
 
+    // ── ACTUALIZAR ESTADO (activo/inactivo) ──────────────────────────────────
     public async Task<SuccessResponse> ActualizarEstadoUsuarioAsync(int idPersona, ActivarUsuarioRequest request, string usuarioActual, string ipActual)
     {
         var persona = await _dbContext.TblAdministracionPersonas.FindAsync(idPersona);
         if (persona == null)
             throw new UsuarioNoEncontradoException(idPersona);
 
-        var usuario = await _dbContext.TblAutenticacionUsuarios.FirstOrDefaultAsync(u => u.Idpersona == idPersona);
+        var usuario = await _dbContext.TblAutenticacionUsuarios
+            .FirstOrDefaultAsync(u => u.Idpersona == idPersona);
         if (usuario == null)
             throw new DatosInvalidosException("La persona no tiene un usuario de autenticacion vinculado.");
 
@@ -276,13 +321,15 @@ public class UsuariosConfigService : IUsuariosConfigService
         }
     }
 
+    // ── DESACTIVAR USUARIO ───────────────────────────────────────────────────
     public async Task<SuccessResponse> DesactivarUsuarioAsync(int idPersona, string usuarioActual, string ipActual)
     {
         var persona = await _dbContext.TblAdministracionPersonas.FindAsync(idPersona);
         if (persona == null)
             throw new UsuarioNoEncontradoException(idPersona);
 
-        var usuario = await _dbContext.TblAutenticacionUsuarios.FirstOrDefaultAsync(u => u.Idpersona == idPersona);
+        var usuario = await _dbContext.TblAutenticacionUsuarios
+            .FirstOrDefaultAsync(u => u.Idpersona == idPersona);
         if (usuario == null)
             throw new DatosInvalidosException("La persona no tiene un usuario de autenticación vinculado.");
 
@@ -313,6 +360,7 @@ public class UsuariosConfigService : IUsuariosConfigService
         }
     }
 
+    // ── OBTENER USUARIO POR ID ───────────────────────────────────────────────
     public async Task<UsuarioDetalleResponse> ObtenerUsuarioPorIdAsync(int idPersona)
     {
         var persona = await _dbContext.TblAdministracionPersonas
@@ -344,7 +392,7 @@ public class UsuariosConfigService : IUsuariosConfigService
             apellidos: persona.Apellidos,
             email: usuario.Email,
             idtipoidentificacion: persona.Idtipoidentificacion,
-            tipoidentificacionvalor: null, 
+            tipoidentificacionvalor: null,
             idgenero: persona.Idgenero,
             generovalor: null,
             idnacionalidad: persona.Idnacionalidad,
@@ -363,6 +411,7 @@ public class UsuariosConfigService : IUsuariosConfigService
         );
     }
 
+    // ── OBTENER USUARIOS PAGINADOS ───────────────────────────────────────────
     public async Task<PaginatedResponse<UsuarioListaResponse>> ObtenerUsuariosPaginadosAsync(ObtenerUsuariosQuery query)
     {
         var dbQuery = _dbContext.TblAdministracionPersonas
@@ -380,7 +429,7 @@ public class UsuariosConfigService : IUsuariosConfigService
         if (!string.IsNullOrWhiteSpace(query.search))
         {
             var search = query.search.ToLower();
-            dbQuery = dbQuery.Where(x => 
+            dbQuery = dbQuery.Where(x =>
                 x.Persona.Nombres.ToLower().Contains(search) ||
                 x.Persona.Apellidos.ToLower().Contains(search) ||
                 x.Persona.Numeroidentificacion.Contains(search) ||
@@ -431,6 +480,7 @@ public class UsuariosConfigService : IUsuariosConfigService
         );
     }
 
+    // ── HELPERS PRIVADOS ─────────────────────────────────────────────────────
     private async Task ValidarRolesAsync(List<int>? rolesIds)
     {
         if (rolesIds == null || rolesIds.Count == 0)
