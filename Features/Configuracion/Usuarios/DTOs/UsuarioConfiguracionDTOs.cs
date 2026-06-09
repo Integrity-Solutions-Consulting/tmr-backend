@@ -24,7 +24,11 @@ public record UpdateUsuarioRequest(
     DateOnly? fechanacimiento = null,
     string? telefono = null,
     string? direccion = null,
-    List<int>? rolesids = null);
+    List<int>? rolesids = null,
+    // Datos de autenticación (opcionales en edición)
+    string? email = null,
+    string? nombreusuario = null,
+    string? password = null);
 
 public record ActivarUsuarioRequest(bool activo);
 
