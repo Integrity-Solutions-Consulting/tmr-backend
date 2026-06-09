@@ -39,6 +39,10 @@ public partial class TblTimeReportProyecto
 
     public decimal? Horasasignadas { get; set; }
 
+    public decimal? Lidercosto { get; set; }   // NUEVO
+
+    public decimal? Liderhoras { get; set; }   // NUEVO
+
     public bool Activo { get; set; }
 
     public string Usuariocreacion { get; set; } = null!;

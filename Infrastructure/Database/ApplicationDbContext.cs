@@ -2612,6 +2612,13 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Ipcreacion)
                 .HasMaxLength(45)
                 .HasColumnName("ipcreacion");
+            entity.Property(e => e.Lidercosto)
+                .HasPrecision(15, 2)
+                .HasColumnName("lidercosto");
+
+            entity.Property(e => e.Liderhoras)
+                .HasPrecision(10, 2)
+                .HasColumnName("liderhoras");
             entity.Property(e => e.Ipmodificacion)
                 .HasMaxLength(45)
                 .HasColumnName("ipmodificacion");
