@@ -16,6 +16,8 @@ public record CrearProyectoRequest(
     DateOnly? FechaFin,
     decimal? Presupuesto,
     decimal? Horas,
+    decimal? LiderCosto,
+    decimal? LiderHoras,
     List<ProyectoRecursoRequest>? Recursos
 );
 
@@ -35,6 +37,8 @@ public record ActualizarProyectoRequest(
     DateOnly? FechaFin,
     decimal? Presupuesto,
     decimal? Horas,
+    decimal? LiderCosto,
+    decimal? LiderHoras,
     List<ProyectoRecursoRequest>? Recursos
 );
 

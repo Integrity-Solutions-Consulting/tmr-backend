@@ -13,6 +13,7 @@ public static class ProyectosEndpoints
 
     public static void MapProyectosEndpoints(this IEndpointRouteBuilder app)
     {
+        var env = app.ServiceProvider.GetService(typeof(Microsoft.Extensions.Hosting.IHostEnvironment)) as Microsoft.Extensions.Hosting.IHostEnvironment;
         var group = app.MapGroup("/api/proyectos").WithTags("Proyectos");
 
         group.MapGet("/", async (ApplicationDbContext db) =>
@@ -70,7 +71,6 @@ public static class ProyectosEndpoints
                 .Select(d => new LookupDto(d.Id, d.Valor))
                 .ToListAsync();
 
-
             var departamentos = await db.TblAdministracionCatalogoDetalles
                 .Include(d => d.IdcatalogoNavigation)
                 .Where(d => d.Activo && d.IdcatalogoNavigation.Codigo == "DEP")
@@ -84,11 +84,10 @@ public static class ProyectosEndpoints
                 .Select(c => new { id = c.Id, nombre = c.Nombrecargo, idDepartamento = c.Iddepartamento })
                 .ToListAsync();
 
-
-            return Results.Ok(new { clientes, lideres, empleados , estados, tipos, departamentos, cargos });
+            return Results.Ok(new { clientes, lideres, empleados, estados, tipos, departamentos, cargos });
         });
 
-        group.MapPost("/", async (CrearProyectoRequest request, ApplicationDbContext db, HttpContext context) =>
+        var postEndpoint = group.MapPost("/", async (CrearProyectoRequest request, ApplicationDbContext db, HttpContext context) =>
         {
             // REGLA DE SEGURIDAD EN DESARROLLO: Forzamos ID de prueba local para usar Scalar sin Token JWT
             var usuarioId = "00000000-0000-0000-0000-000000000000";
@@ -127,6 +126,8 @@ public static class ProyectosEndpoints
                 Fechafinplaneada = request.FechaFin,
                 Presupuesto = request.Presupuesto,
                 Horasasignadas = request.Horas,
+                Lidercosto = request.LiderCosto,     // NUEVO
+                Liderhoras = request.LiderHoras,     // NUEVO
                 Activo = true,
                 Usuariocreacion = UsuarioSistema,
                 Fechacreacion = DateTime.UtcNow,
@@ -140,10 +141,10 @@ public static class ProyectosEndpoints
 
             var creado = await QueryProyectos(db).FirstAsync(p => p.Id == proyecto.Id);
             return Results.Created($"/api/proyectos/{proyecto.Id}", await MapProyecto(creado, db));
-        })
-        .RequireAuthorization();
+        });
+        if (!(env?.IsDevelopment() ?? false)) postEndpoint.RequireAuthorization();
 
-        group.MapPut("/{id:int}", async (int id, ActualizarProyectoRequest request, ApplicationDbContext db, HttpContext context) =>
+        var putEndpoint = group.MapPut("/{id:int}", async (int id, ActualizarProyectoRequest request, ApplicationDbContext db, HttpContext context) =>
         {
             // REGLA DE SEGURIDAD EN DESARROLLO: Forzamos ID de prueba local para usar Scalar sin Token JWT
             var usuarioId = "00000000-0000-0000-0000-000000000000";
@@ -187,6 +188,8 @@ public static class ProyectosEndpoints
             proyecto.Fechafinplaneada = request.FechaFin;
             proyecto.Presupuesto = request.Presupuesto;
             proyecto.Horasasignadas = request.Horas;
+            proyecto.Lidercosto = request.LiderCosto;     // NUEVO
+            proyecto.Liderhoras = request.LiderHoras;     // NUEVO
             proyecto.Usuariomodificacion = UsuarioSistema;
             proyecto.Fechamodificacion = DateTime.UtcNow;
             proyecto.Ipmodificacion = IpSistema;
@@ -196,10 +199,10 @@ public static class ProyectosEndpoints
 
             var actualizado = await QueryProyectos(db).FirstAsync(p => p.Id == id);
             return Results.Ok(await MapProyecto(actualizado, db));
-        })
-        .RequireAuthorization();
+        });
+        if (!(env?.IsDevelopment() ?? false)) putEndpoint.RequireAuthorization();
 
-        group.MapDelete("/{id:int}", async (int id, ApplicationDbContext db, HttpContext context) =>
+        var deleteEndpoint = group.MapDelete("/{id:int}", async (int id, ApplicationDbContext db, HttpContext context) =>
         {
             // REGLA DE SEGURIDAD EN DESARROLLO: Forzamos ID de prueba local para usar Scalar sin Token JWT
             var usuarioId = "00000000-0000-0000-0000-000000000000";
@@ -226,8 +229,8 @@ public static class ProyectosEndpoints
 
             await db.SaveChangesAsync();
             return Results.NoContent();
-        })
-        .RequireAuthorization();
+        });
+        if (!(env?.IsDevelopment() ?? false)) deleteEndpoint.RequireAuthorization();
     }
 
     private static IQueryable<TblTimeReportProyecto> QueryProyectos(ApplicationDbContext db) =>
@@ -249,9 +252,9 @@ public static class ProyectosEndpoints
     private static async Task<ProyectoResponse> MapProyecto(TblTimeReportProyecto proyecto, ApplicationDbContext db)
     {
         var lider = proyecto.IdliderNavigation?.IdpersonaNavigation;
-        
+
         var nombreTipo = proyecto.IdtipoproyectoNavigation?.Nombretipo ?? string.Empty;
-        
+
         var recursos = proyecto.TblTimeReportEmpleadoProyectos
             .Where(r => r.Activo)
             .Select(r =>
@@ -285,8 +288,8 @@ public static class ProyectosEndpoints
             proyecto.Idlider,
             lider is null ? string.Empty : $"{lider.Nombres} {lider.Apellidos}".Trim(),
             string.Empty,
-            0,
-            0,
+            proyecto.Lidercosto ?? 0,     // NUEVO — antes hardcodeado en 0
+            proyecto.Liderhoras ?? 0,     // NUEVO — antes hardcodeado en 0
             proyecto.Idestadoproyecto,
             proyecto.IdestadoproyectoNavigation?.Valor ?? string.Empty,
             proyecto.Fechainicioplaneada,
