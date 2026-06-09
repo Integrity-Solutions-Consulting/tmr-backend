@@ -15,13 +15,14 @@ public sealed class TokenService(IOptions<JwtSettings> jwtSettings) : ITokenServ
     // ---------------------------------------------------------------
     // ACCESS TOKEN — JWT firmado con HS256
     // ---------------------------------------------------------------
-    public (string Token, string Jti) GenerateAccessToken(TblAutenticacionUsuario user, IEnumerable<string> roles)
+    public (string Token, string Jti, DateTime ExpiresAt) GenerateAccessToken(TblAutenticacionUsuario user, IEnumerable<string> roles)
     {
         var secret = _jwt.SecretKey;
         var key    = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
         var creds  = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
         var jti = Guid.NewGuid().ToString();
+        var expiresAt = DateTime.UtcNow.AddMinutes(_jwt.AccessTokenMinutes);
 
         var claims = new List<Claim>
         {
@@ -42,10 +43,10 @@ public sealed class TokenService(IOptions<JwtSettings> jwtSettings) : ITokenServ
             issuer:             _jwt.Issuer,
             audience:           _jwt.Audience,
             claims:             claims,
-            expires:            DateTime.UtcNow.AddMinutes(_jwt.AccessTokenMinutes),
+            expires:            expiresAt,
             signingCredentials: creds);
 
-        return (new JwtSecurityTokenHandler().WriteToken(token), jti);
+        return (new JwtSecurityTokenHandler().WriteToken(token), jti, expiresAt);
     }
 
     // ---------------------------------------------------------------

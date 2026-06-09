@@ -222,7 +222,7 @@ public sealed class AuthService(
         await db.SaveChangesAsync(ct);
 
         // Generar AT + RT
-        var (at, _)                    = tokenService.GenerateAccessToken(usuario, roles);
+        var (at, _, atExpiry)          = tokenService.GenerateAccessToken(usuario, roles);
         var familyId                   = Guid.NewGuid();
         var (rawRt, rtHash, rtExpiry)  = tokenService.GenerateRefreshTokenRaw();
 
@@ -247,7 +247,7 @@ public sealed class AuthService(
             .Select(e => (int?)e.Id)
             .FirstOrDefaultAsync(ct);
 
-        return new AuthResponse(at, rawRt, rtExpiry, familyId, usuario.ToUserResponse(idEmpleado));
+        return new AuthResponse(at, rawRt, atExpiry, familyId, usuario.ToUserResponse(idEmpleado));
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -351,7 +351,7 @@ public sealed class AuthService(
         }
 
         // Generar nuevo par AT + RT con el MISMO familyId
-        var (at, _)                   = tokenService.GenerateAccessToken(usuario, roles);
+        var (at, _, atExpiry)         = tokenService.GenerateAccessToken(usuario, roles);
         var (rawRt, rtHash, rtExpiry) = tokenService.GenerateRefreshTokenRaw();
 
         var newRt = new TblAutenticacionRefreshToken
@@ -375,7 +375,7 @@ public sealed class AuthService(
             .Select(e => (int?)e.Id)
             .FirstOrDefaultAsync(ct);
 
-        return new AuthResponse(at, rawRt, rtExpiry, rt.Familiatoken, usuario.ToUserResponse(idEmpleado));
+        return new AuthResponse(at, rawRt, atExpiry, rt.Familiatoken, usuario.ToUserResponse(idEmpleado));
     }
 
     // ─────────────────────────────────────────────────────────────────────────
