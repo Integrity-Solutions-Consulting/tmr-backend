@@ -486,7 +486,7 @@ public sealed class AuthService(
             throw new UnauthorizedException("Usuario no encontrado.");
 
         if (!passwordHasher.Verify(request.OldPassword, user.Hashpassword))
-            throw new UnauthorizedException("La contraseña actual es incorrecta.");
+            throw new ArgumentException("La contraseña actual es incorrecta.");
 
         var passwordHistory = await db.TblAutenticacionPasswordHistorials
             .Where(ph => ph.Idusuario == userId)
