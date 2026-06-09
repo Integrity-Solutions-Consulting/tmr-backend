@@ -327,7 +327,20 @@ public static class TimeReportEndpoints
 
             if (!string.IsNullOrEmpty(filtro.Busqueda))
             {
-                query = query.Where(e => e.IdpersonaNavigation.Nombres.Contains(filtro.Busqueda) || e.IdpersonaNavigation.Apellidos.Contains(filtro.Busqueda));
+                query = query.Where(e => 
+                    e.IdpersonaNavigation.Nombres.Contains(filtro.Busqueda) 
+                    || e.IdpersonaNavigation.Apellidos.Contains(filtro.Busqueda)
+                    || e.TblTimeReportEmpleadoProyectos.Any(ep => 
+                        ep.Activo 
+                        && ep.IdproyectoNavigation.Activo 
+                        && ep.IdproyectoNavigation.Nombre.Contains(filtro.Busqueda))
+                    || e.TblTimeReportEmpleadoProyectos.Any(ep => 
+                        ep.Activo 
+                        && ep.IdproyectoNavigation.Activo 
+                        && ep.IdproyectoNavigation.IdliderNavigation != null 
+                        && (ep.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Nombres.Contains(filtro.Busqueda)
+                            || ep.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Apellidos.Contains(filtro.Busqueda)))
+                );
             }
 
             if (!string.IsNullOrEmpty(filtro.ClienteSeleccionado))
