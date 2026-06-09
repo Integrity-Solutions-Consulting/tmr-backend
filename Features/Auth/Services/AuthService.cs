@@ -242,7 +242,12 @@ public sealed class AuthService(
         db.TblAutenticacionRefreshTokens.Add(refreshToken);
         await db.SaveChangesAsync(ct);
 
-        return new AuthResponse(at, rawRt, rtExpiry, familyId, usuario.ToUserResponse());
+        var idEmpleado = await db.TblAdministracionEmpleados
+            .Where(e => e.Idpersona == usuario.Idpersona && e.Activo)
+            .Select(e => (int?)e.Id)
+            .FirstOrDefaultAsync(ct);
+
+        return new AuthResponse(at, rawRt, rtExpiry, familyId, usuario.ToUserResponse(idEmpleado));
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -365,7 +370,12 @@ public sealed class AuthService(
         db.TblAutenticacionRefreshTokens.Add(newRt);
         await db.SaveChangesAsync(ct);
 
-        return new AuthResponse(at, rawRt, rtExpiry, rt.Familiatoken, usuario.ToUserResponse());
+        var idEmpleado = await db.TblAdministracionEmpleados
+            .Where(e => e.Idpersona == usuario.Idpersona && e.Activo)
+            .Select(e => (int?)e.Id)
+            .FirstOrDefaultAsync(ct);
+
+        return new AuthResponse(at, rawRt, rtExpiry, rt.Familiatoken, usuario.ToUserResponse(idEmpleado));
     }
 
     // ─────────────────────────────────────────────────────────────────────────
