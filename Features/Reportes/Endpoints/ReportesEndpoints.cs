@@ -117,9 +117,14 @@ public static class ReportesEndpoints
                 query = query.Where(a => a.IdproyectoNavigation != null && a.IdproyectoNavigation.IdclienteNavigation != null && a.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial != null && a.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial.ToLower().Contains(filtro.Cliente.ToLower()));
 
             if (!string.IsNullOrWhiteSpace(filtro.Lider))
+            {
+                var term = filtro.Lider.Trim().ToLower();
                 query = query.Where(a => a.IdproyectoNavigation != null && a.IdproyectoNavigation.IdliderNavigation != null && 
-                                        (a.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Nombres.ToLower().Contains(filtro.Lider.ToLower()) || 
-                                         a.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Apellidos.ToLower().Contains(filtro.Lider.ToLower())));
+                                        ((a.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Nombres.ToLower() + " " + 
+                                          a.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Apellidos.ToLower()).Contains(term) ||
+                                         (a.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Apellidos.ToLower() + " " + 
+                                          a.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Nombres.ToLower()).Contains(term)));
+            }
 
             var total = await query.CountAsync();
 
