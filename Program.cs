@@ -92,6 +92,22 @@ builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
 //     });
 // });
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend", policy =>
+    {
+        policy
+            .WithOrigins(
+                "https://dev.tmr2.dokploy.integritysolutions.com.ec",
+                "http://localhost:4200"
+            )
+            .AllowAnyMethod()
+            .AllowAnyHeader()
+            .AllowCredentials();
+    });
+});
+
+
 // ── Memory Cache & HttpContext ──
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpContextAccessor();
@@ -203,6 +219,7 @@ app.UseMiddleware<JwtBlacklistMiddleware>();
 
 app.UseMiddleware<PermissionEnrichmentMiddleware>();
 
+app.UseCors("AllowFrontend");
 app.UseAuthorization();
 
 // ── Scalar API Reference ──
