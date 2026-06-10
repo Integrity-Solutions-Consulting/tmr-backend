@@ -1,0 +1,34 @@
+-- PASO 1: Crear el tipo enum (solo si no existe)
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_type t
+        JOIN pg_namespace n ON n.oid = t.typnamespace
+        WHERE t.typname = 'revocacion_razon_enum'
+          AND n.nspname = 'autenticacion'
+    ) THEN
+        CREATE TYPE autenticacion.revocacion_razon_enum AS ENUM (
+            'SESSION_LIMIT',
+            'SESSION_IDLE_TIMEOUT',
+            'SESSION_EXPIRED',
+            'REVOKE',
+            'ADMIN_REVOKE_ALL',
+            'USER_AGENT_MISMATCH',
+            'IP_MISMATCH',
+            'TOKEN_REUSED',
+            'TOKEN_REVOKED'
+        );
+    END IF;
+END $$;
+
+-- PASO 2: Agregar la columna si no existe
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'autenticacion'
+          AND table_name   = 'tbl_autenticacion_sesion'
+          AND column_name  = 'revocadorazon'
+    ) THEN
+        ALTER TABLE autenticacion.tbl_autenticacion_sesion
+        ADD COLUMN revocadorazon autenticacion.revocacion_razon_enum NULL;
+    END IF;
+END $$;
