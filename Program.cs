@@ -81,11 +81,12 @@ builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
            .AddInterceptors(sp.GetRequiredService<AuditInterceptor>()));
 
 // ── CORS ──
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? new[] { "http://localhost:4200" };
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("PermitirFrontend", policy =>
     {
-        policy.WithOrigins("http://localhost:4200")
+        policy.WithOrigins(allowedOrigins)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
