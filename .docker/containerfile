@@ -31,3 +31,5 @@ EXPOSE 8080
 
 # El nombre del DLL coincide con el de tu .csproj
 ENTRYPOINT ["dotnet", "tmr-backend.dll"]
+
+#DIGAME DON ARMANDO
