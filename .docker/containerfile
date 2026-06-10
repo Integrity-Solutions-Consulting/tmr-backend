@@ -1,0 +1,33 @@
+# STAGE 1: Build (Entorno de compilación)
+FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
+WORKDIR /src
+
+# 1. Copiar solo el archivo de proyecto para restaurar dependencias
+# Esto aprovecha el caché de capas de Docker
+COPY ["tmr-backend.csproj", "./"]
+RUN dotnet restore "tmr-backend.csproj"
+
+# 2. Copiar todo el código fuente (excepto lo filtrado en .dockerignore)
+COPY . .
+
+# 3. Compilar y publicar los binarios en modo Release
+# Usamos --no-restore porque ya lo hicimos arriba
+RUN dotnet publish "tmr-backend.csproj" -c Release -o /app/publish /p:UseAppHost=false
+
+# STAGE 2: Runtime (Entorno de ejecución ligero)
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS final
+WORKDIR /app
+
+# Crear un usuario de sistema (no-root) para mejorar la seguridad
+RUN adduser -u 1000 --disabled-password --gecos "" appuser && chown -R appuser /app
+USER appuser
+
+# Copiar solo el resultado de la publicación del stage anterior
+COPY --from=build /app/publish .
+
+# Configurar variables de entorno y exponer el puerto
+ENV ASPNETCORE_URLS=http://+:8080
+EXPOSE 8080
+
+# El nombre del DLL coincide con el de tu .csproj
+ENTRYPOINT ["dotnet", "tmr-backend.dll"]
