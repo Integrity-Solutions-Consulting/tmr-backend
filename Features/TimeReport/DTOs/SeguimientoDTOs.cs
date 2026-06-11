@@ -8,7 +8,7 @@ public record FiltroSeguimientoDto(
     string? ClienteSeleccionado,
     DateOnly FechaDesde,
     DateOnly FechaHasta,
-    string Periodo
+    string? Periodo
 );
 
 public record SeguimientoColaboradorDto(
