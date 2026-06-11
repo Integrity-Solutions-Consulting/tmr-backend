@@ -13,6 +13,18 @@ public class CrearLiderValidator : AbstractValidator<CrearLiderRequest>
         RuleFor(x => x.Idtipo)
             .GreaterThan(0).WithMessage("El tipo de líder es requerido.");
 
+        RuleFor(x => x.Nombres)
+            .NotEmpty().WithMessage("El nombre es requerido.");
+
+        RuleFor(x => x.Apellidos)
+            .NotEmpty().WithMessage("El apellido es requerido.");
+
+        RuleFor(x => x.Email)
+            .NotEmpty().WithMessage("El correo es requerido.");
+
+        RuleFor(x => x.Telefono)
+            .NotEmpty().WithMessage("El teléfono es requerido.");
+
         RuleFor(x => x.Usuariocreacion)
             .NotEmpty().WithMessage("El usuario de creación es requerido.");
 

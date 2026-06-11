@@ -72,6 +72,11 @@ public class LiderService : ILiderService
             if (persona is null)
                 throw new ArgumentException("La persona no existe.");
 
+            persona.Nombres = request.Nombres;
+            persona.Apellidos = request.Apellidos;
+            persona.Email = request.Email;
+            persona.Telefono = request.Telefono;
+
             var lider = new TblAdministracionLider
             {
                 Idpersona = request.Idpersona,
