@@ -81,27 +81,14 @@ builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
            .AddInterceptors(sp.GetRequiredService<AuditInterceptor>()));
 
 // ── CORS ──
- var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? new[] { "http://localhost:4200" };
- builder.Services.AddCors(options =>
- {
-     options.AddPolicy("PermitirFrontend", policy =>
-     {
-         policy.WithOrigins(allowedOrigins)
-               .AllowAnyHeader()
-               .AllowAnyMethod()
-               .AllowCredentials();
-     });
- });
+ String[] allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? new[] { "http://localhost:3000" };
 
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
         policy
-            .WithOrigins(
-                "https://dev.tmr2.dokploy.integritysolutions.com.ec",
-                "http://localhost:4200"
-            )
+            .WithOrigins(allowedOrigins)
             .AllowAnyMethod()
             .AllowAnyHeader()
             .AllowCredentials();
