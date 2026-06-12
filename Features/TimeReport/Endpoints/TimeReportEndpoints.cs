@@ -327,19 +327,20 @@ public static class TimeReportEndpoints
 
             if (!string.IsNullOrEmpty(filtro.Busqueda))
             {
+                var term = filtro.Busqueda.ToLower();
                 query = query.Where(e => 
-                    e.IdpersonaNavigation.Nombres.Contains(filtro.Busqueda) 
-                    || e.IdpersonaNavigation.Apellidos.Contains(filtro.Busqueda)
+                    e.IdpersonaNavigation.Nombres.ToLower().Contains(term) 
+                    || e.IdpersonaNavigation.Apellidos.ToLower().Contains(term)
                     || e.TblTimeReportEmpleadoProyectos.Any(ep => 
                         ep.Activo 
                         && ep.IdproyectoNavigation.Activo 
-                        && ep.IdproyectoNavigation.Nombre.Contains(filtro.Busqueda))
+                        && ep.IdproyectoNavigation.Nombre.ToLower().Contains(term))
                     || e.TblTimeReportEmpleadoProyectos.Any(ep => 
                         ep.Activo 
                         && ep.IdproyectoNavigation.Activo 
                         && ep.IdproyectoNavigation.IdliderNavigation != null 
-                        && (ep.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Nombres.Contains(filtro.Busqueda)
-                            || ep.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Apellidos.Contains(filtro.Busqueda)))
+                        && (ep.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Nombres.ToLower().Contains(term)
+                            || ep.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Apellidos.ToLower().Contains(term)))
                 );
             }
 
