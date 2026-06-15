@@ -16,3 +16,4 @@ public record ActualizarColaboradorRequest(
     int IdModoTrabajo,
     int IdCategoriaEmpleado
 );
+
