@@ -13,8 +13,6 @@ public partial class TblTimeReportProyecto
 
     public int? Idtipoproyecto { get; set; }
 
-    public int? Idlider { get; set; }
-
     public string? Codigo { get; set; }
 
     public string Nombre { get; set; } = null!;
@@ -39,10 +37,6 @@ public partial class TblTimeReportProyecto
 
     public decimal? Horasasignadas { get; set; }
 
-    public decimal? Lidercosto { get; set; }   // NUEVO
-
-    public decimal? Liderhoras { get; set; }   // NUEVO
-
     public bool Activo { get; set; }
 
     public string Usuariocreacion { get; set; } = null!;
@@ -61,13 +55,11 @@ public partial class TblTimeReportProyecto
 
     public virtual TblAdministracionCatalogoDetalle IdestadoproyectoNavigation { get; set; } = null!;
 
-    public virtual TblAdministracionLider? IdliderNavigation { get; set; }
-
     public virtual TblTimeReportTipoProyecto? IdtipoproyectoNavigation { get; set; }
 
     public virtual ICollection<TblTimeReportActividadDiarium> TblTimeReportActividadDiaria { get; set; } = new List<TblTimeReportActividadDiarium>();
 
-    public virtual ICollection<TblTimeReportEmpleadoProyecto> TblTimeReportEmpleadoProyectos { get; set; } = new List<TblTimeReportEmpleadoProyecto>();
+    public virtual ICollection<TblTimeReportAsignacionProyecto> TblTimeReportAsignacionProyectos { get; set; } = new List<TblTimeReportAsignacionProyecto>();
 
     public virtual ICollection<TblTimeReportProyeccionHorasProyecto> TblTimeReportProyeccionHorasProyectos { get; set; } = new List<TblTimeReportProyeccionHorasProyecto>();
 }
