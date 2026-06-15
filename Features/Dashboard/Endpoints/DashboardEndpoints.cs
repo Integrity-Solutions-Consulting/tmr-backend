@@ -74,7 +74,8 @@ public static class DashboardEndpoints
                     p.IdclienteNavigation?.Nombrecomercial ?? "Sin Cliente",
                     "En progreso",
                     horasProyectos.TryGetValue(p.Id, out var h) ? h : 0m,
-                    p.Presupuesto ?? 0m
+                    p.Presupuesto ?? 0m,
+                    p.Fechafinplaneada
                 ))
                 .ToList();
 
@@ -82,8 +83,12 @@ public static class DashboardEndpoints
                 .Select(p => new DashboardHorasPorProyectoResponse(
                     p.Nombre,
                     horasProyectos.TryGetValue(p.Id, out var h) ? h : 0m,
-                    p.Codigo ?? ""
+                    p.Codigo ?? "",
+                    p.Horasasignadas ?? 0m
                 ))
+                .Where(hp => hp.Horas > 0)
+                .OrderByDescending(hp => hp.Horas)
+                .Take(15)
                 .ToList();
 
             var dashboardData = new DashboardDataResponse(metricas, proximosACerrar, horasPorProyecto);

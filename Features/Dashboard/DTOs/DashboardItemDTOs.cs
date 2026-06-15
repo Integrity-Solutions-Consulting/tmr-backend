@@ -21,13 +21,15 @@ public record DashboardProyectoResumenResponse(
     string Cliente,
     string Estado,
     decimal Horas,
-    decimal Presupuesto
+    decimal Presupuesto,
+    DateOnly? FechaFinPlaneada
 );
 
 public record DashboardHorasPorProyectoResponse(
     string Proyecto,
     decimal Horas,
-    string Codigo
+    string Codigo,
+    decimal HorasAsignadas
 );
 
 public record DashboardDataResponse(
