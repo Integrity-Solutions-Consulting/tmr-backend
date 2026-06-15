@@ -33,7 +33,6 @@ public static class ProyectosEndpoints
         group.MapGet("/{id:int}", async (int id, ApplicationDbContext db) =>
         {
             var proyecto = await QueryProyectos(db).FirstOrDefaultAsync(p => p.Id == id);
-
             return proyecto is null ? Results.NotFound() : Results.Ok(await MapProyecto(proyecto, db));
         });
 
@@ -89,29 +88,18 @@ public static class ProyectosEndpoints
 
         var postEndpoint = group.MapPost("/", async (CrearProyectoRequest request, ApplicationDbContext db, HttpContext context) =>
         {
-            // REGLA DE SEGURIDAD EN DESARROLLO: Forzamos ID de prueba local para usar Scalar sin Token JWT
             var usuarioId = "00000000-0000-0000-0000-000000000000";
-
-            // NOTA: Cuando vayas a pasar a producción con la seguridad de la empresa, descomenta la línea de abajo:
             // var usuarioId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
             if (string.IsNullOrEmpty(usuarioId))
-            {
                 return Results.Json(new { isSuccess = false, message = "Token de sesión inválido o expirado." }, statusCode: 401);
-            }
 
             if (string.IsNullOrWhiteSpace(request.Nombre))
-            {
                 return Results.BadRequest(new { Mensaje = "El nombre del proyecto es requerido." });
-            }
 
-            var ids = await ResolverRelaciones(request.IdCliente, request.Cliente, request.IdTipoProyecto, request.Tipo,
-                request.IdLider, request.Lider, request.IdEstadoProyecto, request.Estado, db);
-
-            if (ids.IdEstadoProyecto == 0)
-            {
-                return Results.BadRequest(new { Mensaje = "Debe seleccionar o registrar un estado de proyecto valido." });
-            }
+            var ids = await ResolverRelaciones(request.IdCliente, request.Cliente, request.IdTipoProyecto, request.Tipo, db);
+            var lideres = NormalizarLideres(request);
+            var idEstadoProyectoActivo = await ObtenerOCrearEstadoProyectoActivoAsync(db);
 
             var proyecto = new TblTimeReportProyecto
             {
@@ -120,14 +108,11 @@ public static class ProyectosEndpoints
                 Descripcion = request.Descripcion,
                 Idcliente = ids.IdCliente,
                 Idtipoproyecto = ids.IdTipoProyecto,
-                Idlider = ids.IdLider,
-                Idestadoproyecto = ids.IdEstadoProyecto,
+                Idestadoproyecto = request.IdEstadoProyecto ?? idEstadoProyectoActivo,
                 Fechainicioplaneada = request.FechaInicio,
                 Fechafinplaneada = request.FechaFin,
                 Presupuesto = request.Presupuesto,
                 Horasasignadas = request.Horas,
-                Lidercosto = request.LiderCosto,     // NUEVO
-                Liderhoras = request.LiderHoras,     // NUEVO
                 Activo = true,
                 Usuariocreacion = UsuarioSistema,
                 Fechacreacion = DateTime.UtcNow,
@@ -136,8 +121,18 @@ public static class ProyectosEndpoints
 
             db.TblTimeReportProyectos.Add(proyecto);
             await db.SaveChangesAsync();
-            await GuardarRecursos(proyecto.Id, request.Recursos, db);
-            await db.SaveChangesAsync();
+
+            // Solo guardar asignaciones si hay algún líder o recurso definido
+            var tieneAsignaciones = lideres.Any(l =>
+                l.IdLider.HasValue ||
+                !string.IsNullOrWhiteSpace(l.Lider) ||
+                (l.Recursos != null && l.Recursos.Count > 0));
+
+            if (tieneAsignaciones)
+            {
+                await GuardarAsignaciones(proyecto.Id, lideres, db);
+                await db.SaveChangesAsync();
+            }
 
             var creado = await QueryProyectos(db).FirstAsync(p => p.Id == proyecto.Id);
             return Results.Created($"/api/proyectos/{proyecto.Id}", await MapProyecto(creado, db));
@@ -146,55 +141,39 @@ public static class ProyectosEndpoints
 
         var putEndpoint = group.MapPut("/{id:int}", async (int id, ActualizarProyectoRequest request, ApplicationDbContext db, HttpContext context) =>
         {
-            // REGLA DE SEGURIDAD EN DESARROLLO: Forzamos ID de prueba local para usar Scalar sin Token JWT
             var usuarioId = "00000000-0000-0000-0000-000000000000";
-
-            // NOTA: Cuando vayas a pasar a producción con la seguridad de la empresa, descomenta la línea de abajo:
             // var usuarioId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
             if (string.IsNullOrEmpty(usuarioId))
-            {
                 return Results.Json(new { isSuccess = false, message = "Token de sesión inválido o expirado." }, statusCode: 401);
-            }
 
             var proyecto = await db.TblTimeReportProyectos.FirstOrDefaultAsync(p => p.Id == id);
-
             if (proyecto is null)
-            {
                 return Results.NotFound();
-            }
 
-            if (string.IsNullOrWhiteSpace(request.Nombre))
-            {
-                return Results.BadRequest(new { Mensaje = "El nombre del proyecto es requerido." });
-            }
+            var ids = await ResolverRelaciones(request.IdCliente, request.Cliente, request.IdTipoProyecto, request.Tipo, db);
+            var lideres = NormalizarLideres(request);
+            var idEstadoProyectoActivo = await ObtenerOCrearEstadoProyectoActivoAsync(db);
 
-            var ids = await ResolverRelaciones(request.IdCliente, request.Cliente, request.IdTipoProyecto, request.Tipo,
-                request.IdLider, request.Lider, request.IdEstadoProyecto, request.Estado, db);
-
-            if (ids.IdEstadoProyecto == 0)
-            {
-                return Results.BadRequest(new { Mensaje = "Debe seleccionar o registrar un estado de proyecto valido." });
-            }
-
-            proyecto.Codigo = request.Codigo;
-            proyecto.Nombre = request.Nombre.Trim();
             proyecto.Descripcion = request.Descripcion;
-            proyecto.Idcliente = ids.IdCliente;
             proyecto.Idtipoproyecto = ids.IdTipoProyecto;
-            proyecto.Idlider = ids.IdLider;
-            proyecto.Idestadoproyecto = ids.IdEstadoProyecto;
+            proyecto.Idestadoproyecto = request.IdEstadoProyecto ?? idEstadoProyectoActivo;
             proyecto.Fechainicioplaneada = request.FechaInicio;
             proyecto.Fechafinplaneada = request.FechaFin;
             proyecto.Presupuesto = request.Presupuesto;
             proyecto.Horasasignadas = request.Horas;
-            proyecto.Lidercosto = request.LiderCosto;     // NUEVO
-            proyecto.Liderhoras = request.LiderHoras;     // NUEVO
             proyecto.Usuariomodificacion = UsuarioSistema;
             proyecto.Fechamodificacion = DateTime.UtcNow;
             proyecto.Ipmodificacion = IpSistema;
 
-            await GuardarRecursos(id, request.Recursos, db);
+            var tieneAsignaciones = lideres.Any(l =>
+                l.IdLider.HasValue ||
+                !string.IsNullOrWhiteSpace(l.Lider) ||
+                (l.Recursos != null && l.Recursos.Count > 0));
+
+            if (tieneAsignaciones)
+                await GuardarAsignaciones(id, lideres, db);
+
             await db.SaveChangesAsync();
 
             var actualizado = await QueryProyectos(db).FirstAsync(p => p.Id == id);
@@ -204,23 +183,15 @@ public static class ProyectosEndpoints
 
         var deleteEndpoint = group.MapDelete("/{id:int}", async (int id, ApplicationDbContext db, HttpContext context) =>
         {
-            // REGLA DE SEGURIDAD EN DESARROLLO: Forzamos ID de prueba local para usar Scalar sin Token JWT
             var usuarioId = "00000000-0000-0000-0000-000000000000";
-
-            // NOTA: Cuando vayas a pasar a producción con la seguridad de la empresa, descomenta la línea de abajo:
             // var usuarioId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
             if (string.IsNullOrEmpty(usuarioId))
-            {
                 return Results.Json(new { isSuccess = false, message = "Token de sesión inválido o expirado." }, statusCode: 401);
-            }
 
             var proyecto = await db.TblTimeReportProyectos.FirstOrDefaultAsync(p => p.Id == id);
-
             if (proyecto is null)
-            {
                 return Results.NotFound();
-            }
 
             proyecto.Activo = false;
             proyecto.Usuariomodificacion = UsuarioSistema;
@@ -233,6 +204,9 @@ public static class ProyectosEndpoints
         if (!(env?.IsDevelopment() ?? false)) deleteEndpoint.RequireAuthorization();
     }
 
+    // ─── CORRECCIÓN PRINCIPAL: un solo filtro sobre TblTimeReportAsignacionProyectos ───
+    // EF Core no permite dos .Include() con filtros distintos sobre la misma navegación.
+    // Se carga todo con ep.Activo y el filtro ep.Idlider != null se aplica en memoria en MapProyecto.
     private static IQueryable<TblTimeReportProyecto> QueryProyectos(ApplicationDbContext db) =>
         db.TblTimeReportProyectos
             .AsNoTracking()
@@ -240,41 +214,64 @@ public static class ProyectosEndpoints
             .Include(p => p.IdclienteNavigation)
             .Include(p => p.IdtipoproyectoNavigation)
             .Include(p => p.IdestadoproyectoNavigation)
-            .Include(p => p.IdliderNavigation)
-                .ThenInclude(l => l!.IdpersonaNavigation)
-            .Include(p => p.TblTimeReportEmpleadoProyectos.Where(ep => ep.Activo))
+            .Include(p => p.TblTimeReportAsignacionProyectos.Where(ep => ep.Activo))
+                .ThenInclude(ep => ep.IdliderNavigation)
+                    .ThenInclude(l => l!.IdpersonaNavigation)
+            .Include(p => p.TblTimeReportAsignacionProyectos.Where(ep => ep.Activo))
                 .ThenInclude(ep => ep.IdempleadoNavigation)
                     .ThenInclude(e => e!.IdpersonaNavigation)
-            .Include(p => p.TblTimeReportEmpleadoProyectos.Where(ep => ep.Activo))
+            .Include(p => p.TblTimeReportAsignacionProyectos.Where(ep => ep.Activo))
                 .ThenInclude(ep => ep.IdempleadoNavigation)
                     .ThenInclude(e => e!.IdcargoNavigation);
 
     private static async Task<ProyectoResponse> MapProyecto(TblTimeReportProyecto proyecto, ApplicationDbContext db)
     {
-        var lider = proyecto.IdliderNavigation?.IdpersonaNavigation;
-
         var nombreTipo = proyecto.IdtipoproyectoNavigation?.Nombretipo ?? string.Empty;
 
-        var recursos = proyecto.TblTimeReportEmpleadoProyectos
+        var asignacionesActivas = proyecto.TblTimeReportAsignacionProyectos
             .Where(r => r.Activo)
+            .ToList();
+
+        var lideres = asignacionesActivas
+            .GroupBy(r => r.Idlider)
             .Select(r =>
             {
-                var persona = r.IdempleadoNavigation?.IdpersonaNavigation;
-                var cargo = r.IdempleadoNavigation?.IdcargoNavigation;
+                var liderAsignacion = r.FirstOrDefault(x => x.Idempleado == null && x.Idlider != null)
+                    ?? r.FirstOrDefault(x => x.Idlider != null);
+                var liderPersona = liderAsignacion?.IdliderNavigation?.IdpersonaNavigation;
+                var recursosGrupo = r
+                    .Where(x => x.Idempleado != null)
+                    .Select(x =>
+                    {
+                        var persona = x.IdempleadoNavigation?.IdpersonaNavigation;
+                        var cargo = x.IdempleadoNavigation?.IdcargoNavigation;
+                        return new ProyectoRecursoResponse(
+                            x.Id,
+                            x.Idempleado,
+                            x.Idproveedor is null ? "Interno" : "Externo",
+                            persona is null ? string.Empty : $"{persona.Nombres} {persona.Apellidos}".Trim(),
+                            x.Rolasignado ?? cargo?.Nombrecargo ?? string.Empty,
+                            x.Fechaasignacion,
+                            x.Fechafinasignacion,
+                            x.Costoporhora ?? 0,      // opcional → 0 si no se ingresó
+                            x.Horasasignadas ?? 0     // opcional → 0 si no se ingresó
+                        );
+                    })
+                    .ToList();
 
-                return new ProyectoRecursoResponse(
-                    r.Id,
-                    r.Idempleado,
-                    r.Idproveedor is null ? "Interno" : "Externo",
-                    persona is null ? string.Empty : $"{persona.Nombres} {persona.Apellidos}".Trim(),
-                    r.Rolasignado ?? cargo?.Nombrecargo ?? string.Empty,
-                    r.Fechaasignacion,
-                    r.Fechafinasignacion,
-                    r.Costoporhora ?? 0,
-                    r.Horasasignadas ?? 0
+                return new ProyectoLiderResponse(
+                    liderAsignacion?.Idlider,
+                    liderPersona is null ? string.Empty : $"{liderPersona.Nombres} {liderPersona.Apellidos}".Trim(),
+                    liderAsignacion?.IdliderNavigation?.IdtipoNavigation?.Valor ?? string.Empty,
+                    liderAsignacion?.Lidercosto ?? 0,   // opcional → 0 si no se ingresó
+                    liderAsignacion?.Liderhoras ?? 0    // opcional → 0 si no se ingresó
+                    , recursosGrupo
                 );
             })
             .ToList();
+
+        var recursos = lideres.SelectMany(l => l.Recursos).ToList();
+        var liderResumen = lideres.FirstOrDefault();
 
         return new ProyectoResponse(
             proyecto.Id,
@@ -285,11 +282,11 @@ public static class ProyectosEndpoints
             proyecto.IdclienteNavigation?.Nombrecomercial ?? proyecto.IdclienteNavigation?.Razonsocial ?? string.Empty,
             proyecto.Idtipoproyecto,
             nombreTipo,
-            proyecto.Idlider,
-            lider is null ? string.Empty : $"{lider.Nombres} {lider.Apellidos}".Trim(),
-            string.Empty,
-            proyecto.Lidercosto ?? 0,     // NUEVO — antes hardcodeado en 0
-            proyecto.Liderhoras ?? 0,     // NUEVO — antes hardcodeado en 0
+            liderResumen?.IdLider,
+            liderResumen?.Lider ?? string.Empty,
+            liderResumen?.CargoLider ?? string.Empty,
+            liderResumen?.CostoHoraLider ?? 0,
+            liderResumen?.HorasLider ?? 0,
             proyecto.Idestadoproyecto,
             proyecto.IdestadoproyectoNavigation?.Valor ?? string.Empty,
             proyecto.Fechainicioplaneada,
@@ -299,19 +296,16 @@ public static class ProyectosEndpoints
             recursos.Count,
             proyecto.Activo,
             proyecto.Fechacreacion,
-            recursos
+            recursos,
+            lideres
         );
     }
 
-    private static async Task<(int? IdCliente, int? IdTipoProyecto, int? IdLider, int IdEstadoProyecto)> ResolverRelaciones(
+    private static async Task<(int? IdCliente, int? IdTipoProyecto)> ResolverRelaciones(
         int? idCliente,
         string? cliente,
         int? idTipoProyecto,
         string? tipo,
-        int? idLider,
-        string? lider,
-        int idEstadoProyecto,
-        string? estado,
         ApplicationDbContext db)
     {
         idCliente ??= await db.TblAdministracionClientes
@@ -387,25 +381,89 @@ public static class ProyectosEndpoints
             }
         }
 
-        idLider ??= await db.TblAdministracionLiders
-            .Where(l => l.Activo && (l.IdpersonaNavigation.Nombres + " " + l.IdpersonaNavigation.Apellidos) == lider)
-            .Select(l => (int?)l.Id)
-            .FirstOrDefaultAsync();
-
-        if (idEstadoProyecto == 0 && !string.IsNullOrWhiteSpace(estado))
-        {
-            idEstadoProyecto = await db.TblAdministracionCatalogoDetalles
-                .Where(d => d.Activo && d.Valor == estado && d.IdcatalogoNavigation.Codigo == "EPR")
-                .Select(d => d.Id)
-                .FirstOrDefaultAsync();
-        }
-
-        return (idCliente, idTipoProyecto, idLider, idEstadoProyecto);
+        return (idCliente, idTipoProyecto);
     }
 
-    private static async Task GuardarRecursos(int idProyecto, List<ProyectoRecursoRequest>? recursos, ApplicationDbContext db)
+    private static async Task<int> ObtenerOCrearEstadoProyectoActivoAsync(ApplicationDbContext db)
     {
-        var actuales = await db.TblTimeReportEmpleadoProyectos
+        var estadoActivo = await db.TblAdministracionCatalogoDetalles
+            .Where(d => d.Activo
+                && d.IdcatalogoNavigation.Codigo == "EPR"
+                && (d.Valor == "Activo" || d.Valor == "ACTIVO" || d.Codigovalor == "ACT" || d.Codigovalor == "ACTIVO"))
+            .Select(d => d.Id)
+            .FirstOrDefaultAsync();
+
+        if (estadoActivo != 0)
+            return estadoActivo;
+
+        var catalogoEstado = await db.TblAdministracionCatalogos
+            .FirstOrDefaultAsync(c => c.Activo && c.Tipocatalogo == "ADM" && c.Codigo == "EPR");
+
+        if (catalogoEstado is null)
+        {
+            catalogoEstado = new TblAdministracionCatalogo
+            {
+                Tipocatalogo = "ADM",
+                Codigo = "EPR",
+                Descripcion = "Estado de proyecto",
+                Activo = true,
+                Usuariocreacion = UsuarioSistema,
+                Fechacreacion = DateTime.UtcNow,
+                Ipcreacion = IpSistema
+            };
+
+            db.TblAdministracionCatalogos.Add(catalogoEstado);
+            await db.SaveChangesAsync();
+        }
+
+        var detalleEstado = await db.TblAdministracionCatalogoDetalles
+            .FirstOrDefaultAsync(d => d.Activo && d.Idcatalogo == catalogoEstado.Id && d.Codigovalor == "ACT");
+
+        if (detalleEstado is null)
+        {
+            detalleEstado = new TblAdministracionCatalogoDetalle
+            {
+                Idcatalogo = catalogoEstado.Id,
+                Codigovalor = "ACT",
+                Valor = "Activo",
+                Descripcion = "Estado activo del proyecto",
+                Orden = 1,
+                Activo = true,
+                Usuariocreacion = UsuarioSistema,
+                Fechacreacion = DateTime.UtcNow,
+                Ipcreacion = IpSistema
+            };
+
+            db.TblAdministracionCatalogoDetalles.Add(detalleEstado);
+            await db.SaveChangesAsync();
+        }
+
+        return await db.TblAdministracionCatalogoDetalles
+            .Where(d => d.Activo && d.IdcatalogoNavigation.Codigo == "EPR")
+            .OrderBy(d => d.Orden)
+            .Select(d => d.Id)
+            .FirstOrDefaultAsync();
+    }
+
+    private static List<ProyectoLiderRequest> NormalizarLideres(CrearProyectoRequest request)
+    {
+        if (request.Lideres is { Count: > 0 })
+            return request.Lideres;
+
+        return [new ProyectoLiderRequest(request.IdLider, request.Lider, request.LiderCosto, request.LiderHoras, request.Recursos)];
+    }
+
+    private static List<ProyectoLiderRequest> NormalizarLideres(ActualizarProyectoRequest request)
+    {
+        if (request.Lideres is { Count: > 0 })
+            return request.Lideres;
+
+        return [new ProyectoLiderRequest(request.IdLider, request.Lider, request.LiderCosto, request.LiderHoras, request.Recursos)];
+    }
+
+    private static async Task GuardarAsignaciones(int idProyecto, List<ProyectoLiderRequest> lideres, ApplicationDbContext db)
+    {
+        var actuales = await db.TblTimeReportAsignacionProyectos
             .Where(r => r.Idproyecto == idProyecto && r.Activo)
             .ToListAsync();
 
@@ -417,22 +475,66 @@ public static class ProyectosEndpoints
             actual.Ipmodificacion = IpSistema;
         }
 
-        foreach (var recurso in recursos ?? [])
+        foreach (var lider in lideres)
         {
-            db.TblTimeReportEmpleadoProyectos.Add(new TblTimeReportEmpleadoProyecto
+            var idLider = await ResolverLiderIdAsync(lider.IdLider, lider.Lider, db);
+
+            // Solo crear fila de líder si hay idLider o datos de lider definidos
+            if (idLider.HasValue || lider.LiderCosto.HasValue || lider.LiderHoras.HasValue)
             {
-                Idproyecto = idProyecto,
-                Idempleado = recurso.IdEmpleado,
-                Fechaasignacion = recurso.Entrada,
-                Fechafinasignacion = recurso.Salida,
-                Rolasignado = recurso.Rol,
-                Costoporhora = recurso.CostoHora,
-                Horasasignadas = recurso.Horas,
-                Activo = true,
-                Usuariocreacion = UsuarioSistema,
-                Fechacreacion = DateTime.UtcNow,
-                Ipcreacion = IpSistema
-            });
+                db.TblTimeReportAsignacionProyectos.Add(new TblTimeReportAsignacionProyecto
+                {
+                    Idproyecto = idProyecto,
+                    Idlider = idLider,
+                    Lidercosto = lider.LiderCosto,     // opcional
+                    Liderhoras = lider.LiderHoras,     // opcional
+                    Activo = true,
+                    Usuariocreacion = UsuarioSistema,
+                    Fechacreacion = DateTime.UtcNow,
+                    Ipcreacion = IpSistema
+                });
+            }
+
+            foreach (var recurso in lider.Recursos ?? [])
+            {
+                db.TblTimeReportAsignacionProyectos.Add(new TblTimeReportAsignacionProyecto
+                {
+                    Idproyecto = idProyecto,
+                    Idempleado = recurso.IdEmpleado,   // opcional
+                    Idlider = idLider,
+                    Fechaasignacion = recurso.Entrada,
+                    Fechafinasignacion = recurso.Salida,
+                    Rolasignado = recurso.Rol,
+                    Costoporhora = recurso.CostoHora,  // opcional
+                    Horasasignadas = recurso.Horas,    // opcional
+                    Activo = true,
+                    Usuariocreacion = UsuarioSistema,
+                    Fechacreacion = DateTime.UtcNow,
+                    Ipcreacion = IpSistema
+                });
+            }
         }
+    }
+
+    private static async Task<int?> ResolverLiderIdAsync(int? idLider, string? lider, ApplicationDbContext db)
+    {
+        if (idLider.HasValue)
+        {
+            var existente = await db.TblAdministracionLiders
+                .Where(l => l.Activo && l.Id == idLider.Value)
+                .Select(l => (int?)l.Id)
+                .FirstOrDefaultAsync();
+
+            if (existente.HasValue)
+                return existente;
+        }
+
+        if (string.IsNullOrWhiteSpace(lider))
+            return null;
+
+        return await db.TblAdministracionLiders
+            .Where(l => l.Activo && (l.IdpersonaNavigation.Nombres + " " + l.IdpersonaNavigation.Apellidos) == lider)
+            .Select(l => (int?)l.Id)
+            .FirstOrDefaultAsync();
     }
 }

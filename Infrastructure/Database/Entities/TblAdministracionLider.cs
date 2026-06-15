@@ -30,5 +30,5 @@ public partial class TblAdministracionLider
 
     public virtual TblAdministracionCatalogoDetalle? IdtipoNavigation { get; set; }
 
-    public virtual ICollection<TblTimeReportProyecto> TblTimeReportProyectos { get; set; } = new List<TblTimeReportProyecto>();
+    public virtual ICollection<TblTimeReportAsignacionProyecto> TblTimeReportAsignacionProyectos { get; set; } = new List<TblTimeReportAsignacionProyecto>();
 }

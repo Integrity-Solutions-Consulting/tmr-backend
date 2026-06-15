@@ -66,7 +66,7 @@ public partial class TblAdministracionEmpleado
 
     public virtual ICollection<TblTimeReportActividadDiarium> TblTimeReportActividadDiariumIdempleadoNavigations { get; set; } = new List<TblTimeReportActividadDiarium>();
 
-    public virtual ICollection<TblTimeReportEmpleadoProyecto> TblTimeReportEmpleadoProyectos { get; set; } = new List<TblTimeReportEmpleadoProyecto>();
+    public virtual ICollection<TblTimeReportAsignacionProyecto> TblTimeReportAsignacionProyectos { get; set; } = new List<TblTimeReportAsignacionProyecto>();
 
     public virtual ICollection<TblTimeReportHomologacionBanco> TblTimeReportHomologacionBancos { get; set; } = new List<TblTimeReportHomologacionBanco>();
 
