@@ -98,7 +98,6 @@ public static class ReportesEndpoints
                 .Include(a => a.IdempleadoNavigation).ThenInclude(e => e.IdpersonaNavigation)
                 .Include(a => a.IdempleadoNavigation).ThenInclude(e => e.IdcargoNavigation)
                 .Include(a => a.IdproyectoNavigation!).ThenInclude(p => p!.IdclienteNavigation)
-                .Include(a => a.IdproyectoNavigation!).ThenInclude(p => p!.IdliderNavigation!).ThenInclude(l => l!.IdpersonaNavigation)
                 .Where(a => a.Activo);
 
             if (filtro.FechaInicio.HasValue)
@@ -119,11 +118,12 @@ public static class ReportesEndpoints
             if (!string.IsNullOrWhiteSpace(filtro.Lider))
             {
                 var term = filtro.Lider.Trim().ToLower();
-                query = query.Where(a => a.IdproyectoNavigation != null && a.IdproyectoNavigation.IdliderNavigation != null && 
-                                        ((a.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Nombres.ToLower() + " " + 
-                                          a.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Apellidos.ToLower()).Contains(term) ||
-                                         (a.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Apellidos.ToLower() + " " + 
-                                          a.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Nombres.ToLower()).Contains(term)));
+                                query = query.Where(a => a.IdproyectoNavigation != null && a.IdproyectoNavigation.TblTimeReportAsignacionProyectos.Any(ep => 
+                                                                                ep.Activo && ep.Idlider != null && ep.IdliderNavigation != null && ep.IdliderNavigation.IdpersonaNavigation != null &&
+                                                                                ((ep.IdliderNavigation.IdpersonaNavigation.Nombres.ToLower() + " " + 
+                                                                                    ep.IdliderNavigation.IdpersonaNavigation.Apellidos.ToLower()).Contains(term) ||
+                                                                                 (ep.IdliderNavigation.IdpersonaNavigation.Apellidos.ToLower() + " " + 
+                                                                                    ep.IdliderNavigation.IdpersonaNavigation.Nombres.ToLower()).Contains(term))));
             }
 
             var total = await query.CountAsync();
@@ -135,7 +135,12 @@ public static class ReportesEndpoints
                 .Select(a => new ReporteFechasResponse(
                     a.Id.ToString(),
                     a.IdproyectoNavigation != null && a.IdproyectoNavigation.IdclienteNavigation != null ? (a.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial ?? "Sin Cliente") : "Sin Cliente",
-                    a.IdproyectoNavigation != null && a.IdproyectoNavigation.IdliderNavigation != null ? (a.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Nombres + " " + a.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Apellidos) : "Sin Lider",
+                    a.IdproyectoNavigation != null
+                        ? (a.IdproyectoNavigation.TblTimeReportAsignacionProyectos
+                            .Where(ep => ep.Activo && ep.Idlider != null && ep.IdliderNavigation != null && ep.IdliderNavigation.IdpersonaNavigation != null)
+                            .Select(ep => ep.IdliderNavigation.IdpersonaNavigation.Nombres + " " + ep.IdliderNavigation.IdpersonaNavigation.Apellidos)
+                            .FirstOrDefault() ?? "Sin Lider")
+                        : "Sin Lider",
                     a.IdempleadoNavigation.IdpersonaNavigation.Nombres + " " + a.IdempleadoNavigation.IdpersonaNavigation.Apellidos,
                     a.IdempleadoNavigation.IdcargoNavigation != null ? a.IdempleadoNavigation.IdcargoNavigation.Nombrecargo : "Sin Cargo",
                     new DateTime(a.Fechaactividad.Year, a.Fechaactividad.Month, a.Fechaactividad.Day),

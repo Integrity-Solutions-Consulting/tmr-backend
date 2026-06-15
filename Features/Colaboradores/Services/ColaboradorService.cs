@@ -57,7 +57,7 @@ public sealed class ColaboradorService(
 
         // Contamos los proyectos activos por empleado.
         // Traemos las asignaciones a memoria y agrupamos ahí para evitar warnings de null.
-        var asignaciones = await db.TblTimeReportEmpleadoProyectos
+        var asignaciones = await db.TblTimeReportAsignacionProyectos
             .Where(ep => ep.Idempleado != null
                       && idsEmpleados.Contains(ep.Idempleado.Value)
                       && ep.Activo)
@@ -109,7 +109,7 @@ public sealed class ColaboradorService(
         if (empleado is null) return null;
 
         // Traemos los proyectos asignados activos del colaborador.
-        var proyectos = await db.TblTimeReportEmpleadoProyectos
+        var proyectos = await db.TblTimeReportAsignacionProyectos
             .Include(ep => ep.IdproyectoNavigation)
                 .ThenInclude(p => p.IdclienteNavigation)
             .Include(ep => ep.IdproyectoNavigation)

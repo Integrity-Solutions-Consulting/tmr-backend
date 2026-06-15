@@ -229,7 +229,7 @@ namespace tmr_backend.Features.Reportes.Domain
         public bool Activo { get; set; }
     }
 
-    [Table("tbl_time_report_empleado_proyecto", Schema = "time_report")]
+    [Table("asignacion_proyecto", Schema = "time_report")]
     public class TimeReportEmpleadoProyecto
     {
         [Key]
@@ -244,6 +244,10 @@ namespace tmr_backend.Features.Reportes.Domain
         public int IdProyecto { get; set; }
         [ForeignKey("IdProyecto")]
         public TimeReportProyecto Proyecto { get; set; } = null!;
+        [Column("idlider")]
+        public int? IdLider { get; set; }
+        [ForeignKey("IdLider")]
+        public AdministracionLider? Lider { get; set; }
         [Column("idproveedor")]
         public int? IdProveedor { get; set; }
         [Column("fechaasignacion")]
@@ -256,6 +260,10 @@ namespace tmr_backend.Features.Reportes.Domain
         public decimal? CostoPorHora { get; set; }
         [Column("horasasignadas")]
         public decimal? HorasAsignadas { get; set; }
+        [Column("lidercosto")]
+        public decimal? LiderCosto { get; set; }
+        [Column("liderhoras")]
+        public decimal? LiderHoras { get; set; }
         [Required]
         [Column("activo")]
         public bool Activo { get; set; }

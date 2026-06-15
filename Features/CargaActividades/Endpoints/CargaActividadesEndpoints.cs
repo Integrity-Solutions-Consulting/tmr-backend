@@ -103,8 +103,11 @@ public static class CargaActividadesEndpoints
                     Cliente = c.IdproyectoNavigation != null && c.IdproyectoNavigation.IdclienteNavigation != null
                         ? c.IdproyectoNavigation.IdclienteNavigation.Razonsocial ?? c.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial ?? "Cliente desconocido"
                         : "Sin cliente",
-                    LiderTecnico = c.IdproyectoNavigation != null && c.IdproyectoNavigation.IdliderNavigation != null && c.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation != null
-                        ? (c.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Nombres + " " + c.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Apellidos).Trim()
+                    LiderTecnico = c.IdproyectoNavigation != null
+                        ? (c.IdproyectoNavigation.TblTimeReportAsignacionProyectos
+                            .Where(ep => ep.Activo && ep.Idlider != null && ep.IdliderNavigation != null && ep.IdliderNavigation.IdpersonaNavigation != null)
+                            .Select(ep => (ep.IdliderNavigation.IdpersonaNavigation.Nombres + " " + ep.IdliderNavigation.IdpersonaNavigation.Apellidos).Trim())
+                            .FirstOrDefault() ?? "Sin líder")
                         : "Sin líder",
                     c.Codigorequerimiento,
                     Horas = c.Cantidadhoras,
