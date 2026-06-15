@@ -42,6 +42,8 @@ using tmr_backend.Shared.Wrappers;
 using Microsoft.AspNetCore.Authorization;
 using tmr_backend.Shared.Middleware;
 using Microsoft.OpenApi;
+using tmr_backend.Shared;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -51,6 +53,12 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
+
+// ── JSON Serializer Configuration ──
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.Converters.Add(new DateOnlyJsonConverter());
+});
 
 // ── OpenAPI / Swagger ──
 builder.Services.AddOpenApi(options =>
