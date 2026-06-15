@@ -10,6 +10,7 @@ public record CrearColaboradorRequest(
     int? IdTipoIdentificacion,
     string TipoPersona,          // NATURAL / JURIDICA
     int? IdGenero,
+    int? IdNacionalidad,
     string Nombres,
     string Apellidos,
     DateOnly? FechaNacimiento,

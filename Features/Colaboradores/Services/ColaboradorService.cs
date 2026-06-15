@@ -98,6 +98,8 @@ public sealed class ColaboradorService(
         var empleado = await db.TblAdministracionEmpleados
             .Include(e => e.IdpersonaNavigation)
                 .ThenInclude(p => p.IdgeneroNavigation)
+            .Include(e => e.IdpersonaNavigation)
+                .ThenInclude(p => p.IdnacionalidadNavigation)
             .Include(e => e.IdcargoNavigation)
                 .ThenInclude(c => c!.IddepartamentoNavigation)  // departamento vía cargo
             .Include(e => e.IdempresacatalogoNavigation)       // asociación
@@ -107,7 +109,7 @@ public sealed class ColaboradorService(
             .FirstOrDefaultAsync(e => e.Id == id, ct);
 
         if (empleado is null) return null;
-
+        
         // Traemos los proyectos asignados activos del colaborador.
         var proyectos = await db.TblTimeReportAsignacionProyectos
             .Include(ep => ep.IdproyectoNavigation)
@@ -170,6 +172,7 @@ public sealed class ColaboradorService(
                     ? request.IdTipoIdentificacion
                     : null,
                 Idgenero = request.IdGenero,
+                Idnacionalidad = request.IdNacionalidad,
                 Tipopersona = request.TipoPersona,
                 Nombres = request.Nombres.Trim(),
                 Apellidos = request.Apellidos.Trim(),
@@ -223,8 +226,7 @@ public sealed class ColaboradorService(
 
 
     // =========================================================================
-    // ACTUALIZAR — solo modifica los datos laborales del empleado.
-    // Los datos personales NO se tocan (se gestionan en el módulo de Personas).
+    // ACTUALIZAR — modifica datos personales de Persona + datos laborales de Empleado.
     // =========================================================================
     public async Task ActualizarAsync(int id, ActualizarColaboradorRequest request, CancellationToken ct)
     {
@@ -233,14 +235,60 @@ public sealed class ColaboradorService(
         if (!validation.IsValid)
             throw new ValidationException(validation.Errors);
 
-        // Buscar el empleado.
+        // Buscar el empleado junto con su Persona.
         var empleado = await db.TblAdministracionEmpleados
+            .Include(e => e.IdpersonaNavigation)
             .FirstOrDefaultAsync(e => e.Id == id, ct);
 
         if (empleado is null)
             throw new InvalidOperationException("El colaborador no existe.");
 
-        // Actualizar solo los datos laborales.
+        if (empleado.IdpersonaNavigation is null)
+            throw new InvalidOperationException("El colaborador no tiene una persona asociada.");
+
+        var persona = empleado.IdpersonaNavigation;
+
+        // ── Actualizar datos personales ──────────────────────────────
+        var tipoPersona = string.IsNullOrWhiteSpace(request.TipoPersona)
+            ? persona.Tipopersona
+            : request.TipoPersona.Trim().ToUpper();
+
+        persona.Tipopersona = tipoPersona;
+
+        persona.Idtipoidentificacion = tipoPersona == "JURIDICA"
+            ? null
+            : request.IdTipoIdentificacion ?? persona.Idtipoidentificacion;
+
+        if (!string.IsNullOrWhiteSpace(request.NumeroIdentificacion))
+            persona.Numeroidentificacion = request.NumeroIdentificacion.Trim();
+
+        if (!string.IsNullOrWhiteSpace(request.Nombres))
+            persona.Nombres = request.Nombres.Trim();
+
+        if (!string.IsNullOrWhiteSpace(request.Apellidos))
+            persona.Apellidos = request.Apellidos.Trim();
+
+        persona.Fechanacimiento = request.FechaNacimiento;
+        persona.Idgenero = request.IdGenero;
+        persona.Idnacionalidad = request.IdNacionalidad;
+
+        persona.Email = string.IsNullOrWhiteSpace(request.Email)
+            ? null
+            : request.Email.Trim();
+
+        persona.Telefono = string.IsNullOrWhiteSpace(request.Telefono)
+            ? null
+            : request.Telefono.Trim();
+
+        persona.Direccion = string.IsNullOrWhiteSpace(request.Direccion)
+            ? null
+            : request.Direccion.Trim();
+
+        persona.Usuariomodificacion = UsuarioSistema;
+        persona.Fechamodificacion = DateTime.UtcNow;
+        persona.Ipmodificacion = IpSistema;
+
+        // ── Actualizar datos laborales ───────────────────────────────
         empleado.Idcargo = request.IdCargo;
         empleado.Idmodotrabajo = request.IdModoTrabajo;
         empleado.Idcategoriaempleado = request.IdCategoriaEmpleado;
@@ -248,6 +296,11 @@ public sealed class ColaboradorService(
         empleado.Fechaingreso = request.FechaIngreso;
         empleado.Aniosexperiencia = request.AniosExperiencia;
         empleado.Activo = request.Activo;
+
+        // Empresa / asociación.
+        if (request.IdEmpresaCatalogo.HasValue)
+            empleado.Idempresacatalogo = request.IdEmpresaCatalogo.Value;
+
         empleado.Usuariomodificacion = UsuarioSistema;
         empleado.Fechamodificacion = DateTime.UtcNow;
         empleado.Ipmodificacion = IpSistema;
