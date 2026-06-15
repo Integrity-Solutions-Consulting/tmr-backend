@@ -24,7 +24,8 @@ public record ReporteHorasResponse(
     int Recursos,
     decimal Horas,
     string Mes,
-    string Anio
+    string Anio,
+    string EstadoCliente
 );
 
 // --- Reporte por Fechas ---
