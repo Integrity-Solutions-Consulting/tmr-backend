@@ -201,25 +201,57 @@ public static class TimeReportEndpoints
             return Results.Ok(actividades);
         });
 
-        groupActividades.MapGet("/resumen", async (int idEmpleado, ApplicationDbContext db) =>
+        groupActividades.MapGet("/resumen", async (int idEmpleado, int? anio, int? mes, ApplicationDbContext db) =>
         {
             var hoy = DateOnly.FromDateTime(DateTime.Today);
-            var inicioMes = new DateOnly(hoy.Year, hoy.Month, 1);
-            var inicioSemana = hoy.AddDays(-(int)hoy.DayOfWeek); // simplificado
+            int year = anio ?? hoy.Year;
+            int month = mes ?? hoy.Month;
 
+            var inicioMes = new DateOnly(year, month, 1);
+            var ultimoDiaMes = inicioMes.AddMonths(1).AddDays(-1);
+
+            // Cargar las actividades del mes seleccionado
             var actividadesMes = await db.TblTimeReportActividadDiaria
-                .Where(a => a.Activo && a.Idempleado == idEmpleado && a.Fechaactividad >= inicioMes)
+                .Where(a => a.Activo && a.Idempleado == idEmpleado && a.Fechaactividad >= inicioMes && a.Fechaactividad <= ultimoDiaMes)
                 .ToListAsync();
 
             var horasMes = actividadesMes.Sum(a => a.Cantidadhoras);
-            var horasSemana = actividadesMes.Where(a => a.Fechaactividad >= inicioSemana).Sum(a => a.Cantidadhoras);
-            
-            // Asumiendo 8 horas laborables por día (hasta hoy)
-            var diasLaborables = hoy.DayNumber - inicioMes.DayNumber + 1;
+
+            // Horas registradas el día de hoy (solo si el mes seleccionado es el actual)
+            var horasHoy = (year == hoy.Year && month == hoy.Month)
+                ? actividadesMes.Where(a => a.Fechaactividad == hoy).Sum(a => a.Cantidadhoras)
+                : 0m;
+
+            // Calcular las horas registradas en la semana actual (siempre basada en la fecha de hoy)
+            var inicioSemana = hoy.AddDays(-(int)hoy.DayOfWeek); // Definición de la semana actual
+            var horasSemana = await db.TblTimeReportActividadDiaria
+                .Where(a => a.Activo && a.Idempleado == idEmpleado && a.Fechaactividad >= inicioSemana && a.Fechaactividad <= hoy)
+                .SumAsync(a => a.Cantidadhoras);
+
+            // Obtener todos los feriados activos de todo el mes seleccionado
+            var feriados = await db.TblTimeReportFeriados
+                .Where(f => f.Activo && f.Fechaferiado >= inicioMes && f.Fechaferiado <= ultimoDiaMes)
+                .Select(f => f.Fechaferiado)
+                .ToListAsync();
+
+            // Calcular los días laborables del mes completo (lunes a viernes, sin feriados)
+            int diasLaborables = 0;
+            for (var fecha = inicioMes; fecha <= ultimoDiaMes; fecha = fecha.AddDays(1))
+            {
+                var dayOfWeek = fecha.ToDateTime(TimeOnly.MinValue).DayOfWeek;
+                var esFinDeSemana = dayOfWeek == DayOfWeek.Saturday || dayOfWeek == DayOfWeek.Sunday;
+                var esFeriado = feriados.Contains(fecha);
+
+                if (!esFinDeSemana && !esFeriado)
+                {
+                    diasLaborables++;
+                }
+            }
+
             var horasEsperadas = diasLaborables * 8m;
             var horasPorRegistrar = Math.Max(0m, horasEsperadas - horasMes);
 
-            return Results.Ok(new ResumenHorasDto(horasPorRegistrar, horasMes, horasSemana, horasMes));
+            return Results.Ok(new ResumenHorasDto(horasPorRegistrar, horasHoy, horasSemana, horasMes));
         });
 
         groupActividades.MapPost("/", async (CrearActividadDto request, ApplicationDbContext db) =>
