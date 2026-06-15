@@ -53,11 +53,13 @@ public static class ReportesEndpoints
             var groupedQuery = query
                 .GroupBy(a => new {
                     Cliente = a.IdproyectoNavigation != null && a.IdproyectoNavigation.IdclienteNavigation != null ? a.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial : "Sin Cliente",
+                    ClienteActivo = a.IdproyectoNavigation != null && a.IdproyectoNavigation.IdclienteNavigation != null ? (bool?)a.IdproyectoNavigation.IdclienteNavigation.Activo : null,
                     Mes = a.Fechaactividad.Month,
                     Anio = a.Fechaactividad.Year
                 })
                 .Select(g => new {
                     Cliente = g.Key.Cliente,
+                    ClienteActivo = g.Key.ClienteActivo,
                     MesNum = g.Key.Mes,
                     Anio = g.Key.Anio.ToString(),
                     Recursos = g.Select(x => x.Idempleado).Distinct().Count(),
@@ -83,7 +85,8 @@ public static class ReportesEndpoints
                 r.Recursos,
                 r.Horas,
                 r.MesNum >= 1 && r.MesNum <= 12 ? meses[r.MesNum] : "Desconocido",
-                r.Anio
+                r.Anio,
+                r.ClienteActivo.HasValue ? (r.ClienteActivo.Value ? "Activo" : "Inactivo") : "Sin Cliente"
             )).ToList();
 
             return Results.Ok(new PaginatedResponse<ReporteHorasResponse>(resultado, total, minYear, maxYear));
