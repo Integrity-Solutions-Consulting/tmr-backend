@@ -56,6 +56,7 @@ public static class DashboardEndpoints
 
             var proyectos = await db.TblTimeReportProyectos
                 .Include(p => p.IdclienteNavigation)
+                .Include(p => p.IdestadoproyectoNavigation)
                 .Where(p => p.Activo)
                 .ToListAsync();
 
@@ -72,7 +73,7 @@ public static class DashboardEndpoints
                     p.Codigo ?? "",
                     p.Nombre,
                     p.IdclienteNavigation?.Nombrecomercial ?? "Sin Cliente",
-                    "En progreso",
+                    p.IdestadoproyectoNavigation?.Idcatalogo == 11 ? p.IdestadoproyectoNavigation.Valor : "En progreso",
                     horasProyectos.TryGetValue(p.Id, out var h) ? h : 0m,
                     p.Presupuesto ?? 0m,
                     p.Fechafinplaneada
