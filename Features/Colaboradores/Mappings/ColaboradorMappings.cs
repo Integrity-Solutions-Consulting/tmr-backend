@@ -6,7 +6,6 @@ namespace tmr_backend.Features.Colaboradores.Mappings;
 // Mappings de las entidades de BD hacia los DTOs de respuesta.
 public static class ColaboradorMappings
 {
-    
     // ColaboradorListaResponse (item de la tabla)
     // Recibe numProyectos aparte porque ese conteo se calcula en el servicio.
     public static ColaboradorListaResponse ToListaResponse(
@@ -29,9 +28,9 @@ public static class ColaboradorMappings
             Activo: e.Activo
         );
     }
-    
+
     // -------------------------------------------------------------------------
-    // ColaboradorDetalleResponse (modal de detalle)
+    // ColaboradorDetalleResponse (modal de detalle / editar)
     // Recibe la lista de proyectos aparte (se consulta en el servicio).
     // -------------------------------------------------------------------------
     public static ColaboradorDetalleResponse ToDetalleResponse(
@@ -45,6 +44,13 @@ public static class ColaboradorMappings
             Asociacion: e.IdempresacatalogoNavigation?.Valor ?? "",
             TipoContrato: e.IdtipocontratoNavigation?.Valor ?? "",
             Activo: e.Activo,
+
+            // ── IDs necesarios para precargar el modal editar ──
+            IdEmpresaCatalogo: e.Idempresacatalogo,
+            TipoPersona: persona?.Tipopersona ?? "NATURAL",
+            IdTipoIdentificacion: persona?.Idtipoidentificacion,
+            IdGenero: persona?.Idgenero,
+            IdNacionalidad: persona?.Idnacionalidad,
 
             // ── Datos laborales ──
             // El departamento se obtiene a través del cargo (cargo → departamento).
@@ -62,6 +68,7 @@ public static class ColaboradorMappings
             NumeroIdentificacion: persona?.Numeroidentificacion ?? "",
             FechaNacimiento: persona?.Fechanacimiento,
             Genero: persona?.IdgeneroNavigation?.Valor ?? "",
+            Nacionalidad: persona?.IdnacionalidadNavigation?.Valor ?? "",
 
             // ── Datos de contacto ──
             Email: persona?.Email ?? "",
@@ -73,15 +80,13 @@ public static class ColaboradorMappings
         );
     }
 
- 
-    //para los dropdowns
+    // Para los dropdowns.
     public static CatalogoResponse ToCatalogoResponse(
         this TblAdministracionCatalogoDetalle c) =>
         new(c.Id, c.Valor);
 
-    //dropdown de cargos por departamento
+    // Dropdown de cargos por departamento.
     public static CargoResponse ToCargoResponse(
         this TblAdministracionCargo c) =>
         new(c.Id, c.Nombrecargo);
-
 }
