@@ -10,7 +10,7 @@ public record CrearProyectoRequest(
     string? Tipo,
     int? IdLider,
     string? Lider,
-    int IdEstadoProyecto,
+    int? IdEstadoProyecto,    // ← nullable
     string? Estado,
     DateOnly? FechaInicio,
     DateOnly? FechaFin,
@@ -18,7 +18,8 @@ public record CrearProyectoRequest(
     decimal? Horas,
     decimal? LiderCosto,
     decimal? LiderHoras,
-    List<ProyectoRecursoRequest>? Recursos
+    List<ProyectoRecursoRequest>? Recursos,
+    List<ProyectoLiderRequest>? Lideres
 );
 
 public record ActualizarProyectoRequest(
@@ -31,12 +32,21 @@ public record ActualizarProyectoRequest(
     string? Tipo,
     int? IdLider,
     string? Lider,
-    int IdEstadoProyecto,
+    int? IdEstadoProyecto,    // ← nullable
     string? Estado,
     DateOnly? FechaInicio,
     DateOnly? FechaFin,
     decimal? Presupuesto,
     decimal? Horas,
+    decimal? LiderCosto,
+    decimal? LiderHoras,
+    List<ProyectoRecursoRequest>? Recursos,
+    List<ProyectoLiderRequest>? Lideres
+);
+
+public record ProyectoLiderRequest(
+    int? IdLider,
+    string? Lider,
     decimal? LiderCosto,
     decimal? LiderHoras,
     List<ProyectoRecursoRequest>? Recursos
@@ -54,17 +64,27 @@ public record ProyectoResponse(
     int? IdLider,
     string Lider,
     string CargoLider,
-    decimal CostoHoraLider,
-    decimal HorasLider,
+    decimal? CostoHoraLider,
+    decimal? HorasLider,
     int IdEstadoProyecto,
     string Estado,
     DateOnly? FechaInicio,
     DateOnly? FechaFin,
-    decimal Presupuesto,
-    decimal Horas,
+    decimal? Presupuesto,
+    decimal? Horas,
     int NumeroRecursos,
     bool Activo,
     DateTime FechaCreacion,
+    List<ProyectoRecursoResponse> Recursos,
+    List<ProyectoLiderResponse> Lideres
+);
+
+public record ProyectoLiderResponse(
+    int? IdLider,
+    string Lider,
+    string CargoLider,
+    decimal? CostoHoraLider,
+    decimal? HorasLider,
     List<ProyectoRecursoResponse> Recursos
 );
 
@@ -72,7 +92,7 @@ public record ProyectoRecursoRequest(
     int? IdEmpleado,
     string? Tipo,
     string Nombre,
-    string Rol,
+    string? Rol,
     DateOnly? Entrada,
     DateOnly? Salida,
     decimal? CostoHora,
@@ -87,8 +107,8 @@ public record ProyectoRecursoResponse(
     string Rol,
     DateOnly? Entrada,
     DateOnly? Salida,
-    decimal CostoHora,
-    decimal Horas
+    decimal? CostoHora,
+    decimal? Horas
 );
 
 public record LookupDto(int Id, string Nombre);
