@@ -33,13 +33,13 @@ public class Proyecto
         if (string.IsNullOrWhiteSpace(nombre))
             throw new ArgumentException("El nombre es requerido.");
 
-        return new Proyecto
+            return new Proyecto
         {
             Nombre = nombre,
             Descripcion = descripcion,
             IdCliente = idCliente,
             IdLider = idLider,
-            IdEstadoProyecto = idEstadoProyecto,
+                IdEstadoProyecto = idEstadoProyecto,
             Activo = true,
             Usuariocreacion = usuario,
             Fechacreacion = DateTime.UtcNow,

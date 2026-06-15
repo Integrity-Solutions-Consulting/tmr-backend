@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using tmr_backend.Features.Proyectos.DTOs;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
+using System;
 using System.Security.Claims;
 
 namespace tmr_backend.Features.Proyectos;
@@ -113,7 +114,7 @@ public static class ProyectosEndpoints
                 Fechafinplaneada = request.FechaFin,
                 Presupuesto = request.Presupuesto,
                 Horasasignadas = request.Horas,
-                Activo = true,
+                Activo = request.Estado is null ? true : EsEstadoActivo(request.Estado),
                 Usuariocreacion = UsuarioSistema,
                 Fechacreacion = DateTime.UtcNow,
                 Ipcreacion = IpSistema
@@ -162,6 +163,7 @@ public static class ProyectosEndpoints
             proyecto.Fechafinplaneada = request.FechaFin;
             proyecto.Presupuesto = request.Presupuesto;
             proyecto.Horasasignadas = request.Horas;
+            proyecto.Activo = request.Estado is null ? proyecto.Activo : EsEstadoActivo(request.Estado);
             proyecto.Usuariomodificacion = UsuarioSistema;
             proyecto.Fechamodificacion = DateTime.UtcNow;
             proyecto.Ipmodificacion = IpSistema;
@@ -288,7 +290,7 @@ public static class ProyectosEndpoints
             liderResumen?.CostoHoraLider ?? 0,
             liderResumen?.HorasLider ?? 0,
             proyecto.Idestadoproyecto,
-            proyecto.IdestadoproyectoNavigation?.Valor ?? string.Empty,
+            proyecto.Activo ? "Activo" : "Inactivo",
             proyecto.Fechainicioplaneada,
             proyecto.Fechafinplaneada,
             proyecto.Presupuesto ?? 0,
@@ -382,6 +384,13 @@ public static class ProyectosEndpoints
         }
 
         return (idCliente, idTipoProyecto);
+    }
+
+    private static bool EsEstadoActivo(string? estado)
+    {
+        if (string.IsNullOrWhiteSpace(estado)) return false;
+        var v = estado.Trim().ToUpperInvariant();
+        return v == "ACTIVO" || v == "ACT" || v == "A" || v == "TRUE" || v == "1";
     }
 
     private static async Task<int> ObtenerOCrearEstadoProyectoActivoAsync(ApplicationDbContext db)
