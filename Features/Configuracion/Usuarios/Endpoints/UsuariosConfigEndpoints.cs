@@ -37,7 +37,7 @@ public static class UsuariosConfigEndpoints
             return Results.Ok(result);
         })
         .WithName("ObtenerUsuarioPorIdConfig")
-        .WithDescription("Obtiene el detalle completo de un usuario por el ID de Persona.");
+        .WithDescription("Obtiene el detalle completo de un usuario por el ID de Usuario.");
 
         // POST /api/configuracion/usuarios
         group.MapPost("/", async ([FromBody] CrearUsuarioConfigRequest request, HttpContext context, [FromServices] IUsuariosConfigService service) =>
@@ -47,10 +47,10 @@ public static class UsuariosConfigEndpoints
             var idUsuarioActual = ObtenerIdUsuarioActual(context);
 
             var result = await service.CrearUsuarioAsync(request, usuarioActual, ipActual, idUsuarioActual);
-            return Results.Created($"/api/configuracion/usuarios/{result.id}", result);
+            return Results.Created($"/api/configuracion/usuarios/{result.idusuario}", result);
         })
         .WithName("CrearUsuarioConfig")
-        .WithDescription("Crea un nuevo usuario asignandole roles.");
+        .WithDescription("Crea un nuevo usuario asignandole roles y una persona opcional.");
 
         // PUT /api/configuracion/usuarios/{id}
         group.MapPut("/{id:int}", async (int id, [FromBody] UpdateUsuarioRequest request, HttpContext context, [FromServices] IUsuariosConfigService service) =>
@@ -63,7 +63,7 @@ public static class UsuariosConfigEndpoints
             return Results.Ok(result);
         })
         .WithName("ActualizarUsuarioConfig")
-        .WithDescription("Actualiza datos personales y roles de un usuario.");
+        .WithDescription("Actualiza datos de autenticacion, roles y persona opcional de un usuario.");
 
         // PATCH /api/configuracion/usuarios/{id}
         group.MapPatch("/{id:int}", async (int id, [FromBody] ActivarUsuarioRequest request, HttpContext context, [FromServices] IUsuariosConfigService service) =>

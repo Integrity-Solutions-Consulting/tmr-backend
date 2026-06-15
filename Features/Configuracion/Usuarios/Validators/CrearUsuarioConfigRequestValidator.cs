@@ -8,17 +8,9 @@ public class CrearUsuarioConfigRequestValidator : AbstractValidator<CrearUsuario
 {
     public CrearUsuarioConfigRequestValidator()
     {
-        RuleFor(x => x.numeroidentificacion)
-            .NotEmpty().WithMessage("El numero de identificacion es requerido.")
-            .Length(8, 20).WithMessage("El numero de identificacion debe tener entre 8 y 20 caracteres.");
-
-        RuleFor(x => x.nombres)
-            .NotEmpty().WithMessage("Los nombres son requeridos.")
-            .Length(3, 100).WithMessage("Los nombres deben tener entre 3 y 100 caracteres.");
-
-        RuleFor(x => x.apellidos)
-            .NotEmpty().WithMessage("Los apellidos son requeridos.")
-            .Length(3, 100).WithMessage("Los apellidos deben tener entre 3 y 100 caracteres.");
+        RuleFor(x => x.idPersona)
+            .GreaterThan(0).WithMessage("La persona seleccionada no es valida.")
+            .When(x => x.idPersona.HasValue);
 
         RuleFor(x => x.email)
             .NotEmpty().WithMessage("El email es requerido.")
@@ -29,31 +21,6 @@ public class CrearUsuarioConfigRequestValidator : AbstractValidator<CrearUsuario
             .NotEmpty().WithMessage("La contrasena es requerida.")
             .Must(PasswordValidator.EsValida)
             .WithMessage(PasswordValidator.ObtenerRequisitos());
-
-        RuleFor(x => x.idtipoidentificacion)
-            .GreaterThan(0).WithMessage("El tipo de identificacion no es valido.")
-            .When(x => x.idtipoidentificacion.HasValue);
-
-        RuleFor(x => x.idgenero)
-            .GreaterThan(0).WithMessage("El genero no es valido.")
-            .When(x => x.idgenero.HasValue);
-
-        RuleFor(x => x.idnacionalidad)
-            .GreaterThan(0).WithMessage("La nacionalidad no es valida.")
-            .When(x => x.idnacionalidad.HasValue);
-
-        RuleFor(x => x.fechanacimiento)
-            .LessThan(DateOnly.FromDateTime(DateTime.Today))
-            .WithMessage("La fecha de nacimiento debe ser anterior a hoy.")
-            .When(x => x.fechanacimiento.HasValue);
-
-        RuleFor(x => x.telefono)
-            .MaximumLength(20).WithMessage("El telefono no puede superar los 20 caracteres.")
-            .When(x => x.telefono is not null);
-
-        RuleFor(x => x.direccion)
-            .MaximumLength(255).WithMessage("La direccion no puede superar los 255 caracteres.")
-            .When(x => x.direccion is not null);
 
         RuleFor(x => x.rolesids)
             .NotNull().WithMessage("Debe asignar al menos un rol.")
