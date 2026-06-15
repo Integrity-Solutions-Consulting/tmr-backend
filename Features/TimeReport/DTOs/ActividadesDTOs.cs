@@ -28,7 +28,8 @@ public record ResumenHorasDto(
 
 public record ProyectoLookupDto(
     int Id,
-    string Nombre
+    string Nombre,
+    string? Codigo
 );
 
 public record CalendarioActividadDto(
