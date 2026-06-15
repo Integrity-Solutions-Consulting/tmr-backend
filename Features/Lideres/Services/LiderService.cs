@@ -3,16 +3,19 @@ using tmr_backend.Features.Lideres.DTOs.Request;
 using tmr_backend.Features.Lideres.DTOs.Response;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
+using FluentValidation;
 
 namespace tmr_backend.Features.Lideres.Services;
 
 public class LiderService : ILiderService
 {
     private readonly ApplicationDbContext _db;
+    private readonly IValidator<CrearLiderRequest> _crearValidator;
 
-    public LiderService(ApplicationDbContext db)
+    public LiderService(ApplicationDbContext db, IValidator<CrearLiderRequest> crearValidator)
     {
         _db = db;
+        _crearValidator = crearValidator;
     }
 
     public async Task<IEnumerable<LiderResponse>> ObtenerTodosAsync(bool? activo, CancellationToken ct)
@@ -34,6 +37,7 @@ public class LiderService : ILiderService
             l.IdpersonaNavigation.Tipopersona,
             l.Idtipo,
             l.IdtipoNavigation != null ? l.IdtipoNavigation.Descripcion : null,
+            l.IdpersonaNavigation.Numeroidentificacion,
             l.Activo,
             l.Fechacreacion
         )).ToListAsync(ct);
@@ -57,29 +61,87 @@ public class LiderService : ILiderService
             lider.IdpersonaNavigation.Tipopersona,
             lider.Idtipo,
             lider.IdtipoNavigation?.Descripcion,
+            lider.IdpersonaNavigation.Numeroidentificacion,
             lider.Activo,
             lider.Fechacreacion);
     }
 
     public async Task<LiderResponse> CrearAsync(CrearLiderRequest request, CancellationToken ct)
     {
+        var validation = await _crearValidator.ValidateAsync(request, ct);
+        if (!validation.IsValid)
+            throw new ValidationException(validation.Errors);
+
         using var transaction = await _db.Database.BeginTransactionAsync(ct);
         try
         {
-            var persona = await _db.TblAdministracionPersonas
-                .FirstOrDefaultAsync(p => p.Id == request.Idpersona, ct);
+            var tipoLider = await _db.TblAdministracionCatalogoDetalles
+                .Include(d => d.IdcatalogoNavigation)
+                .FirstOrDefaultAsync(d => d.Id == request.Idtipo, ct);
 
-            if (persona is null)
-                throw new ArgumentException("La persona no existe.");
+            if (tipoLider is null || tipoLider.IdcatalogoNavigation?.Codigo != "TLI")
+                throw new ArgumentException("El tipo de líder especificado no es válido.");
 
-            persona.Nombres = request.Nombres;
-            persona.Apellidos = request.Apellidos;
-            persona.Email = request.Email;
-            persona.Telefono = request.Telefono;
+            TblAdministracionPersona persona;
+
+            if (tipoLider.Codigovalor == "INT")
+            {
+                if (!request.Idpersona.HasValue || request.Idpersona.Value <= 0)
+                    throw new ArgumentException("La persona es requerida para líderes internos.");
+
+                persona = await _db.TblAdministracionPersonas
+                    .FirstOrDefaultAsync(p => p.Id == request.Idpersona.Value, ct);
+
+                if (persona is null)
+                    throw new ArgumentException("La persona especificada no existe.");
+
+                persona.Nombres = request.Nombres;
+                persona.Apellidos = request.Apellidos;
+                persona.Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim();
+                persona.Telefono = string.IsNullOrWhiteSpace(request.Telefono) ? null : request.Telefono.Trim();
+            }
+            else if (tipoLider.Codigovalor == "EXT")
+            {
+                var numIdentificacion = !string.IsNullOrWhiteSpace(request.NumeroIdentificacion)
+                    ? request.NumeroIdentificacion.Trim()
+                    : "EXT-" + Guid.NewGuid().ToString("N").Substring(0, 8).ToUpper();
+
+                var existeIdentificacion = await _db.TblAdministracionPersonas
+                    .AnyAsync(p => p.Numeroidentificacion == numIdentificacion, ct);
+
+                if (existeIdentificacion)
+                {
+                    if (!string.IsNullOrWhiteSpace(request.NumeroIdentificacion))
+                        throw new ArgumentException("Ya existe una persona con ese número de identificación.");
+                    
+                    numIdentificacion = "EXT-" + Guid.NewGuid().ToString("N").Substring(0, 8).ToUpper();
+                }
+
+                persona = new TblAdministracionPersona
+                {
+                    Numeroidentificacion = numIdentificacion,
+                    Tipopersona = "NATURAL",
+                    Nombres = request.Nombres.Trim(),
+                    Apellidos = request.Apellidos.Trim(),
+                    Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim(),
+                    Telefono = string.IsNullOrWhiteSpace(request.Telefono) ? null : request.Telefono.Trim(),
+                    Activo = true,
+                    Usuariocreacion = request.Usuariocreacion,
+                    Fechacreacion = DateTime.UtcNow,
+                    Ipcreacion = request.Ipcreacion
+                };
+
+                _db.TblAdministracionPersonas.Add(persona);
+                await _db.SaveChangesAsync(ct);
+            }
+            else
+            {
+                throw new ArgumentException("El tipo de líder no está configurado.");
+            }
 
             var lider = new TblAdministracionLider
             {
-                Idpersona = request.Idpersona,
+                Idpersona = persona.Id,
                 Idtipo = request.Idtipo,
                 Activo = true,
                 Usuariocreacion = request.Usuariocreacion,
@@ -99,7 +161,8 @@ public class LiderService : ILiderService
                 persona.Telefono,
                 persona.Tipopersona,
                 lider.Idtipo,
-                null,
+                tipoLider.Descripcion,
+                persona.Numeroidentificacion,
                 lider.Activo,
                 lider.Fechacreacion);
         }
@@ -114,14 +177,32 @@ public class LiderService : ILiderService
     {
         var lider = await _db.TblAdministracionLiders
             .Include(l => l.IdpersonaNavigation)
+            .Include(l => l.IdtipoNavigation)
             .FirstOrDefaultAsync(l => l.Id == id, ct);
 
         if (lider is null) return null;
 
+        var tipoLider = await _db.TblAdministracionCatalogoDetalles
+            .FirstOrDefaultAsync(d => d.Id == request.Idtipo, ct);
+
+        if (tipoLider is not null && tipoLider.Codigovalor == "EXT" && !string.IsNullOrWhiteSpace(request.NumeroIdentificacion))
+        {
+            var cleanId = request.NumeroIdentificacion.Trim();
+            if (lider.IdpersonaNavigation.Numeroidentificacion != cleanId)
+            {
+                var existeIdentificacion = await _db.TblAdministracionPersonas
+                    .AnyAsync(p => p.Id != lider.Idpersona && p.Numeroidentificacion == cleanId, ct);
+                if (existeIdentificacion)
+                    throw new ArgumentException("Ya existe otra persona con ese número de identificación.");
+
+                lider.IdpersonaNavigation.Numeroidentificacion = cleanId;
+            }
+        }
+
         lider.IdpersonaNavigation.Nombres = request.Nombres;
         lider.IdpersonaNavigation.Apellidos = request.Apellidos;
-        lider.IdpersonaNavigation.Email = request.Email;
-        lider.IdpersonaNavigation.Telefono = request.Telefono;
+        lider.IdpersonaNavigation.Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email;
+        lider.IdpersonaNavigation.Telefono = string.IsNullOrWhiteSpace(request.Telefono) ? null : request.Telefono;
         lider.Idtipo = request.Idtipo;
         lider.Activo = request.Activo;
         lider.Usuariomodificacion = request.Usuariomodificacion;
@@ -138,7 +219,8 @@ public class LiderService : ILiderService
             lider.IdpersonaNavigation.Telefono,
             lider.IdpersonaNavigation.Tipopersona,
             lider.Idtipo,
-            null,
+            tipoLider?.Descripcion ?? lider.IdtipoNavigation?.Descripcion,
+            lider.IdpersonaNavigation.Numeroidentificacion,
             lider.Activo,
             lider.Fechacreacion);
     }
