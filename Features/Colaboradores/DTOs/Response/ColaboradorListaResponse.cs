@@ -5,6 +5,7 @@ namespace tmr_backend.Features.Colaboradores.DTOs.Response;
 // Identificación, Tipo, Nombre, Núm. Proyectos, Correo, Cargo, Estado.
 public record ColaboradorListaResponse(
     int Id,
+    int IdPersona,
     string CodigoEmpleado,        // RPS0001
     string NumeroIdentificacion,
     string Asociacion,            // Valor del catálogo EMP (RPS / ISC / RPS E ISC)

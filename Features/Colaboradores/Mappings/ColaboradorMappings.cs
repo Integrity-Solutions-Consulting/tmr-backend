@@ -16,6 +16,7 @@ public static class ColaboradorMappings
 
         return new ColaboradorListaResponse(
             Id: e.Id,
+            IdPersona: e.Idpersona,
             CodigoEmpleado: e.Codigoempleado,
             NumeroIdentificacion: persona?.Numeroidentificacion ?? "",
             // Asociación: el valor del catálogo de empresa (RPS, ISC, RPS E ISC).

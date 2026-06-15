@@ -15,6 +15,7 @@ public static class LiderMappings
             lider.IdpersonaNavigation.Tipopersona,
             lider.Idtipo,
             lider.IdtipoNavigation?.Descripcion,
+            lider.IdpersonaNavigation.Numeroidentificacion,
             lider.Activo,
             lider.Fechacreacion);
 }
