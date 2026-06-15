@@ -101,7 +101,7 @@ public static class TimeReportEndpoints
                 var todosProyectos = await db.TblTimeReportProyectos
                     .AsNoTracking()
                     .Where(p => p.Activo)
-                    .Select(p => new ProyectoLookupDto(p.Id, p.Nombre))
+                    .Select(p => new ProyectoLookupDto(p.Id, p.Nombre, p.Codigo))
                     .ToListAsync();
                 return Results.Ok(todosProyectos);
             }
@@ -133,7 +133,7 @@ public static class TimeReportEndpoints
                 var proyectos = await db.TblTimeReportProyectos
                     .AsNoTracking()
                     .Where(p => p.Activo)
-                    .Select(p => new ProyectoLookupDto(p.Id, p.Nombre))
+                    .Select(p => new ProyectoLookupDto(p.Id, p.Nombre, p.Codigo))
                     .ToListAsync();
                 return Results.Ok(proyectos);
             }
@@ -142,7 +142,7 @@ public static class TimeReportEndpoints
                 var proyectos = await db.TblTimeReportProyectos
                     .AsNoTracking()
                     .Where(p => p.Activo && p.TblTimeReportAsignacionProyectos.Any(ep => ep.Activo && ep.Idlider != null))
-                    .Select(p => new ProyectoLookupDto(p.Id, p.Nombre))
+                    .Select(p => new ProyectoLookupDto(p.Id, p.Nombre, p.Codigo))
                     .ToListAsync();
                 return Results.Ok(proyectos);
             }
@@ -157,7 +157,7 @@ public static class TimeReportEndpoints
                 var proyectos = await db.TblTimeReportProyectos
                     .AsNoTracking()
                     .Where(p => p.Activo && p.TblTimeReportAsignacionProyectos.Any(ep => ep.Activo && ep.Idlider == lider.Id))
-                    .Select(p => new ProyectoLookupDto(p.Id, p.Nombre))
+                    .Select(p => new ProyectoLookupDto(p.Id, p.Nombre, p.Codigo))
                     .ToListAsync();
                 return Results.Ok(proyectos);
             }
@@ -166,7 +166,7 @@ public static class TimeReportEndpoints
                 var proyectos = await db.TblTimeReportAsignacionProyectos
                     .AsNoTracking()
                     .Where(ep => ep.Idempleado == empleado.Id && ep.Activo && ep.IdproyectoNavigation.Activo)
-                    .Select(ep => new ProyectoLookupDto(ep.Idproyecto, ep.IdproyectoNavigation.Nombre))
+                    .Select(ep => new ProyectoLookupDto(ep.Idproyecto, ep.IdproyectoNavigation.Nombre, ep.IdproyectoNavigation.Codigo))
                     .Distinct()
                     .ToListAsync();
                 return Results.Ok(proyectos);
