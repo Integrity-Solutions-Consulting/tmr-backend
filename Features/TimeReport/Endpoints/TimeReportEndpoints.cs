@@ -141,7 +141,7 @@ public static class TimeReportEndpoints
             {
                 var proyectos = await db.TblTimeReportProyectos
                     .AsNoTracking()
-                    .Where(p => p.Activo && p.Idlider != null)
+                    .Where(p => p.Activo && p.TblTimeReportAsignacionProyectos.Any(ep => ep.Activo && ep.Idlider != null))
                     .Select(p => new ProyectoLookupDto(p.Id, p.Nombre))
                     .ToListAsync();
                 return Results.Ok(proyectos);
@@ -156,14 +156,14 @@ public static class TimeReportEndpoints
 
                 var proyectos = await db.TblTimeReportProyectos
                     .AsNoTracking()
-                    .Where(p => p.Activo && p.Idlider == lider.Id)
+                    .Where(p => p.Activo && p.TblTimeReportAsignacionProyectos.Any(ep => ep.Activo && ep.Idlider == lider.Id))
                     .Select(p => new ProyectoLookupDto(p.Id, p.Nombre))
                     .ToListAsync();
                 return Results.Ok(proyectos);
             }
             else
             {
-                var proyectos = await db.TblTimeReportEmpleadoProyectos
+                var proyectos = await db.TblTimeReportAsignacionProyectos
                     .AsNoTracking()
                     .Where(ep => ep.Idempleado == empleado.Id && ep.Activo && ep.IdproyectoNavigation.Activo)
                     .Select(ep => new ProyectoLookupDto(ep.Idproyecto, ep.IdproyectoNavigation.Nombre))
@@ -316,13 +316,12 @@ public static class TimeReportEndpoints
             var query = db.TblAdministracionEmpleados
                 .Where(e => e.Activo)
                 .Include(e => e.IdpersonaNavigation)
-                .Include(e => e.TblTimeReportEmpleadoProyectos)
+                .Include(e => e.TblTimeReportAsignacionProyectos)
                     .ThenInclude(ep => ep.IdproyectoNavigation)
                         .ThenInclude(p => p.IdclienteNavigation)
-                .Include(e => e.TblTimeReportEmpleadoProyectos)
-                    .ThenInclude(ep => ep.IdproyectoNavigation)
-                        .ThenInclude(p => p.IdliderNavigation)
-                            .ThenInclude(l => l.IdpersonaNavigation)
+                .Include(e => e.TblTimeReportAsignacionProyectos)
+                    .ThenInclude(ep => ep.IdliderNavigation)
+                        .ThenInclude(l => l.IdpersonaNavigation)
                 .AsQueryable();
 
             if (!string.IsNullOrEmpty(filtro.Busqueda))
@@ -331,22 +330,22 @@ public static class TimeReportEndpoints
                 query = query.Where(e => 
                     e.IdpersonaNavigation.Nombres.ToLower().Contains(term) 
                     || e.IdpersonaNavigation.Apellidos.ToLower().Contains(term)
-                    || e.TblTimeReportEmpleadoProyectos.Any(ep => 
+                    || e.TblTimeReportAsignacionProyectos.Any(ep => 
                         ep.Activo 
                         && ep.IdproyectoNavigation.Activo 
                         && ep.IdproyectoNavigation.Nombre.ToLower().Contains(term))
-                    || e.TblTimeReportEmpleadoProyectos.Any(ep => 
+                    || e.TblTimeReportAsignacionProyectos.Any(ep => 
                         ep.Activo 
                         && ep.IdproyectoNavigation.Activo 
-                        && ep.IdproyectoNavigation.IdliderNavigation != null 
-                        && (ep.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Nombres.ToLower().Contains(term)
-                            || ep.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Apellidos.ToLower().Contains(term)))
+                        && ep.IdliderNavigation != null 
+                        && (ep.IdliderNavigation.IdpersonaNavigation.Nombres.ToLower().Contains(term)
+                            || ep.IdliderNavigation.IdpersonaNavigation.Apellidos.ToLower().Contains(term)))
                 );
             }
 
             if (!string.IsNullOrEmpty(filtro.ClienteSeleccionado))
             {
-                query = query.Where(e => e.TblTimeReportEmpleadoProyectos.Any(ep => 
+                query = query.Where(e => e.TblTimeReportAsignacionProyectos.Any(ep => 
                     ep.Activo && ep.IdproyectoNavigation.Activo && ep.IdproyectoNavigation.IdclienteNavigation != null &&
                     (ep.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial == filtro.ClienteSeleccionado || 
                      ep.IdproyectoNavigation.IdclienteNavigation.Razonsocial == filtro.ClienteSeleccionado)));
@@ -400,7 +399,7 @@ public static class TimeReportEndpoints
                 }
 
                 // Project details
-                var empProys = e.TblTimeReportEmpleadoProyectos.Where(ep => ep.Activo).ToList();
+                var empProys = e.TblTimeReportAsignacionProyectos.Where(ep => ep.Activo).ToList();
                 var proyectosStr = empProys.Any() 
                     ? string.Join(", ", empProys.Select(ep => ep.IdproyectoNavigation.Nombre).Distinct()) 
                     : "Sin Proyecto";
@@ -411,7 +410,7 @@ public static class TimeReportEndpoints
                 if (string.IsNullOrWhiteSpace(clientesStr)) clientesStr = "Sin Cliente";
 
                 var lideresStr = empProys.Any()
-                    ? string.Join(", ", empProys.Where(ep => ep.IdproyectoNavigation.IdliderNavigation != null).Select(ep => ep.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Nombres + " " + ep.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Apellidos).Distinct())
+                    ? string.Join(", ", empProys.Where(ep => ep.IdliderNavigation != null).Select(ep => ep.IdliderNavigation.IdpersonaNavigation.Nombres + " " + ep.IdliderNavigation.IdpersonaNavigation.Apellidos).Distinct())
                     : "Sin Líder";
                 if (string.IsNullOrWhiteSpace(lideresStr)) lideresStr = "Sin Líder";
 
