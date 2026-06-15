@@ -29,7 +29,7 @@ public static class ColaboradorMappings
             Activo: e.Activo
         );
     }
-
+    
     // -------------------------------------------------------------------------
     // ColaboradorDetalleResponse (modal de detalle)
     // Recibe la lista de proyectos aparte (se consulta en el servicio).
@@ -84,19 +84,4 @@ public static class ColaboradorMappings
         this TblAdministracionCargo c) =>
         new(c.Id, c.Nombrecargo);
 
-
-    // ComboBox de personas
-    public static PersonaResponse ToPersonaResponse(
-        this TblAdministracionPersona p) =>
-        new(
-            p.Id,
-            p.Nombres,
-            p.Apellidos,
-            p.Numeroidentificacion,
-            p.Fechanacimiento,
-            p.Idgenero,
-            p.Email,
-            p.Telefono,
-            p.Direccion
-            );
 }

@@ -25,3 +25,4 @@ public class ActualizarColaboradorRequestValidator : AbstractValidator<Actualiza
             .GreaterThan(0).WithMessage("La categoría es requerida.");
     }
 }
+

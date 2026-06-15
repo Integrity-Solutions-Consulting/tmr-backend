@@ -134,7 +134,7 @@ public sealed class ColaboradorService(
 
 
     // =========================================================================
-    // CREAR — solo crea el Empleado, usando una Persona existente del ComboBox
+    // CREAR — crea Persona + Empleado en una transacción.
     // =========================================================================
     public async Task<int> CrearAsync(CrearColaboradorRequest request, CancellationToken ct)
     {
@@ -143,49 +143,82 @@ public sealed class ColaboradorService(
         if (!validation.IsValid)
             throw new ValidationException(validation.Errors);
 
-        // Verificar que la persona seleccionada exista.
-        var persona = await db.TblAdministracionPersonas
-            .FirstOrDefaultAsync(p => p.Id == request.IdPersona, ct);
-        if (persona is null)
-            throw new InvalidOperationException("La persona seleccionada no existe.");
+        // Verificar que no exista ya una persona con la misma identificación.
+        var existePersona = await db.TblAdministracionPersonas
+            .AnyAsync(p => p.Numeroidentificacion == request.NumeroIdentificacion.Trim(), ct);
 
-        // Verificar que esa persona NO sea ya un colaborador (evitar duplicados).
-        var yaEsColaborador = await db.TblAdministracionEmpleados
-            .AnyAsync(e => e.Idpersona == request.IdPersona, ct);
-        if (yaEsColaborador)
-            throw new InvalidOperationException("Esta persona ya es un colaborador.");
+        if (existePersona)
+            throw new InvalidOperationException("Ya existe una persona con esa identificación.");
 
-        // Obtener el prefijo de la asociación para generar el código.
-        var asociacion = await db.TblAdministracionCatalogoDetalles
+        // Obtener la empresa para generar el código de empleado.
+        var empresa = await db.TblAdministracionCatalogoDetalles
             .FirstOrDefaultAsync(c => c.Id == request.IdEmpresaCatalogo, ct);
-        if (asociacion is null)
-            throw new InvalidOperationException("La asociación seleccionada no existe.");
 
-        // Generar el código de empleado 
-        var codigoEmpleado = await codigoGenerator.GenerarAsync(asociacion.Codigovalor, ct);
+        if (empresa is null)
+            throw new InvalidOperationException("La empresa seleccionada no existe.");
 
-        // Crear el empleado 
-        var empleado = new TblAdministracionEmpleado
+        // Usamos transacción para evitar que quede una Persona creada sin Empleado.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+
+        try
         {
-            Idpersona = request.IdPersona,
-            Codigoempleado = codigoEmpleado,
-            Idcargo = request.IdCargo,
-            Idmodotrabajo = request.IdModoTrabajo,
-            Idcategoriaempleado = request.IdCategoriaEmpleado,
-            Idempresacatalogo = request.IdEmpresaCatalogo,
-            Idtipocontrato = request.IdTipoContrato,
-            Fechaingreso = request.FechaIngreso,
-            Aniosexperiencia = request.AniosExperiencia,
-            Activo = true,
-            Usuariocreacion = UsuarioSistema,
-            Ipcreacion = IpSistema
-        };
+            // Crear la persona con los datos ingresados desde el modal.
+            var persona = new TblAdministracionPersona
+            {
+                Numeroidentificacion = request.NumeroIdentificacion.Trim(),
+                Idtipoidentificacion = request.TipoPersona == "NATURAL"
+                    ? request.IdTipoIdentificacion
+                    : null,
+                Idgenero = request.IdGenero,
+                Tipopersona = request.TipoPersona,
+                Nombres = request.Nombres.Trim(),
+                Apellidos = request.Apellidos.Trim(),
+                Fechanacimiento = request.FechaNacimiento,
+                Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim(),
+                Telefono = string.IsNullOrWhiteSpace(request.Telefono) ? null : request.Telefono.Trim(),
+                Direccion = string.IsNullOrWhiteSpace(request.Direccion) ? null : request.Direccion.Trim(),
+                Activo = true,
+                Usuariocreacion = UsuarioSistema,
+                Ipcreacion = IpSistema
+            };
 
-        await db.TblAdministracionEmpleados.AddAsync(empleado, ct);
-        await db.SaveChangesAsync(ct);
-        // El trigger de auditoría se dispara solo al insertar el empleado.
+            await db.TblAdministracionPersonas.AddAsync(persona, ct);
+            await db.SaveChangesAsync(ct);
 
-        return empleado.Id;
+            // Generar el código de empleado con el prefijo de la empresa.
+            var codigoEmpleado = await codigoGenerator.GenerarAsync(empresa.Codigovalor, ct);
+
+            // Crear el empleado usando el Id de la persona recién creada.
+            var empleado = new TblAdministracionEmpleado
+            {
+                Idpersona = persona.Id,
+                Codigoempleado = codigoEmpleado,
+                Idcargo = request.IdCargo,
+                Idmodotrabajo = request.IdModoTrabajo,
+                Idcategoriaempleado = request.IdCategoriaEmpleado,
+                Idempresacatalogo = request.IdEmpresaCatalogo,
+                Idtipocontrato = request.IdTipoContrato,
+                Fechaingreso = request.FechaIngreso,
+                Aniosexperiencia = request.AniosExperiencia,
+                Activo = true,
+                Usuariocreacion = UsuarioSistema,
+                Ipcreacion = IpSistema
+            };
+
+            await db.TblAdministracionEmpleados.AddAsync(empleado, ct);
+            await db.SaveChangesAsync(ct);
+
+            // Si todo salió bien, confirmamos Persona + Empleado.
+            await transaction.CommitAsync(ct);
+
+            return empleado.Id;
+        }
+        catch
+        {
+            // Si falla algo, revertimos para no dejar datos incompletos.
+            await transaction.RollbackAsync(ct);
+            throw;
+        }
     }
 
 

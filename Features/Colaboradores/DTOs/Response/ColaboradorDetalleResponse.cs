@@ -41,3 +41,4 @@ public record ProyectoAsignadoResponse(
     string Cliente,
     string Estado    
 );
+

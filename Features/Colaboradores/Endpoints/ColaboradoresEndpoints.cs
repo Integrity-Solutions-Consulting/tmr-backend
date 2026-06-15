@@ -141,23 +141,6 @@ public static class ColaboradoresEndpoints
        
 
         // =====================================================================
-        // GET /api/colaboradores/personas  → ComboBox de personas existentes
-        // =====================================================================
-        group.MapGet("/personas", async (
-            ApplicationDbContext db,
-            CancellationToken ct) =>
-        {
-            var personas = await db.TblAdministracionPersonas
-                .Where(p => p.Activo)
-                .OrderBy(p => p.Nombres)
-                .Select(p => p.ToPersonaResponse())
-                .ToListAsync(ct);
-
-            return Results.Ok(personas);
-        });
-      
-
-        // =====================================================================
         // GET /api/colaboradores/cargos?idDepartamento=5
         //   → cargos filtrados por departamento (flujo Departamento → Cargo)
         // =====================================================================

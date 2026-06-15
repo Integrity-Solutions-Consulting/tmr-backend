@@ -5,4 +5,4 @@ namespace tmr_backend.Features.Colaboradores.DTOs.Response;
 public record CargoResponse(
     int Id,
     string NombreCargo
-);
+);    

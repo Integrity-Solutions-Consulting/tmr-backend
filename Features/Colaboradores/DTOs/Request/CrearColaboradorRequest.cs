@@ -1,14 +1,27 @@
 namespace tmr_backend.Features.Colaboradores.DTOs.Request;
 
 // DTO para CREAR un colaborador.
-// Como la persona se selecciona del ComboBox (ya existe en la base),
+// 1. Se ingresan los datos de la persona desde el modal.
+// 2. El backend crea primero la Persona.
+// 3. Luego crea el Empleado usando el IdPersona generado.
 public record CrearColaboradorRequest(
-    // ── Persona seleccionada del ComboBox ──
-    int IdPersona,
+    // ── Datos de persona ──────────────────────────────
+    string NumeroIdentificacion,
+    int? IdTipoIdentificacion,
+    string TipoPersona,          // NATURAL / JURIDICA
+    int? IdGenero,
+    string Nombres,
+    string Apellidos,
+    DateOnly? FechaNacimiento,
+
+    // ── Datos de contacto ─────────────────────────────
+    string? Email,
+    string? Telefono,
+    string? Direccion,
 
     // ── Contrato ──────────────────────────────────────
-    int IdEmpresaCatalogo,   // Asociación: RPS / ISC / RPS E ISC
-    int IdTipoContrato,      // Tipo de contrato
+    int IdEmpresaCatalogo,       // Empresa: RPS / ISC / RPS E ISC
+    int IdTipoContrato,          // Tipo de contrato
 
     // ── Datos laborales ───────────────────────────────
     int IdDepartamento,
