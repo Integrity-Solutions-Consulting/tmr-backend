@@ -477,5 +477,26 @@ public static class TimeReportEndpoints
             await db.SaveChangesAsync();
             return Results.NoContent();
         });
+
+        groupSeguimiento.MapGet("/colaborador/{id:int}/actividades", async (int id, DateOnly fechaDesde, DateOnly fechaHasta, ApplicationDbContext db) =>
+        {
+            var actividades = await db.TblTimeReportActividadDiaria
+                .Where(a => a.Activo && a.Idempleado == id && a.Fechaactividad >= fechaDesde && a.Fechaactividad <= fechaHasta)
+                .Include(a => a.IdproyectoNavigation)
+                .Include(a => a.IdtipoactividadNavigation)
+                .Select(a => new {
+                    Fecha = a.Fechaactividad.ToString("yyyy-MM-dd"),
+                    Proyecto = a.IdproyectoNavigation != null ? a.IdproyectoNavigation.Nombre : "Sin Proyecto",
+                    TipoActividad = a.IdtipoactividadNavigation != null ? a.IdtipoactividadNavigation.Nombretipo : "Otro",
+                    CodigoRequerimiento = a.Codigorequerimiento ?? "",
+                    Horas = a.Cantidadhoras,
+                    Descripcion = a.Descripcionactividad ?? "",
+                    Notas = a.Notas ?? "",
+                    EsBillable = a.Esbillable == true ? "Sí" : "No"
+                })
+                .ToListAsync();
+
+            return Results.Ok(actividades);
+        });
     }
 }
