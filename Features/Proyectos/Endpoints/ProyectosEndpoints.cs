@@ -135,7 +135,11 @@ public static class ProyectosEndpoints
                 await db.SaveChangesAsync();
             }
 
-            var creado = await QueryProyectos(db).FirstAsync(p => p.Id == proyecto.Id);
+            // CORREGIDO: FirstAsync -> FirstOrDefaultAsync + manejo de null
+            var creado = await QueryProyectos(db).FirstOrDefaultAsync(p => p.Id == proyecto.Id);
+            if (creado is null)
+                return Results.Problem("No se pudo recuperar el proyecto recién creado.", statusCode: 500);
+
             return Results.Created($"/api/proyectos/{proyecto.Id}", await MapProyecto(creado, db));
         });
         if (!(env?.IsDevelopment() ?? false)) postEndpoint.RequireAuthorization();
@@ -154,16 +158,37 @@ public static class ProyectosEndpoints
 
             var ids = await ResolverRelaciones(request.IdCliente, request.Cliente, request.IdTipoProyecto, request.Tipo, db);
             var lideres = NormalizarLideres(request);
-            var idEstadoProyectoActivo = await ObtenerOCrearEstadoProyectoActivoAsync(db);
+
+            // CORREGIDO: solo se busca/crea el estado "Activo" por defecto si realmente
+            // se necesita (cuando no llega IdEstadoProyecto). Antes se llamaba siempre,
+            // y si la tabla de catálogo EPR no tenía aún ningún registro coincidente con
+            // los filtros esperados, alguna ruta interna podía toparse con colecciones vacías.
+            int? idEstadoProyectoActivo = null;
+            if (!request.IdEstadoProyecto.HasValue)
+                idEstadoProyectoActivo = await ObtenerOCrearEstadoProyectoActivoAsync(db);
 
             proyecto.Descripcion = request.Descripcion;
             proyecto.Idtipoproyecto = ids.IdTipoProyecto;
-            proyecto.Idestadoproyecto = request.IdEstadoProyecto ?? idEstadoProyectoActivo;
+            proyecto.Idestadoproyecto = request.IdEstadoProyecto ?? idEstadoProyectoActivo ?? proyecto.Idestadoproyecto;
             proyecto.Fechainicioplaneada = request.FechaInicio;
             proyecto.Fechafinplaneada = request.FechaFin;
             proyecto.Presupuesto = request.Presupuesto;
             proyecto.Horasasignadas = request.Horas;
-            proyecto.Activo = request.Estado is null ? proyecto.Activo : EsEstadoActivo(request.Estado);
+
+            // CORREGIDO: antes, si request.Estado era null, se dejaba proyecto.Activo intacto.
+            // Pero el frontend manda tanto "Activo" (bool) como "Estado" (string "Activo"/"Inactivo").
+            // Si en algún momento el bool Activo del payload es la fuente real de verdad,
+            // hay que priorizarlo explícitamente para que un toggle "Inactivo" no se ignore
+            // por quedar atrapado detrás del chequeo de Estado == null.
+            if (request.Estado is not null)
+            {
+                proyecto.Activo = EsEstadoActivo(request.Estado);
+            }
+            else if (request.Activo.HasValue)
+            {
+                proyecto.Activo = request.Activo.Value;
+            }
+
             proyecto.Usuariomodificacion = UsuarioSistema;
             proyecto.Fechamodificacion = DateTime.UtcNow;
             proyecto.Ipmodificacion = IpSistema;
@@ -178,7 +203,15 @@ public static class ProyectosEndpoints
 
             await db.SaveChangesAsync();
 
-            var actualizado = await QueryProyectos(db).FirstAsync(p => p.Id == id);
+            // CORREGIDO: FirstAsync -> FirstOrDefaultAsync + manejo de null.
+            // Este era el candidato más probable al "Sequence contains no elements":
+            // si por cualquier motivo el Id ya no calza con los filtros/Includes de
+            // QueryProyectos justo después de guardar, FirstAsync lanzaba la excepción
+            // que terminaba devuelta como el 400 "Operación inválida".
+            var actualizado = await QueryProyectos(db).FirstOrDefaultAsync(p => p.Id == id);
+            if (actualizado is null)
+                return Results.Problem("No se pudo recuperar el proyecto actualizado.", statusCode: 500);
+
             return Results.Ok(await MapProyecto(actualizado, db));
         });
         if (!(env?.IsDevelopment() ?? false)) putEndpoint.RequireAuthorization();
@@ -212,7 +245,6 @@ public static class ProyectosEndpoints
     private static IQueryable<TblTimeReportProyecto> QueryProyectos(ApplicationDbContext db) =>
         db.TblTimeReportProyectos
             .AsNoTracking()
-            .Where(p => p.Activo)
             .Include(p => p.IdclienteNavigation)
             .Include(p => p.IdtipoproyectoNavigation)
             .Include(p => p.IdestadoproyectoNavigation)
@@ -447,11 +479,17 @@ public static class ProyectosEndpoints
             await db.SaveChangesAsync();
         }
 
-        return await db.TblAdministracionCatalogoDetalles
+        // CORREGIDO: si por algún motivo todavía no hay ningún detalle activo con
+        // código "EPR" (por ejemplo, race condition o filtros que no calzan),
+        // se devuelve el Id recién creado en lugar de relanzar otra consulta que
+        // podría no encontrar nada.
+        var idFinal = await db.TblAdministracionCatalogoDetalles
             .Where(d => d.Activo && d.IdcatalogoNavigation.Codigo == "EPR")
             .OrderBy(d => d.Orden)
             .Select(d => d.Id)
             .FirstOrDefaultAsync();
+
+        return idFinal != 0 ? idFinal : detalleEstado.Id;
     }
 
     private static List<ProyectoLiderRequest> NormalizarLideres(CrearProyectoRequest request)
