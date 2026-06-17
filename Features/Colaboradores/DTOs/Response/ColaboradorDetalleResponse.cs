@@ -16,6 +16,11 @@ public record ColaboradorDetalleResponse(
     int? IdTipoIdentificacion,
     int? IdGenero,
     int? IdNacionalidad,
+    int? IdTipoContrato,
+    int? IdDepartamento,
+    int? IdCargo,
+    int? IdModoTrabajo,
+    int? IdCategoriaEmpleado,
 
     // ── Datos laborales ───────────────────────────────
     string Departamento,
