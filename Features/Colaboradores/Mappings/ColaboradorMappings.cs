@@ -52,6 +52,11 @@ public static class ColaboradorMappings
             IdTipoIdentificacion: persona?.Idtipoidentificacion,
             IdGenero: persona?.Idgenero,
             IdNacionalidad: persona?.Idnacionalidad,
+            IdTipoContrato: e.Idtipocontrato,
+            IdDepartamento: e.IdcargoNavigation?.Iddepartamento,
+            IdCargo: e.Idcargo,
+            IdModoTrabajo: e.Idmodotrabajo,
+            IdCategoriaEmpleado: e.Idcategoriaempleado,
 
             // ── Datos laborales ──
             // El departamento se obtiene a través del cargo (cargo → departamento).
