@@ -34,6 +34,7 @@ public record ActualizarProyectoRequest(
     string? Lider,
     int? IdEstadoProyecto,    // ← nullable
     string? Estado,
+    bool? Activo,
     DateOnly? FechaInicio,
     DateOnly? FechaFin,
     decimal? Presupuesto,
