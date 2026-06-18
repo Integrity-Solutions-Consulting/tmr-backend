@@ -32,8 +32,15 @@ public record DashboardHorasPorProyectoResponse(
     decimal HorasAsignadas
 );
 
+public record DashboardProyectosPorClienteResponse(
+    string Cliente,
+    int ProyectosAsignados,
+    decimal Porcentaje
+);
+
 public record DashboardDataResponse(
     DashboardMetricasResponse Metricas,
     System.Collections.Generic.IEnumerable<DashboardProyectoResumenResponse> ProximosACerrar,
-    System.Collections.Generic.IEnumerable<DashboardHorasPorProyectoResponse> HorasPorProyecto
+    System.Collections.Generic.IEnumerable<DashboardHorasPorProyectoResponse> HorasPorProyecto,
+    System.Collections.Generic.IEnumerable<DashboardProyectosPorClienteResponse> ProyectosPorCliente
 );
