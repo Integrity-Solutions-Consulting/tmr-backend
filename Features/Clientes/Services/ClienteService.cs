@@ -46,7 +46,8 @@ public sealed class ClienteService(
         }
 
         var clientes = await query
-            .OrderBy(c => c.Nombrecomercial)
+            .OrderByDescending(c => c.Activo)
+            .ThenByDescending(c => c.Id)
             .ToListAsync(ct);
 
         // Mapeamos cada cliente al DTO de lista.

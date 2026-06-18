@@ -50,7 +50,11 @@ public sealed class ColaboradorService(
         }
 
         // Traemos los datos a memoria para poder contar proyectos por empleado.
-        var empleados = await query.ToListAsync(ct);
+        // Orden: activos primero, y dentro de cada grupo los más nuevos primero.
+        var empleados = await query
+            .OrderByDescending(e => e.Activo)
+            .ThenByDescending(e => e.Id)
+            .ToListAsync(ct);
 
         // Lista de Ids de los empleados encontrados (para el conteo de proyectos).
         var idsEmpleados = empleados.Select(e => e.Id).ToList();
