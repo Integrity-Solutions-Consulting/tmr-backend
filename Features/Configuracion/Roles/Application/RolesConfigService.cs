@@ -270,7 +270,7 @@ public class RolesConfigService : IRolesConfigService
     public async Task<List<RolResponse>> ObtenerRolesAsync()
     {
         var roles = await _dbContext.TblAutenticacionRols
-            .Where(r => r.Activo)
+            .OrderByDescending(r => r.Fechacreacion)
             .ToListAsync();
 
         var result = new List<RolResponse>();
