@@ -92,7 +92,18 @@ public static class DashboardEndpoints
                 .Take(15)
                 .ToList();
 
-            var dashboardData = new DashboardDataResponse(metricas, proximosACerrar, horasPorProyecto);
+            var totalProyectosActivos = proyectos.Count;
+            var proyectosPorCliente = proyectos
+                .GroupBy(p => p.IdclienteNavigation?.Nombrecomercial ?? p.IdclienteNavigation?.Razonsocial ?? "Sin Cliente")
+                .Select(g => new DashboardProyectosPorClienteResponse(
+                    g.Key,
+                    g.Count(),
+                    totalProyectosActivos > 0 ? Math.Round((decimal)g.Count() / totalProyectosActivos * 100, 1) : 0m
+                ))
+                .OrderByDescending(x => x.ProyectosAsignados)
+                .ToList();
+
+            var dashboardData = new DashboardDataResponse(metricas, proximosACerrar, horasPorProyecto, proyectosPorCliente);
             return Results.Ok(dashboardData);
         });
 
