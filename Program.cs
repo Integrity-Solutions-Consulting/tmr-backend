@@ -44,6 +44,7 @@ using tmr_backend.Shared.Middleware;
 using Microsoft.OpenApi;
 using tmr_backend.Shared;
 using System.Text.Json.Serialization;
+using tmr_backend.Infrastructure.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -249,5 +250,18 @@ app.MapTimeReportEndpoints();
 app.MapUsuariosConfigEndpoints();
 app.MapRolesConfigEndpoints();
 app.MapDiasFestivosEndpoints();
+
+// ── Seed Template Data (Desarrollo) ──
+/*if (app.Environment.IsDevelopment())
+{
+    try
+    {
+        await app.SeedTemplateDataAsync();
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"⚠️  Seeding skipped: {ex.Message}");
+    }
+}*/
 
 app.Run();
