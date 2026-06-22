@@ -175,11 +175,6 @@ public static class ProyectosEndpoints
             proyecto.Presupuesto = request.Presupuesto;
             proyecto.Horasasignadas = request.Horas;
 
-            // CORREGIDO: antes, si request.Estado era null, se dejaba proyecto.Activo intacto.
-            // Pero el frontend manda tanto "Activo" (bool) como "Estado" (string "Activo"/"Inactivo").
-            // Si en algún momento el bool Activo del payload es la fuente real de verdad,
-            // hay que priorizarlo explícitamente para que un toggle "Inactivo" no se ignore
-            // por quedar atrapado detrás del chequeo de Estado == null.
             if (request.Estado is not null)
             {
                 proyecto.Activo = EsEstadoActivo(request.Estado);
@@ -288,7 +283,8 @@ public static class ProyectosEndpoints
                             x.Fechaasignacion,
                             x.Fechafinasignacion,
                             x.Costoporhora ?? 0,      // opcional → 0 si no se ingresó
-                            x.Horasasignadas ?? 0     // opcional → 0 si no se ingresó
+                            x.Horasasignadas ?? 0,    // opcional → 0 si no se ingresó
+                            cargo?.Iddepartamento
                         );
                     })
                     .ToList();
