@@ -109,7 +109,8 @@ public record ProyectoRecursoResponse(
     DateOnly? Entrada,
     DateOnly? Salida,
     decimal? CostoHora,
-    decimal? Horas
+    decimal? Horas,
+    int? IdDepartamento
 );
 
 public record LookupDto(int Id, string Nombre);
