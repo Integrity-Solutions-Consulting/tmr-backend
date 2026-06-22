@@ -482,8 +482,6 @@ public static class TimeReportEndpoints
         {
             var actividades = await db.TblTimeReportActividadDiaria
                 .Where(a => a.Activo && a.Idempleado == id && a.Fechaactividad >= fechaDesde && a.Fechaactividad <= fechaHasta)
-                .Include(a => a.IdproyectoNavigation)
-                .Include(a => a.IdtipoactividadNavigation)
                 .Select(a => new {
                     Fecha = a.Fechaactividad.ToString("yyyy-MM-dd"),
                     Proyecto = a.IdproyectoNavigation != null ? a.IdproyectoNavigation.Nombre : "Sin Proyecto",
@@ -492,11 +490,27 @@ public static class TimeReportEndpoints
                     Horas = a.Cantidadhoras,
                     Descripcion = a.Descripcionactividad ?? "",
                     Notas = a.Notas ?? "",
-                    EsBillable = a.Esbillable == true ? "Sí" : "No"
+                    EsBillable = a.Esbillable == true ? "Sí" : "No",
+                    LiderProyecto = a.IdproyectoNavigation != null 
+                        ? (a.IdproyectoNavigation.TblTimeReportAsignacionProyectos
+                            .Where(ep => ep.Activo && ep.Idlider != null && ep.IdliderNavigation != null && ep.IdliderNavigation.IdpersonaNavigation != null)
+                            .Select(ep => ep.IdliderNavigation.IdpersonaNavigation.Nombres + " " + ep.IdliderNavigation.IdpersonaNavigation.Apellidos)
+                            .FirstOrDefault() ?? "Sin Líder")
+                        : "Sin Líder",
+                    ClienteProyecto = a.IdproyectoNavigation != null && a.IdproyectoNavigation.IdclienteNavigation != null 
+                        ? (a.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial ?? a.IdproyectoNavigation.IdclienteNavigation.Razonsocial ?? "Sin Cliente")
+                        : "Sin Cliente"
                 })
                 .ToListAsync();
 
-            return Results.Ok(actividades);
+            var feriados = await db.TblTimeReportFeriados
+                .Where(f => f.Activo && f.Fechaferiado >= fechaDesde && f.Fechaferiado <= fechaHasta)
+                .Select(f => f.Fechaferiado)
+                .ToListAsync();
+
+            var feriadosList = feriados.Select(f => f.ToString("yyyy-MM-dd")).ToList();
+
+            return Results.Ok(new { Actividades = actividades, Feriados = feriadosList });
         });
     }
 }
