@@ -236,6 +236,79 @@ public class LiderService : ILiderService
         return true;
     }
 
+    public async Task<bool> EliminarFisicoAsync(int id, CancellationToken ct)
+    {
+        // Obtener el lider con la persona y el tipo
+        var lider = await _db.TblAdministracionLiders
+            .Include(l => l.IdpersonaNavigation)
+            .Include(l => l.IdtipoNavigation)
+            .Include(l => l.TblTimeReportAsignacionProyectos)
+            .FirstOrDefaultAsync(l => l.Id == id, ct);
+
+        if (lider is null) return false;
+
+        // Obtener el tipo de lider para determinar si es interno o externo
+        var tipoLider = await _db.TblAdministracionCatalogoDetalles
+            .Include(d => d.IdcatalogoNavigation)
+            .FirstOrDefaultAsync(d => d.Id == lider.Idtipo, ct);
+
+        using var transaction = await _db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            // PASO 1: Eliminar registros de TblTimeReportAsignacionProyecto que tengan este Idlider
+            var asignacionesProyecto = await _db.TblTimeReportAsignacionProyectos
+                .Where(a => a.Idlider == id)
+                .ToListAsync(ct);
+
+            if (asignacionesProyecto.Count > 0)
+            {
+                _db.TblTimeReportAsignacionProyectos.RemoveRange(asignacionesProyecto);
+                await _db.SaveChangesAsync(ct);
+            }
+
+            // PASO 2: Eliminar el registro del lider
+            _db.TblAdministracionLiders.Remove(lider);
+            await _db.SaveChangesAsync(ct);
+
+            // PASO 3: Si es lider externo, eliminar también la persona
+            if (tipoLider is not null && tipoLider.Codigovalor == "EXT")
+            {
+                // Verificar que la persona no esté vinculada a otros registros críticos
+                var estaEnEmpleados = await _db.TblAdministracionEmpleados
+                    .AnyAsync(e => e.Idpersona == lider.Idpersona, ct);
+
+                var estaEnUsuarios = await _db.TblAutenticacionUsuarios
+                    .AnyAsync(u => u.Idpersona == lider.Idpersona, ct);
+
+                if (!estaEnEmpleados && !estaEnUsuarios)
+                {
+                    var persona = lider.IdpersonaNavigation;
+                    _db.TblAdministracionPersonas.Remove(persona);
+                    await _db.SaveChangesAsync(ct);
+                }
+                else
+                {
+                    // Si la persona está vinculada, solo la marcamos como inactiva
+                    lider.IdpersonaNavigation.Activo = false;
+                    lider.IdpersonaNavigation.Usuariomodificacion = "SISTEMA";
+                    lider.IdpersonaNavigation.Fechamodificacion = DateTime.UtcNow;
+                    await _db.SaveChangesAsync(ct);
+                }
+            }
+
+            // PASO 4: Si es lider interno, NO eliminamos la persona (está vinculada a colaborador/usuario)
+            // El lider ya fue eliminado en el PASO 2
+
+            await transaction.CommitAsync(ct);
+            return true;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(ct);
+            throw;
+        }
+    }
+
     public async Task<ContadoresLiderResponse> ObtenerContadoresAsync(CancellationToken ct)
     {
         // Asumiendo que Idtipo = 1 es Interno, Idtipo = 2 es Externo
