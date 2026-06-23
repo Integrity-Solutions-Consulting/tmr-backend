@@ -147,7 +147,17 @@ public static class ReportesEndpoints
                     a.IdempleadoNavigation.IdpersonaNavigation.Nombres + " " + a.IdempleadoNavigation.IdpersonaNavigation.Apellidos,
                     a.IdempleadoNavigation.IdcargoNavigation != null ? a.IdempleadoNavigation.IdcargoNavigation.Nombrecargo : "Sin Cargo",
                     new DateTime(a.Fechaactividad.Year, a.Fechaactividad.Month, a.Fechaactividad.Day),
-                    new DateTime(a.Fechaactividad.Year, a.Fechaactividad.Month, a.Fechaactividad.Day)
+                    new DateTime(a.Fechaactividad.Year, a.Fechaactividad.Month, a.Fechaactividad.Day),
+                    a.IdproyectoNavigation != null ? a.IdproyectoNavigation.Codigo : null,
+                    a.IdproyectoNavigation != null ? a.IdproyectoNavigation.Nombre : null,
+                    a.IdproyectoNavigation != null && a.IdproyectoNavigation.IdestadoproyectoNavigation != null ? a.IdproyectoNavigation.IdestadoproyectoNavigation.Valor : null,
+                    a.IdproyectoNavigation != null && a.IdproyectoNavigation.IdtipoproyectoNavigation != null ? a.IdproyectoNavigation.IdtipoproyectoNavigation.Nombretipo : null,
+                    a.IdproyectoNavigation != null && a.IdproyectoNavigation.Fechafinreal != null ? new DateTime(a.IdproyectoNavigation.Fechafinreal.Value.Year, a.IdproyectoNavigation.Fechafinreal.Value.Month, a.IdproyectoNavigation.Fechafinreal.Value.Day) : null,
+                    a.IdproyectoNavigation != null ? a.IdproyectoNavigation.Presupuesto : null,
+                    a.IdproyectoNavigation != null ? a.IdproyectoNavigation.Horasasignadas : null,
+                    a.IdproyectoNavigation != null && a.IdproyectoNavigation.Fechainicioespera != null ? new DateTime(a.IdproyectoNavigation.Fechainicioespera.Value.Year, a.IdproyectoNavigation.Fechainicioespera.Value.Month, a.IdproyectoNavigation.Fechainicioespera.Value.Day) : null,
+                    a.IdproyectoNavigation != null && a.IdproyectoNavigation.Fechafinespera != null ? new DateTime(a.IdproyectoNavigation.Fechafinespera.Value.Year, a.IdproyectoNavigation.Fechafinespera.Value.Month, a.IdproyectoNavigation.Fechafinespera.Value.Day) : null,
+                    a.IdproyectoNavigation != null ? a.IdproyectoNavigation.Observacion : null
                 ))
                 .ToListAsync();
 
