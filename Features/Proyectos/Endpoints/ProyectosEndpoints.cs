@@ -117,13 +117,15 @@ public static class ProyectosEndpoints
                 Activo = request.Estado is null ? true : EsEstadoActivo(request.Estado),
                 Usuariocreacion = UsuarioSistema,
                 Fechacreacion = DateTime.UtcNow,
-                Ipcreacion = IpSistema
+                Ipcreacion = IpSistema,
+                Observacion = request.Observacion,
+                Fechainicioespera = request.FechaInicioEspera,
+                Fechafinespera = request.FechaFinEspera
             };
 
             db.TblTimeReportProyectos.Add(proyecto);
             await db.SaveChangesAsync();
 
-            // Solo guardar asignaciones si hay algún líder o recurso definido
             var tieneAsignaciones = lideres.Any(l =>
                 l.IdLider.HasValue ||
                 !string.IsNullOrWhiteSpace(l.Lider) ||
@@ -135,7 +137,6 @@ public static class ProyectosEndpoints
                 await db.SaveChangesAsync();
             }
 
-            // CORREGIDO: FirstAsync -> FirstOrDefaultAsync + manejo de null
             var creado = await QueryProyectos(db).FirstOrDefaultAsync(p => p.Id == proyecto.Id);
             if (creado is null)
                 return Results.Problem("No se pudo recuperar el proyecto recién creado.", statusCode: 500);
@@ -159,10 +160,6 @@ public static class ProyectosEndpoints
             var ids = await ResolverRelaciones(request.IdCliente, request.Cliente, request.IdTipoProyecto, request.Tipo, db);
             var lideres = NormalizarLideres(request);
 
-            // CORREGIDO: solo se busca/crea el estado "Activo" por defecto si realmente
-            // se necesita (cuando no llega IdEstadoProyecto). Antes se llamaba siempre,
-            // y si la tabla de catálogo EPR no tenía aún ningún registro coincidente con
-            // los filtros esperados, alguna ruta interna podía toparse con colecciones vacías.
             int? idEstadoProyectoActivo = null;
             if (!request.IdEstadoProyecto.HasValue)
                 idEstadoProyectoActivo = await ObtenerOCrearEstadoProyectoActivoAsync(db);
@@ -174,6 +171,10 @@ public static class ProyectosEndpoints
             proyecto.Fechafinplaneada = request.FechaFin;
             proyecto.Presupuesto = request.Presupuesto;
             proyecto.Horasasignadas = request.Horas;
+            proyecto.Observacion = request.Observacion;
+            proyecto.Fechafinreal = request.FechaFinReal;
+            proyecto.Fechainicioespera = request.FechaInicioEspera;
+            proyecto.Fechafinespera = request.FechaFinEspera;
 
             if (request.Estado is not null)
             {
@@ -198,11 +199,6 @@ public static class ProyectosEndpoints
 
             await db.SaveChangesAsync();
 
-            // CORREGIDO: FirstAsync -> FirstOrDefaultAsync + manejo de null.
-            // Este era el candidato más probable al "Sequence contains no elements":
-            // si por cualquier motivo el Id ya no calza con los filtros/Includes de
-            // QueryProyectos justo después de guardar, FirstAsync lanzaba la excepción
-            // que terminaba devuelta como el 400 "Operación inválida".
             var actualizado = await QueryProyectos(db).FirstOrDefaultAsync(p => p.Id == id);
             if (actualizado is null)
                 return Results.Problem("No se pudo recuperar el proyecto actualizado.", statusCode: 500);
@@ -234,9 +230,6 @@ public static class ProyectosEndpoints
         if (!(env?.IsDevelopment() ?? false)) deleteEndpoint.RequireAuthorization();
     }
 
-    // ─── CORRECCIÓN PRINCIPAL: un solo filtro sobre TblTimeReportAsignacionProyectos ───
-    // EF Core no permite dos .Include() con filtros distintos sobre la misma navegación.
-    // Se carga todo con ep.Activo y el filtro ep.Idlider != null se aplica en memoria en MapProyecto.
     private static IQueryable<TblTimeReportProyecto> QueryProyectos(ApplicationDbContext db) =>
         db.TblTimeReportProyectos
             .AsNoTracking()
@@ -282,8 +275,8 @@ public static class ProyectosEndpoints
                             x.Rolasignado ?? cargo?.Nombrecargo ?? string.Empty,
                             x.Fechaasignacion,
                             x.Fechafinasignacion,
-                            x.Costoporhora ?? 0,      // opcional → 0 si no se ingresó
-                            x.Horasasignadas ?? 0,    // opcional → 0 si no se ingresó
+                            x.Costoporhora ?? 0,
+                            x.Horasasignadas ?? 0,
                             cargo?.Iddepartamento
                         );
                     })
@@ -293,9 +286,9 @@ public static class ProyectosEndpoints
                     liderAsignacion?.Idlider,
                     liderPersona is null ? string.Empty : $"{liderPersona.Nombres} {liderPersona.Apellidos}".Trim(),
                     liderAsignacion?.IdliderNavigation?.IdtipoNavigation?.Valor ?? string.Empty,
-                    liderAsignacion?.Lidercosto ?? 0,   // opcional → 0 si no se ingresó
-                    liderAsignacion?.Liderhoras ?? 0    // opcional → 0 si no se ingresó
-                    , recursosGrupo
+                    liderAsignacion?.Lidercosto ?? 0,
+                    liderAsignacion?.Liderhoras ?? 0,
+                    recursosGrupo
                 );
             })
             .ToList();
@@ -303,31 +296,36 @@ public static class ProyectosEndpoints
         var recursos = lideres.SelectMany(l => l.Recursos).ToList();
         var liderResumen = lideres.FirstOrDefault();
 
+        // ═══ CONSTRUCTOR CON TODOS LOS ARGUMENTOS CON NOMBRE ═══
         return new ProyectoResponse(
-            proyecto.Id,
-            proyecto.Codigo ?? $"PRY-{proyecto.Id:000}",
-            proyecto.Nombre,
-            proyecto.Descripcion ?? string.Empty,
-            proyecto.Idcliente,
-            proyecto.IdclienteNavigation?.Nombrecomercial ?? proyecto.IdclienteNavigation?.Razonsocial ?? string.Empty,
-            proyecto.Idtipoproyecto,
-            nombreTipo,
-            liderResumen?.IdLider,
-            liderResumen?.Lider ?? string.Empty,
-            liderResumen?.CargoLider ?? string.Empty,
-            liderResumen?.CostoHoraLider ?? 0,
-            liderResumen?.HorasLider ?? 0,
-            proyecto.Idestadoproyecto,
-            proyecto.Activo ? "Activo" : "Inactivo",
-            proyecto.Fechainicioplaneada,
-            proyecto.Fechafinplaneada,
-            proyecto.Presupuesto ?? 0,
-            proyecto.Horasasignadas ?? 0,
-            recursos.Count,
-            proyecto.Activo,
-            proyecto.Fechacreacion,
-            recursos,
-            lideres
+            Id: proyecto.Id,
+            Codigo: proyecto.Codigo ?? $"PRY-{proyecto.Id:000}",
+            Nombre: proyecto.Nombre,
+            Descripcion: proyecto.Descripcion ?? string.Empty,
+            IdCliente: proyecto.Idcliente,
+            Cliente: proyecto.IdclienteNavigation?.Nombrecomercial ?? proyecto.IdclienteNavigation?.Razonsocial ?? string.Empty,
+            IdTipoProyecto: proyecto.Idtipoproyecto,
+            Tipo: nombreTipo,
+            Observacion: proyecto.Observacion,
+            FechaFinReal: proyecto.Fechafinreal,
+            FechaInicioEspera: proyecto.Fechainicioespera,
+            FechaFinEspera: proyecto.Fechafinespera,
+            IdLider: liderResumen?.IdLider,
+            Lider: liderResumen?.Lider ?? string.Empty,
+            CargoLider: liderResumen?.CargoLider ?? string.Empty,
+            CostoHoraLider: liderResumen?.CostoHoraLider ?? 0,
+            HorasLider: liderResumen?.HorasLider ?? 0,
+            IdEstadoProyecto: proyecto.Idestadoproyecto,
+            Estado: proyecto.Activo ? "Activo" : "Inactivo",
+            FechaInicio: proyecto.Fechainicioplaneada,
+            FechaFin: proyecto.Fechafinplaneada,
+            Presupuesto: proyecto.Presupuesto ?? 0,
+            Horas: proyecto.Horasasignadas ?? 0,
+            NumeroRecursos: recursos.Count,
+            Activo: proyecto.Activo,
+            FechaCreacion: proyecto.Fechacreacion,
+            Recursos: recursos,
+            Lideres: lideres
         );
     }
 
@@ -475,10 +473,6 @@ public static class ProyectosEndpoints
             await db.SaveChangesAsync();
         }
 
-        // CORREGIDO: si por algún motivo todavía no hay ningún detalle activo con
-        // código "EPR" (por ejemplo, race condition o filtros que no calzan),
-        // se devuelve el Id recién creado en lugar de relanzar otra consulta que
-        // podría no encontrar nada.
         var idFinal = await db.TblAdministracionCatalogoDetalles
             .Where(d => d.Activo && d.IdcatalogoNavigation.Codigo == "EPR")
             .OrderBy(d => d.Orden)
@@ -522,15 +516,14 @@ public static class ProyectosEndpoints
         {
             var idLider = await ResolverLiderIdAsync(lider.IdLider, lider.Lider, db);
 
-            // Solo crear fila de líder si hay idLider o datos de lider definidos
             if (idLider.HasValue || lider.LiderCosto.HasValue || lider.LiderHoras.HasValue)
             {
                 db.TblTimeReportAsignacionProyectos.Add(new TblTimeReportAsignacionProyecto
                 {
                     Idproyecto = idProyecto,
                     Idlider = idLider,
-                    Lidercosto = lider.LiderCosto,     // opcional
-                    Liderhoras = lider.LiderHoras,     // opcional
+                    Lidercosto = lider.LiderCosto,
+                    Liderhoras = lider.LiderHoras,
                     Activo = true,
                     Usuariocreacion = UsuarioSistema,
                     Fechacreacion = DateTime.UtcNow,
@@ -543,13 +536,13 @@ public static class ProyectosEndpoints
                 db.TblTimeReportAsignacionProyectos.Add(new TblTimeReportAsignacionProyecto
                 {
                     Idproyecto = idProyecto,
-                    Idempleado = recurso.IdEmpleado,   // opcional
+                    Idempleado = recurso.IdEmpleado,
                     Idlider = idLider,
                     Fechaasignacion = recurso.Entrada,
                     Fechafinasignacion = recurso.Salida,
                     Rolasignado = recurso.Rol,
-                    Costoporhora = recurso.CostoHora,  // opcional
-                    Horasasignadas = recurso.Horas,    // opcional
+                    Costoporhora = recurso.CostoHora,
+                    Horasasignadas = recurso.Horas,
                     Activo = true,
                     Usuariocreacion = UsuarioSistema,
                     Fechacreacion = DateTime.UtcNow,
