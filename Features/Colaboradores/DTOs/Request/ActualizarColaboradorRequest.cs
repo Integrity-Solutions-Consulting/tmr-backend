@@ -25,7 +25,7 @@ public record ActualizarColaboradorRequest(
     DateOnly? FechaIngreso,
     int IdCargo,
     int? AniosExperiencia,
-    int IdModoTrabajo,
-    int IdCategoriaEmpleado
+    int? IdModoTrabajo
+    int? IdCategoriaEmpleado
 );
 
