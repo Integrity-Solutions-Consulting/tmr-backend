@@ -45,5 +45,15 @@ public record ReporteFechasResponse(
     string Recurso,
     string Cargo,
     DateTime FechaInicio,
-    DateTime FechaFin
+    DateTime FechaFin,
+    string? CodigoProyecto,
+    string? Proyecto,
+    string? EstadoProyecto,
+    string? TipoProyecto,
+    DateTime? FechaFinReal,
+    decimal? Presupuesto,
+    decimal? Horas,
+    DateTime? FechaInicioEspera,
+    DateTime? FechaFinEspera,
+    string? Observaciones
 );
