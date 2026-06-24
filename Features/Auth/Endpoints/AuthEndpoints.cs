@@ -45,6 +45,11 @@ public static class AuthEndpoints
             .Produces(StatusCodes.Status204NoContent)
             .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
 
+        group.MapPost("/logout-rt", LogoutWithRefreshToken)
+            .WithName("LogoutWithRefreshToken")
+            .WithSummary("Cerrar sesión usando solo el Refresh Token — útil cuando el AT ya expiró")
+            .Produces(StatusCodes.Status204NoContent);
+
         group.MapPost("/revoke-token", RevokeToken)
             .WithName("RevokeToken")
             .WithSummary("Revocar toda la familia de tokens (todos los dispositivos)")
@@ -131,6 +136,15 @@ public static class AuthEndpoints
             : DateTime.UtcNow;
 
         await authService.LogoutAsync(jti, idUsuario, atExpiry, request.RefreshToken, ct);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> LogoutWithRefreshToken(
+        LogoutRequest request,
+        IAuthService authService,
+        CancellationToken ct)
+    {
+        await authService.LogoutWithRefreshTokenAsync(request.RefreshToken, ct);
         return Results.NoContent();
     }
 

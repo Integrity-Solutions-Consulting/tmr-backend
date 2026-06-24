@@ -24,7 +24,7 @@ public partial class TblAutenticacionSesion
     public DateTime? Fechaexpiracion { get; set; }
 
     public DateTime? Revocadofecha { get; set; }
-    public RevocacionRazonEnum? Revocadorazon { get; set; }
+    public string? Revocadorazon { get; set; }
 
     public bool Activo { get; set; }
 
