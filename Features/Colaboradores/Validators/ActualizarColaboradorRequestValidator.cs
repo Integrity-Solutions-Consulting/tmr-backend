@@ -26,7 +26,7 @@ public class ActualizarColaboradorRequestValidator : AbstractValidator<Actualiza
         RuleFor(x => x.IdCategoriaEmpleado)
             .GreaterThan(0)
             .When(x => x.IdCategoriaEmpleado.HasValue)
-            .WithMessage("La categoría seleccionada no es válida."); uerida.");
+            .WithMessage("La categoría seleccionada no es válida."); 
     }
 }
 
