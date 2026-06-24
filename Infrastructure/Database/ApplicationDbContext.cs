@@ -1355,12 +1355,11 @@ public partial class ApplicationDbContext : DbContext
                 .HasMaxLength(50)
                 .HasColumnName("usuariomodificacion");
 
-            // ─── FIX PRINCIPAL: usar HasColumnType con el tipo nativo de PG ───
-            // Se elimina HasMaxLength y HasConversion<string?> que causaban el error 42804.
-            // Npgsql mapea el enum C# al tipo PG usando el HasPostgresEnum declarado arriba.
+            // ─── La columna revocadorazon en BD es VARCHAR(50), no enum ───
+            // Ver script 03-Inv_tmr_db_ajustes_tblSesion_tblProyecto.sql
             entity.Property(e => e.Revocadorazon)
-                .HasColumnName("revocadorazon")
-                .HasColumnType("autenticacion.revocacion_razon_enum");
+                .HasMaxLength(50)
+                .HasColumnName("revocadorazon");
 
             entity.HasOne(d => d.IdusuarioNavigation).WithMany(p => p.TblAutenticacionSesions)
                 .HasForeignKey(d => d.Idusuario)

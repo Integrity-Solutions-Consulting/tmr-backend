@@ -45,6 +45,7 @@ using Microsoft.OpenApi;
 using tmr_backend.Shared;
 using System.Text.Json.Serialization;
 using tmr_backend.Infrastructure.Extensions;
+using tmr_backend.Infrastructure.BackgroundServices;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -117,6 +118,10 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<RegisterUserHandler>();
 builder.Services.AddScoped<IPermissionService, PermissionService>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+
+// ── Background Services ──
+builder.Services.Configure<SessionCleanupSettings>(builder.Configuration.GetSection("SessionCleanup"));
+builder.Services.AddHostedService<SessionCleanupService>();
 
 
 

@@ -192,7 +192,7 @@ public sealed class AuthService(
             var masAntigua = sesionesActivas.First();
             masAntigua.Estaactiva          = false;
             masAntigua.Revocadofecha       = fecha;
-            masAntigua.Revocadorazon       = RevocacionRazonEnum.SESSION_LIMIT;
+            masAntigua.Revocadorazon       = RevocacionRazonEnum.SESSION_LIMIT.ToString();
             masAntigua.Usuariomodificacion = usuarioModificacion;
             masAntigua.Fechamodificacion   = fecha;
 
@@ -278,7 +278,11 @@ public sealed class AuthService(
             throw new UnauthorizedException("Refresh token revocado.", "TOKEN_REVOKED");
 
         if (rt.Fechaexpiracion < DateTime.UtcNow)
+        {
+            // Mecanismo 2: desactivar la sesión cuando el RT ya expiró, ya no puede extenderse
+            await DeactivateSessionAsync(rt.Idsesion, RevocacionRazonEnum.EXPIRED, ct);
             throw new UnauthorizedException("Refresh token expirado.", "TOKEN_EXPIRED");
+        }
 
         // Idle + Absolute timeout — verificar antes de marcar RT como usado para evitar falso reuse attack
         var sesion = await db.TblAutenticacionSesions.FirstOrDefaultAsync(s => s.Id == rt.Idsesion, ct);
@@ -444,7 +448,7 @@ public sealed class AuthService(
             sesion.Estaactiva          = false;
             sesion.Activo              = false;
             sesion.Revocadofecha       = fecha;
-            sesion.Revocadorazon       = RevocacionRazonEnum.LOGOUT;
+            sesion.Revocadorazon       = RevocacionRazonEnum.LOGOUT.ToString();
             sesion.Usuariomodificacion = usuarioEmail;
             sesion.Fechamodificacion   = fecha;
             sesion.Ipmodificacion      = httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? "unknown";
@@ -527,8 +531,62 @@ public sealed class AuthService(
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // LOGOUT WITH REFRESH TOKEN — cierra sesión sin necesitar AT válido (Mecanismo 1)
+    // ─────────────────────────────────────────────────────────────────────────
+    public async Task LogoutWithRefreshTokenAsync(string? rawRefreshToken, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(rawRefreshToken))
+            return; // silent — no hay RT, nada que cerrar
+
+        var hash = tokenService.HashToken(rawRefreshToken);
+
+        var rt = await db.TblAutenticacionRefreshTokens
+            .FirstOrDefaultAsync(r => r.Tokenhash == hash, ct);
+
+        if (rt is null)
+            return; // silent — RT desconocido, nada que cerrar
+
+        // Marcar el RT como revocado si aún no lo está
+        if (!rt.Estarevocado)
+        {
+            rt.Estarevocado = true;
+            rt.Activo       = false;
+        }
+
+        // Desactivar la sesión asociada (independientemente del estado del RT)
+        await DeactivateSessionAsync(rt.Idsesion, RevocacionRazonEnum.LOGOUT, ct);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Helpers privados
     // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Desactiva una sesión específica por su ID, marcando Estaactiva = false y Activo = false.
+    /// No lanza excepciones si la sesión no existe o ya está inactiva.
+    /// </summary>
+    private async Task DeactivateSessionAsync(long sessionId, RevocacionRazonEnum razon, CancellationToken ct)
+    {
+        var sesion = await db.TblAutenticacionSesions
+            .FirstOrDefaultAsync(s => s.Id == sessionId, ct);
+
+        if (sesion is null || (!sesion.Estaactiva && !sesion.Activo))
+        {
+            await db.SaveChangesAsync(ct); // guarda cualquier cambio pendiente (ej. RT revocado)
+            return;
+        }
+
+        var fecha = DateTime.UtcNow;
+        sesion.Estaactiva          = false;
+        sesion.Activo              = false;
+        sesion.Revocadofecha       = fecha;
+        sesion.Revocadorazon       = razon.ToString(); // Convertir enum a string
+        sesion.Usuariomodificacion = "system";
+        sesion.Fechamodificacion   = fecha;
+        sesion.Ipmodificacion      = httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? "system";
+
+        await db.SaveChangesAsync(ct);
+    }
     private async Task RevokeTokenFamilyInternalAsync(Guid familyId, int idUser, RevocacionRazonEnum razon, CancellationToken ct)
     {
         var usuario = await db.TblAutenticacionUsuarios
@@ -561,7 +619,7 @@ public sealed class AuthService(
             sesion.Estaactiva          = false;
             sesion.Activo              = false;
             sesion.Revocadofecha       = fecha;
-            sesion.Revocadorazon       = razon;
+            sesion.Revocadorazon       = razon.ToString();
             sesion.Usuariomodificacion = usuarioEmail;
             sesion.Fechamodificacion   = fecha;
         }
