@@ -63,10 +63,14 @@ public class CrearColaboradorRequestValidator : AbstractValidator<CrearColaborad
             .GreaterThan(0).WithMessage("El cargo es requerido.");
 
         RuleFor(x => x.IdModoTrabajo)
-            .GreaterThan(0).WithMessage("La modalidad es requerida.");
+            .GreaterThan(0)
+            .When(x => x.IdModoTrabajo.HasValue)
+            .WithMessage("La modalidad seleccionada no es válida.");
 
         RuleFor(x => x.IdCategoriaEmpleado)
-            .GreaterThan(0).WithMessage("La categoría es requerida.");
+            .GreaterThan(0)
+            .When(x => x.IdCategoriaEmpleado.HasValue)
+            .WithMessage("La categoría seleccionada no es válida.");
 
         RuleFor(x => x.AniosExperiencia)
             .GreaterThanOrEqualTo(0).WithMessage("Los años de experiencia no pueden ser negativos.")
