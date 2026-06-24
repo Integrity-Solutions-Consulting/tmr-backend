@@ -185,6 +185,44 @@ public static class ColaboradoresEndpoints
 
             return Results.Ok(detalles);
         });
-        
+
+        // ================================================================
+        // POST /api/colaboradores/{id}/salida
+        // ================================================================
+        group.MapPost("/{id}/salida", async (
+            int id,
+            RegistrarSalidaRequest request,
+            IColaboradorService service,
+            CancellationToken ct) =>
+        {
+            try
+            {
+                await service.RegistrarSalidaAsync(id, request, ct);
+                return Results.NoContent();
+            }
+            catch (ValidationException ex)
+            {
+                return Results.BadRequest(new ProblemDetails
+                {
+                    Title = "Error de validación",
+                    Detail = string.Join("; ", ex.Errors.Select(e => e.ErrorMessage)),
+                    Status = StatusCodes.Status400BadRequest
+                });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Conflict(new ProblemDetails
+                {
+                    Title = "Conflicto",
+                    Detail = ex.Message,
+                    Status = StatusCodes.Status409Conflict
+                });
+            }
+        })
+        .WithName("RegistrarSalida")
+        .WithSummary("Registra la salida de un colaborador")
+        .WithDescription("Desactiva al colaborador y guarda los datos de salida");
+
+
     }
 }
