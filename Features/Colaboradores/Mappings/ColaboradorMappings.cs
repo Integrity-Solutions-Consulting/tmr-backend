@@ -82,7 +82,17 @@ public static class ColaboradorMappings
             Direccion: persona?.Direccion ?? "",
 
             // ── Proyectos ──
-            Proyectos: proyectos
+            Proyectos: proyectos,
+
+            // ── CAMPOS PARA DATOS DE SALIDA ───────────────────────────
+            FechaSalida: e.Fechaterminacion,
+            TipoSalida: e.TipoSalidaNavigation != null ? e.TipoSalidaNavigation.Valor : null,
+            CausaSalida: e.CausaSalidaNavigation != null ? e.CausaSalidaNavigation.Valor : null,
+            ComentarioSalida: e.ComentarioSalida,
+            ReemplazoNombre: e.EmpleadoReemplazoNavigation != null
+                ? $"{e.EmpleadoReemplazoNavigation.IdpersonaNavigation.Nombres} {e.EmpleadoReemplazoNavigation.IdpersonaNavigation.Apellidos}".Trim()
+                : null
+
         );
     }
 

@@ -9,7 +9,9 @@ using tmr_backend.Features.Clientes.Validators;
 using tmr_backend.Features.Auth;
 using tmr_backend.Features.CargaActividades;
 using tmr_backend.Features.Colaboradores;
+using tmr_backend.Features.Colaboradores.DTOs.Request;
 using tmr_backend.Features.Colaboradores.Services;
+using tmr_backend.Features.Colaboradores.Validators;
 using tmr_backend.Features.Configuracion;
 using tmr_backend.Features.Dashboard;
 using tmr_backend.Features.Lideres;
@@ -150,6 +152,11 @@ builder.Services.AddScoped<IHealthCheckService, HealthCheckService>();
 
 // ── Fluent Validation ──
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
+
+// ================================================================
+// VALIDADORES DE COLABORADORES (nuevo)
+// ================================================================
+builder.Services.AddScoped<IValidator<RegistrarSalidaRequest>, RegistrarSalidaRequestValidator>();
 
 // ── Authentication & JWT Setup ──
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtSettings>()!;

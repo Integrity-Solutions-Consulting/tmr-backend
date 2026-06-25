@@ -110,6 +110,10 @@ public sealed class ColaboradorService(
             .Include(e => e.IdmodotrabajoNavigation)
             .Include(e => e.IdcategoriaempleadoNavigation)     // categoría
             .Include(e => e.IdtipocontratoNavigation)
+            .Include(e => e.TipoSalidaNavigation)
+            .Include(e => e.CausaSalidaNavigation)
+            .Include(e => e.EmpleadoReemplazoNavigation)
+                .ThenInclude(r => r.IdpersonaNavigation)
             .FirstOrDefaultAsync(e => e.Id == id, ct);
 
         if (empleado is null) return null;
@@ -333,4 +337,60 @@ public sealed class ColaboradorService(
 
         await db.SaveChangesAsync(ct);
     }
+
+
+    // ================================================================
+    // REGISTRAR SALIDA
+    // ================================================================
+    public async Task RegistrarSalidaAsync(int id, RegistrarSalidaRequest request, CancellationToken ct)
+    {
+        var empleado = await db.TblAdministracionEmpleados
+            .Include(e => e.IdpersonaNavigation)
+            .FirstOrDefaultAsync(e => e.Id == id, ct);
+
+        if (empleado is null)
+            throw new InvalidOperationException("El colaborador no existe.");
+
+        if (!empleado.Activo)
+            throw new InvalidOperationException("El colaborador ya está inactivo.");
+
+        if (request.IdEmpleadoReemplazo.HasValue)
+        {
+            var reemplazo = await db.TblAdministracionEmpleados
+                .FirstOrDefaultAsync(e => e.Id == request.IdEmpleadoReemplazo.Value, ct);
+
+            if (reemplazo is null)
+                throw new InvalidOperationException("El colaborador de reemplazo no existe.");
+
+            if (reemplazo.Id == id)
+                throw new InvalidOperationException("Un colaborador no puede reemplazarse a sí mismo.");
+        }
+
+        var tipoSalida = await db.TblAdministracionCatalogoDetalles
+            .FirstOrDefaultAsync(d => d.Id == request.IdTipoSalida, ct);
+
+        if (tipoSalida is null)
+            throw new InvalidOperationException("El tipo de salida seleccionado no es válido.");
+
+        var causaSalida = await db.TblAdministracionCatalogoDetalles
+            .FirstOrDefaultAsync(d => d.Id == request.IdCausaSalida, ct);
+
+        if (causaSalida is null)
+            throw new InvalidOperationException("La causa de salida seleccionada no es válida.");
+
+        empleado.Activo = false;
+        empleado.Fechaterminacion = request.FechaSalida;
+        empleado.IdTipoSalida = request.IdTipoSalida;
+        empleado.IdCausaSalida = request.IdCausaSalida;
+        empleado.ComentarioSalida = request.Comentario;
+        empleado.IdEmpleadoReemplazo = request.IdEmpleadoReemplazo;
+
+        empleado.Usuariomodificacion = "SYSTEM";
+        empleado.Fechamodificacion = DateTime.UtcNow;
+        empleado.Ipmodificacion = "127.0.0.1";
+
+        await db.SaveChangesAsync(ct);
+    }
+
+
 }

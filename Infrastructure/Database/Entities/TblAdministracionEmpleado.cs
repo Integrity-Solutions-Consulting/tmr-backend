@@ -46,6 +46,14 @@ public partial class TblAdministracionEmpleado
 
     public string? Ipmodificacion { get; set; }
 
+    public int? IdTipoSalida { get; set; }
+
+    public int? IdCausaSalida { get; set; }
+
+    public string? ComentarioSalida { get; set; }
+
+    public int? IdEmpleadoReemplazo { get; set; }
+
     public virtual TblAdministracionCargo? IdcargoNavigation { get; set; }
 
     public virtual TblAdministracionCatalogoDetalle? IdcategoriaempleadoNavigation { get; set; }
@@ -57,6 +65,14 @@ public partial class TblAdministracionEmpleado
     public virtual TblAdministracionPersona IdpersonaNavigation { get; set; } = null!;
 
     public virtual TblAdministracionCatalogoDetalle? IdtipocontratoNavigation { get; set; }
+
+    public virtual TblAdministracionCatalogoDetalle? TipoSalidaNavigation { get; set; }
+    
+    public virtual TblAdministracionCatalogoDetalle? CausaSalidaNavigation { get; set; }
+   
+    public virtual TblAdministracionEmpleado? EmpleadoReemplazoNavigation { get; set; }
+   
+    public virtual ICollection<TblAdministracionEmpleado>? EmpleadosReemplazados { get; set; }
 
     public virtual ICollection<TblAdministracionRegistroAsignacion> TblAdministracionRegistroAsignacions { get; set; } = new List<TblAdministracionRegistroAsignacion>();
 

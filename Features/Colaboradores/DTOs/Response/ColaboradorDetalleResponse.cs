@@ -9,7 +9,7 @@ public record ColaboradorDetalleResponse(
     string Asociacion,
     string TipoContrato,
     bool Activo,
-
+    
     // ── IDs necesarios para editar ─────────────────────
     int? IdEmpresaCatalogo,
     string? TipoPersona,
@@ -45,7 +45,15 @@ public record ColaboradorDetalleResponse(
     string Direccion,
 
     // ── Proyectos asignados ───────────────────────────
-    List<ProyectoAsignadoResponse> Proyectos
+    List<ProyectoAsignadoResponse> Proyectos,
+
+    // ── CAMPOS PARA DATOS DE SALIDA ───────────────────────────
+    DateOnly? FechaSalida,
+    string? TipoSalida,
+    string? CausaSalida,
+    string? ComentarioSalida,
+    string? ReemplazoNombre
+
 );
 
 // Sub-DTO para cada proyecto que aparece en el detalle.

@@ -424,6 +424,10 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Ipmodificacion).HasMaxLength(45).HasColumnName("ipmodificacion");
             entity.Property(e => e.Salario).HasPrecision(12, 2).HasColumnName("salario");
             entity.Property(e => e.Aniosexperiencia).HasColumnName("aniosexperiencia");
+            entity.Property(e => e.IdTipoSalida).HasColumnName("idtiposalida");
+            entity.Property(e => e.IdCausaSalida).HasColumnName("idcausasalida");
+            entity.Property(e => e.ComentarioSalida).HasColumnName("comentariosalida");
+            entity.Property(e => e.IdEmpleadoReemplazo).HasColumnName("idempleadoreemplazo");
             entity.Property(e => e.Usuariocreacion).HasMaxLength(50).HasColumnName("usuariocreacion");
             entity.Property(e => e.Usuariomodificacion).HasMaxLength(50).HasColumnName("usuariomodificacion");
             entity.HasOne(d => d.IdcargoNavigation).WithMany(p => p.TblAdministracionEmpleados)
@@ -2700,6 +2704,32 @@ public partial class ApplicationDbContext : DbContext
                 .HasMaxLength(50)
                 .HasColumnName("usuariomodificacion");
         });
+
+        // ================================================================
+        // RELACIONES PARA SALIDA DE COLABORADORES
+        // ================================================================
+
+        // Relación: Empleado → TipoSalida (catálogo TOS)
+        modelBuilder.Entity<TblAdministracionEmpleado>()
+            .HasOne(e => e.TipoSalidaNavigation)
+            .WithMany()
+            .HasForeignKey(e => e.IdTipoSalida)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        // Relación: Empleado → CausaSalida (catálogo CAS)
+        modelBuilder.Entity<TblAdministracionEmpleado>()
+            .HasOne(e => e.CausaSalidaNavigation)
+            .WithMany()
+            .HasForeignKey(e => e.IdCausaSalida)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        // Relación: Empleado → EmpleadoReemplazo (self-referencing)
+        modelBuilder.Entity<TblAdministracionEmpleado>()
+            .HasOne(e => e.EmpleadoReemplazoNavigation)
+            .WithMany(e => e.EmpleadosReemplazados)
+            .HasForeignKey(e => e.IdEmpleadoReemplazo)
+            .OnDelete(DeleteBehavior.SetNull);
+
 
         OnModelCreatingPartial(modelBuilder);
     }

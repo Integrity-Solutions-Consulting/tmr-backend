@@ -21,4 +21,7 @@ public interface IColaboradorService
 
     // Eliminación lógica: marca el empleado como Activo = false.
     Task EliminarAsync(int id, CancellationToken ct);
+
+    // Registra la salida de un colaborador (fecha, tipo, causa, comentario, reemplazo).
+    Task RegistrarSalidaAsync(int id, RegistrarSalidaRequest request, CancellationToken ct);
 }
