@@ -26,6 +26,10 @@ public record ActualizarColaboradorRequest(
     int IdCargo,
     int? AniosExperiencia,
     int? IdModoTrabajo,
-    int? IdCategoriaEmpleado
-);
+    int? IdCategoriaEmpleado,
 
+    // ================================================================
+    // NUEVO: CAMPO REEMPLAZO (ID del inactivo a reemplazar)
+    // ================================================================
+    int? IdEmpleadoReemplazo
+);

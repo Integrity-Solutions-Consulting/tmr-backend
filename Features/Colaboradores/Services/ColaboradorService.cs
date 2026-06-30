@@ -114,10 +114,12 @@ public sealed class ColaboradorService(
             .Include(e => e.CausaSalidaNavigation)
             .Include(e => e.EmpleadoReemplazoNavigation)
                 .ThenInclude(r => r.IdpersonaNavigation)
+            .Include(e => e.EmpleadosReemplazados)
+                .ThenInclude(er => er.IdpersonaNavigation)
             .FirstOrDefaultAsync(e => e.Id == id, ct);
 
         if (empleado is null) return null;
-        
+
         // Traemos los proyectos asignados activos del colaborador.
         var proyectos = await db.TblTimeReportAsignacionProyectos
             .Include(ep => ep.IdproyectoNavigation)
@@ -219,6 +221,24 @@ public sealed class ColaboradorService(
             await db.TblAdministracionEmpleados.AddAsync(empleado, ct);
             await db.SaveChangesAsync(ct);
 
+            // ================================================================
+            // NUEVO: Si se envió un reemplazo, actualizar el inactivo
+            // ================================================================
+            if (request.IdEmpleadoReemplazo.HasValue)
+            {
+                var inactivo = await db.TblAdministracionEmpleados
+                    .FirstOrDefaultAsync(e => e.Id == request.IdEmpleadoReemplazo.Value && e.Activo == false, ct);
+
+                if (inactivo != null)
+                {
+                    inactivo.IdEmpleadoReemplazo = empleado.Id;  // El nuevo colaborador reemplaza al inactivo
+                    inactivo.Usuariomodificacion = UsuarioSistema;
+                    inactivo.Fechamodificacion = DateTime.UtcNow;
+                    inactivo.Ipmodificacion = IpSistema;
+                    await db.SaveChangesAsync(ct);
+                }
+            }
+
             // Si todo salió bien, confirmamos Persona + Empleado.
             await transaction.CommitAsync(ct);
 
@@ -313,6 +333,37 @@ public sealed class ColaboradorService(
         empleado.Fechamodificacion = DateTime.UtcNow;
         empleado.Ipmodificacion = IpSistema;
 
+        // ================================================================
+        // NUEVO: Manejar el reemplazo en edición
+        // ================================================================
+        // Buscar el reemplazo actual (el inactivo que tiene este empleado como reemplazo)
+        var reemplazoActual = await db.TblAdministracionEmpleados
+            .FirstOrDefaultAsync(e => e.IdEmpleadoReemplazo == id && e.Activo == false, ct);
+
+        // Si hay un reemplazo actual y es diferente al nuevo, limpiarlo
+        if (reemplazoActual != null && (request.IdEmpleadoReemplazo == null || reemplazoActual.Id != request.IdEmpleadoReemplazo))
+        {
+            reemplazoActual.IdEmpleadoReemplazo = null;
+            reemplazoActual.Usuariomodificacion = UsuarioSistema;
+            reemplazoActual.Fechamodificacion = DateTime.UtcNow;
+            reemplazoActual.Ipmodificacion = IpSistema;
+        }
+
+        // Si se envió un nuevo reemplazo, asignarlo
+        if (request.IdEmpleadoReemplazo.HasValue)
+        {
+            var inactivo = await db.TblAdministracionEmpleados
+                .FirstOrDefaultAsync(e => e.Id == request.IdEmpleadoReemplazo.Value && e.Activo == false, ct);
+
+            if (inactivo != null && inactivo.Id != id)
+            {
+                inactivo.IdEmpleadoReemplazo = id;
+                inactivo.Usuariomodificacion = UsuarioSistema;
+                inactivo.Fechamodificacion = DateTime.UtcNow;
+                inactivo.Ipmodificacion = IpSistema;
+            }
+        }
+
         await db.SaveChangesAsync(ct);
         // El trigger de auditoría de UPDATE se dispara solo.
     }
@@ -391,6 +442,4 @@ public sealed class ColaboradorService(
 
         await db.SaveChangesAsync(ct);
     }
-
-
 }

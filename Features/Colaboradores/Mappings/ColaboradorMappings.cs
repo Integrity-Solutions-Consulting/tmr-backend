@@ -91,8 +91,17 @@ public static class ColaboradorMappings
             ComentarioSalida: e.ComentarioSalida,
             ReemplazoNombre: e.EmpleadoReemplazoNavigation != null
                 ? $"{e.EmpleadoReemplazoNavigation.IdpersonaNavigation.Nombres} {e.EmpleadoReemplazoNavigation.IdpersonaNavigation.Apellidos}".Trim()
-                : null
+                : null,
 
+            // ================================================================
+            // A QUIÉN REEMPLAZA (para colaboradores activos)
+            // ================================================================
+            ReemplazaANombre: e.EmpleadosReemplazados != null && e.EmpleadosReemplazados.Any()
+                ? e.EmpleadosReemplazados
+                    .Where(er => er.IdEmpleadoReemplazo == e.Id)  // El que tiene este empleado como reemplazo
+                    .Select(er => $"{er.IdpersonaNavigation.Nombres} {er.IdpersonaNavigation.Apellidos}".Trim())
+                    .FirstOrDefault()
+                : null
         );
     }
 
