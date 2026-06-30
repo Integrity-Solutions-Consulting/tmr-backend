@@ -9,7 +9,7 @@ public record ColaboradorDetalleResponse(
     string Asociacion,
     string TipoContrato,
     bool Activo,
-    
+
     // ── IDs necesarios para editar ─────────────────────
     int? IdEmpresaCatalogo,
     string? TipoPersona,
@@ -52,8 +52,10 @@ public record ColaboradorDetalleResponse(
     string? TipoSalida,
     string? CausaSalida,
     string? ComentarioSalida,
-    string? ReemplazoNombre
+    string? ReemplazoNombre,
 
+    // ── NUEVO CAMPO PARA SABER A QUIÉN REEMPLAZA ──────────────
+    string? ReemplazaANombre
 );
 
 // Sub-DTO para cada proyecto que aparece en el detalle.
