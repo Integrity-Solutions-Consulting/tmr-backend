@@ -134,8 +134,10 @@ public sealed class ColaboradorService(
                     ? (ep.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial
                        ?? ep.IdproyectoNavigation.IdclienteNavigation.Razonsocial ?? "")
                     : "",
-                ep.IdproyectoNavigation != null && ep.IdproyectoNavigation.IdestadoproyectoNavigation != null
-                    ? ep.IdproyectoNavigation.IdestadoproyectoNavigation.Valor
+                ep.IdproyectoNavigation != null
+                    ? (ep.IdproyectoNavigation.Activo
+                        ? ep.IdproyectoNavigation.IdestadoproyectoNavigation!.Valor
+                        : "Desactivado")
                     : ""
             ))
             .ToListAsync(ct);
