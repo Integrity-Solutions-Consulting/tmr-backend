@@ -57,6 +57,7 @@ public static class DashboardEndpoints
             var proyectos = await db.TblTimeReportProyectos
                 .Include(p => p.IdclienteNavigation)
                 .Include(p => p.IdestadoproyectoNavigation)
+                .Include(p => p.TblTimeReportAsignacionProyectos)
                 .Where(p => p.Activo)
                 .ToListAsync();
 
@@ -81,12 +82,24 @@ public static class DashboardEndpoints
                 .ToList();
 
             var horasPorProyecto = proyectos
-                .Select(p => new DashboardHorasPorProyectoResponse(
-                    p.Nombre,
-                    horasProyectos.TryGetValue(p.Id, out var h) ? h : 0m,
-                    p.Codigo ?? "",
-                    p.Horasasignadas ?? 0m
-                ))
+                .Select(p => {
+                    var totalAsignadas = p.TblTimeReportAsignacionProyectos
+                        .Where(ap => ap.Activo)
+                        .Sum(ap => ap.Horasasignadas ?? 0m);
+
+                    if (totalAsignadas == 0m)
+                    {
+                        totalAsignadas = p.Horasasignadas ?? 0m;
+                    }
+
+                    return new DashboardHorasPorProyectoResponse(
+                        p.Id,
+                        p.Nombre,
+                        horasProyectos.TryGetValue(p.Id, out var h) ? h : 0m,
+                        p.Codigo ?? "",
+                        totalAsignadas
+                    );
+                })
                 .Where(hp => hp.Horas > 0)
                 .OrderByDescending(hp => hp.Horas)
                 .Take(15)
@@ -105,6 +118,129 @@ public static class DashboardEndpoints
 
             var dashboardData = new DashboardDataResponse(metricas, proximosACerrar, horasPorProyecto, proyectosPorCliente);
             return Results.Ok(dashboardData);
+        });
+
+        group.MapGet("/proyectos/{idProyecto:int}/horas-incompletas", async (int idProyecto, string? rango, ApplicationDbContext db) =>
+        {
+            var hoyUtc = DateTime.UtcNow.Date;
+            var endDate = DateOnly.FromDateTime(hoyUtc);
+            var startDate = new DateOnly(hoyUtc.Year, hoyUtc.Month, 1); // por defecto: este mes
+
+            if (!string.IsNullOrEmpty(rango))
+            {
+                if (rango == "trimestre")
+                {
+                    startDate = DateOnly.FromDateTime(hoyUtc.AddMonths(-3));
+                }
+                else if (rango == "anio")
+                {
+                    startDate = new DateOnly(hoyUtc.Year, 1, 1);
+                }
+            }
+
+            // 1. Obtener feriados en el rango
+            var feriados = await db.TblTimeReportFeriados
+                .Where(f => f.Activo && f.Fechaferiado >= startDate && f.Fechaferiado <= endDate)
+                .Select(f => f.Fechaferiado)
+                .ToListAsync();
+
+            // 2. Obtener colaboradores que han registrado actividades en este proyecto
+            var cutoffDate = DateOnly.FromDateTime(DateTime.UtcNow.Date.AddDays(-60));
+            var searchStartDate = startDate < cutoffDate ? startDate : cutoffDate;
+
+            var collaboratorIds = await db.TblTimeReportActividadDiaria
+                .Where(a => a.Idproyecto == idProyecto && a.Activo && a.Fechaactividad >= searchStartDate)
+                .Select(a => a.Idempleado)
+                .Distinct()
+                .ToListAsync();
+
+            var empleados = await db.TblAdministracionEmpleados
+                .Include(e => e.IdpersonaNavigation)
+                .Where(e => e.Activo && collaboratorIds.Contains(e.Id))
+                .ToListAsync();
+
+            var resultado = new List<CollaboratorMissingHoursResponse>();
+
+            if (empleados.Any())
+            {
+                var empIds = empleados.Select(e => e.Id).ToList();
+
+                // 3. Obtener actividades de estos colaboradores en el rango
+                var actividades = await db.TblTimeReportActividadDiaria
+                    .Where(a => a.Activo && empIds.Contains(a.Idempleado) && a.Fechaactividad >= startDate && a.Fechaactividad <= endDate)
+                    .Select(a => new { IdEmpleado = a.Idempleado, a.Fechaactividad, a.Cantidadhoras })
+                    .ToListAsync();
+
+                var horasPorDia = actividades
+                    .GroupBy(a => new { a.IdEmpleado, a.Fechaactividad })
+                    .ToDictionary(
+                        g => (g.Key.IdEmpleado, g.Key.Fechaactividad),
+                        g => g.Sum(a => a.Cantidadhoras)
+                    );
+
+                foreach (var empleado in empleados)
+                {
+                    var persona = empleado.IdpersonaNavigation;
+                    var empId = empleado.Id;
+
+                    // Determinar rango de chequeo de este empleado
+                    var startCheck = startDate;
+                    if (empleado.Fechaingreso.HasValue && empleado.Fechaingreso.Value > startDate)
+                    {
+                        startCheck = empleado.Fechaingreso.Value;
+                    }
+
+                    var endCheck = endDate;
+                    if (empleado.Fechaterminacion.HasValue && empleado.Fechaterminacion.Value < endDate)
+                    {
+                        endCheck = empleado.Fechaterminacion.Value;
+                    }
+
+                    if (startCheck > endCheck) continue;
+
+                    var diasIncompletos = new List<DiaIncompletoDto>();
+                    decimal totalExpected = 0m;
+                    decimal totalRegistered = 0m;
+
+                    for (var date = startCheck; date <= endCheck; date = date.AddDays(1))
+                    {
+                        var dayOfWeek = new DateTime(date.Year, date.Month, date.Day).DayOfWeek;
+                        var isWeekend = dayOfWeek == DayOfWeek.Saturday || dayOfWeek == DayOfWeek.Sunday;
+                        var isFeriado = feriados.Contains(date);
+
+                        if (!isWeekend && !isFeriado)
+                        {
+                            totalExpected += 8m;
+
+                            horasPorDia.TryGetValue((empId, date), out var logged);
+                            totalRegistered += logged;
+
+                            if (logged < 8m)
+                            {
+                                diasIncompletos.Add(new DiaIncompletoDto(
+                                    date,
+                                    logged,
+                                    8m - logged
+                                ));
+                            }
+                        }
+                    }
+
+                    if (diasIncompletos.Any())
+                    {
+                        resultado.Add(new CollaboratorMissingHoursResponse(
+                            empId,
+                            $"{persona.Nombres} {persona.Apellidos}".Trim(),
+                            totalExpected,
+                            totalRegistered,
+                            totalExpected - totalRegistered,
+                            diasIncompletos.OrderByDescending(d => d.Fecha).ToList()
+                        ));
+                    }
+                }
+            }
+
+            return Results.Ok(resultado.OrderByDescending(r => r.HorasFaltantes).ToList());
         });
 
         group.MapGet("/{id:guid}", async (Guid id, ApplicationDbContext db) =>

@@ -26,6 +26,7 @@ public record DashboardProyectoResumenResponse(
 );
 
 public record DashboardHorasPorProyectoResponse(
+    int Id,
     string Proyecto,
     decimal Horas,
     string Codigo,
@@ -44,3 +45,15 @@ public record DashboardDataResponse(
     System.Collections.Generic.IEnumerable<DashboardHorasPorProyectoResponse> HorasPorProyecto,
     System.Collections.Generic.IEnumerable<DashboardProyectosPorClienteResponse> ProyectosPorCliente
 );
+
+public record DiaIncompletoDto(DateOnly Fecha, decimal HorasRegistradas, decimal HorasFaltantes);
+
+public record CollaboratorMissingHoursResponse(
+    int IdEmpleado,
+    string NombreCompleto,
+    decimal HorasEsperadas,
+    decimal HorasRegistradas,
+    decimal HorasFaltantes,
+    System.Collections.Generic.IEnumerable<DiaIncompletoDto> DiasIncompletos
+);
+
