@@ -144,22 +144,30 @@ public static class DashboardEndpoints
                 .Select(f => f.Fechaferiado)
                 .ToListAsync();
 
-            // 2. Obtener asignaciones activas de colaboradores del proyecto
-            var asignaciones = await db.TblTimeReportAsignacionProyectos
-                .Include(ap => ap.IdempleadoNavigation)
-                    .ThenInclude(e => e!.IdpersonaNavigation)
-                .Where(ap => ap.Idproyecto == idProyecto && ap.Activo && ap.Idempleado.HasValue && ap.IdempleadoNavigation != null && ap.IdempleadoNavigation.Activo)
+            // 2. Obtener colaboradores que han registrado actividades en este proyecto
+            var cutoffDate = DateOnly.FromDateTime(DateTime.UtcNow.Date.AddDays(-60));
+            var searchStartDate = startDate < cutoffDate ? startDate : cutoffDate;
+
+            var collaboratorIds = await db.TblTimeReportActividadDiaria
+                .Where(a => a.Idproyecto == idProyecto && a.Activo && a.Fechaactividad >= searchStartDate)
+                .Select(a => a.Idempleado)
+                .Distinct()
+                .ToListAsync();
+
+            var empleados = await db.TblAdministracionEmpleados
+                .Include(e => e.IdpersonaNavigation)
+                .Where(e => e.Activo && collaboratorIds.Contains(e.Id))
                 .ToListAsync();
 
             var resultado = new List<CollaboratorMissingHoursResponse>();
 
-            if (asignaciones.Any())
+            if (empleados.Any())
             {
-                var collaboratorIds = asignaciones.Select(ap => ap.Idempleado!.Value).Distinct().ToList();
+                var empIds = empleados.Select(e => e.Id).ToList();
 
                 // 3. Obtener actividades de estos colaboradores en el rango
                 var actividades = await db.TblTimeReportActividadDiaria
-                    .Where(a => a.Activo && collaboratorIds.Contains(a.Idempleado) && a.Fechaactividad >= startDate && a.Fechaactividad <= endDate)
+                    .Where(a => a.Activo && empIds.Contains(a.Idempleado) && a.Fechaactividad >= startDate && a.Fechaactividad <= endDate)
                     .Select(a => new { IdEmpleado = a.Idempleado, a.Fechaactividad, a.Cantidadhoras })
                     .ToListAsync();
 
@@ -170,23 +178,22 @@ public static class DashboardEndpoints
                         g => g.Sum(a => a.Cantidadhoras)
                     );
 
-                foreach (var ap in asignaciones)
+                foreach (var empleado in empleados)
                 {
-                    var empleado = ap.IdempleadoNavigation!;
                     var persona = empleado.IdpersonaNavigation;
                     var empId = empleado.Id;
 
-                    // Determinar rango de chequeo de esta asignación
+                    // Determinar rango de chequeo de este empleado
                     var startCheck = startDate;
-                    if (ap.Fechaasignacion.HasValue && ap.Fechaasignacion.Value > startDate)
+                    if (empleado.Fechaingreso.HasValue && empleado.Fechaingreso.Value > startDate)
                     {
-                        startCheck = ap.Fechaasignacion.Value;
+                        startCheck = empleado.Fechaingreso.Value;
                     }
 
                     var endCheck = endDate;
-                    if (ap.Fechafinasignacion.HasValue && ap.Fechafinasignacion.Value < endDate)
+                    if (empleado.Fechaterminacion.HasValue && empleado.Fechaterminacion.Value < endDate)
                     {
-                        endCheck = ap.Fechafinasignacion.Value;
+                        endCheck = empleado.Fechaterminacion.Value;
                     }
 
                     if (startCheck > endCheck) continue;
