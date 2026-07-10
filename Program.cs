@@ -26,6 +26,8 @@ using tmr_backend.Features.Configuracion.Roles.Application;
 using tmr_backend.Features.Configuracion.Roles.Endpoints;
 using tmr_backend.Features.Configuracion.DiasFestivos.Application;
 using tmr_backend.Features.Configuracion.DiasFestivos.Endpoints;
+using tmr_backend.Features.Configuracion.Catalogos.Application;
+using tmr_backend.Features.Configuracion.Catalogos.Endpoints;
 using tmr_backend.Features.HealthCheck.Endpoints;
 using Scalar.AspNetCore;
 using tmr_backend.Infrastructure.Security;
@@ -143,6 +145,7 @@ builder.Services.AddScoped<ILiderService, LiderService>();
 builder.Services.AddScoped<IUsuariosConfigService, UsuariosConfigService>();
 builder.Services.AddScoped<IRolesConfigService, RolesConfigService>();
 builder.Services.AddScoped<IDiasFestivosService, DiasFestivosService>();
+builder.Services.AddScoped<ICatalogosConfigService, CatalogosConfigService>();
 
 // Feature: Carga Actividades
 builder.Services.AddScoped<ICargarActividadesExcelHandler, CargarActividadesExcelHandler>();
@@ -262,6 +265,7 @@ app.MapTimeReportEndpoints();
 app.MapUsuariosConfigEndpoints();
 app.MapRolesConfigEndpoints();
 app.MapDiasFestivosEndpoints();
+app.MapCatalogosConfigEndpoints();
 
 // ── Seed Template Data (Desarrollo) ──
 /*if (app.Environment.IsDevelopment())
