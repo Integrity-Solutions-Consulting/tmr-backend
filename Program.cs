@@ -120,6 +120,7 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<RegisterUserHandler>();
 builder.Services.AddScoped<IPermissionService, PermissionService>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+builder.Services.AddScoped<IEmailService, EmailService>();
 
 // ── Background Services ──
 builder.Services.Configure<SessionCleanupSettings>(builder.Configuration.GetSection("SessionCleanup"));

@@ -239,6 +239,60 @@ public static class DashboardEndpoints
             });
         }).RequireAuthorization();
 
+        group.MapPost("/notificar-faltantes-email", async (
+            NotificarFaltantesEmailRequest request,
+            ApplicationDbContext db,
+            tmr_backend.Infrastructure.Shared.IEmailService emailService) =>
+        {
+            var empleado = await db.TblAdministracionEmpleados
+                .Include(e => e.IdpersonaNavigation)
+                .FirstOrDefaultAsync(e => e.Id == request.IdEmpleado && e.Activo);
+
+            if (empleado == null)
+            {
+                return Results.BadRequest(new { Mensaje = "Empleado no encontrado o inactivo" });
+            }
+
+            var emailDestino = empleado.Emailcorporativo ?? empleado.IdpersonaNavigation?.Email;
+            if (string.IsNullOrEmpty(emailDestino))
+            {
+                return Results.BadRequest(new { Mensaje = "El empleado no tiene una dirección de correo configurada" });
+            }
+
+            var subject = "Recordatorio: Registro de horas pendientes";
+            
+            var body = $@"
+            <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;'>
+                <div style='text-align: center; margin-bottom: 24px;'>
+                    <h2 style='color: #163572; margin: 0;'>ISC Time Report</h2>
+                    <p style='color: #64748b; margin: 4px 0 0 0;'>Recordatorio de Horas Pendientes</p>
+                </div>
+                <div style='background-color: #f8fafc; padding: 16px; border-radius: 6px; margin-bottom: 24px; border-left: 4px solid #ef4444;'>
+                    <p style='margin: 0; font-size: 16px; color: #1e293b;'>Hola <strong>{request.NombreCompleto}</strong>,</p>
+                    <p style='margin: 12px 0 0 0; font-size: 14px; color: #475569; line-height: 1.5;'>
+                        Se ha detectado que tienes un registro de horas pendiente en el proyecto <strong>{request.Proyecto}</strong>.
+                    </p>
+                    <p style='margin: 12px 0 0 0; font-size: 14px; color: #475569;'>
+                        Horas faltantes: <strong style='color: #ef4444; font-size: 16px;'>{request.HorasFaltantes} horas</strong>
+                    </p>
+                </div>
+                <p style='font-size: 14px; color: #475569; line-height: 1.5;'>
+                    Por favor, ingresa a la plataforma de Time Report a la brevedad para completar tus registros diarios de actividades.
+                </p>
+                <div style='text-align: center; margin: 28px 0 12px 0;'>
+                    <a href='http://localhost:3000' style='background-color: #163572; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 4px; font-weight: bold; font-size: 14px;'>Ir a Time Report</a>
+                </div>
+                <hr style='border: 0; border-top: 1px solid #e5e7eb; margin: 24px 0;' />
+                <p style='font-size: 11px; color: #94a3b8; text-align: center; margin: 0;'>
+                    Este es un correo automático, por favor no respondas a este mensaje.
+                </p>
+            </div>";
+
+            await emailService.SendEmailAsync(emailDestino, subject, body);
+
+            return Results.Ok(new { Mensaje = "Notificación enviada exitosamente" });
+        }).RequireAuthorization();
+
         group.MapGet("/proyectos/{idProyecto:int}/horas-incompletas", async (int idProyecto, string? rango, ApplicationDbContext db) =>
         {
             var hoyUtc = DateTime.UtcNow.Date;
