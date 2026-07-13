@@ -51,9 +51,17 @@ public record DiaIncompletoDto(DateOnly Fecha, decimal HorasRegistradas, decimal
 public record CollaboratorMissingHoursResponse(
     int IdEmpleado,
     string NombreCompleto,
+    string Email,
     decimal HorasEsperadas,
     decimal HorasRegistradas,
     decimal HorasFaltantes,
     System.Collections.Generic.IEnumerable<DiaIncompletoDto> DiasIncompletos
+);
+
+public record NotificarFaltantesEmailRequest(
+    int IdEmpleado,
+    string NombreCompleto,
+    string Proyecto,
+    decimal HorasFaltantes
 );
 
