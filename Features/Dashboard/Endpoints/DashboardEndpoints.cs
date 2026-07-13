@@ -253,7 +253,7 @@ public static class DashboardEndpoints
                 return Results.BadRequest(new { Mensaje = "Empleado no encontrado o inactivo" });
             }
 
-            var emailDestino = empleado.Emailcorporativo ?? empleado.IdpersonaNavigation?.Email;
+            var emailDestino = empleado.IdpersonaNavigation?.Email ?? empleado.Emailcorporativo;
             if (string.IsNullOrEmpty(emailDestino))
             {
                 return Results.BadRequest(new { Mensaje = "El empleado no tiene una dirección de correo configurada" });
@@ -404,7 +404,7 @@ public static class DashboardEndpoints
                         resultado.Add(new CollaboratorMissingHoursResponse(
                             empId,
                             $"{persona.Nombres} {persona.Apellidos}".Trim(),
-                            empleado.Emailcorporativo ?? persona.Email ?? string.Empty,
+                            persona.Email ?? empleado.Emailcorporativo ?? string.Empty,
                             totalExpected,
                             totalRegistered,
                             totalExpected - totalRegistered,
