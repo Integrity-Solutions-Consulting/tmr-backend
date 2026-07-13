@@ -242,7 +242,8 @@ public static class DashboardEndpoints
         group.MapPost("/notificar-faltantes-email", async (
             NotificarFaltantesEmailRequest request,
             ApplicationDbContext db,
-            tmr_backend.Infrastructure.Shared.IEmailService emailService) =>
+            tmr_backend.Infrastructure.Shared.IEmailService emailService,
+            IConfiguration configuration) =>
         {
             var empleado = await db.TblAdministracionEmpleados
                 .Include(e => e.IdpersonaNavigation)
@@ -260,6 +261,7 @@ public static class DashboardEndpoints
             }
 
             var subject = "Recordatorio: Registro de horas pendientes";
+            var frontendUrl = configuration["EmailSettings:FrontendUrl"] ?? "http://localhost:3000";
             
             var body = $@"
             <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;'>
@@ -280,7 +282,7 @@ public static class DashboardEndpoints
                     Por favor, ingresa a la plataforma de Time Report a la brevedad para completar tus registros diarios de actividades.
                 </p>
                 <div style='text-align: center; margin: 28px 0 12px 0;'>
-                    <a href='http://localhost:3000' style='background-color: #163572; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 4px; font-weight: bold; font-size: 14px;'>Ir a Time Report</a>
+                    <a href='{frontendUrl}' style='background-color: #163572; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 4px; font-weight: bold; font-size: 14px;'>Ir a Time Report</a>
                 </div>
                 <hr style='border: 0; border-top: 1px solid #e5e7eb; margin: 24px 0;' />
                 <p style='font-size: 11px; color: #94a3b8; text-align: center; margin: 0;'>
