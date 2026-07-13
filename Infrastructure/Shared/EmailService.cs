@@ -32,6 +32,14 @@ public class EmailService : IEmailService
             int.TryParse(portStr, out var port);
             if (port == 0) port = 587;
 
+            var overrideEmail = _configuration["EmailSettings:OverrideEmailRecipient"];
+            if (!string.IsNullOrEmpty(overrideEmail))
+            {
+                _logger.LogInformation("REDIRECCIÓN DE CORREO: Modificando destinatario real {OriginalEmail} por {OverrideEmail}", toEmail, overrideEmail);
+                subject = $"[PRUEBA para: {toEmail}] {subject}";
+                toEmail = overrideEmail;
+            }
+
             _logger.LogInformation("Enviando correo SMTP a {ToEmail} vía {SmtpServer}:{Port}", toEmail, smtpServer, port);
 
             using var client = new SmtpClient(smtpServer, port)
