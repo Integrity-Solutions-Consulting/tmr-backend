@@ -254,7 +254,7 @@ public static class DashboardEndpoints
                 return Results.BadRequest(new { Mensaje = "Empleado no encontrado o inactivo" });
             }
 
-            var emailDestino = empleado.IdpersonaNavigation?.Email ?? empleado.Emailcorporativo;
+            var emailDestino = empleado.Emailcorporativo ?? empleado.IdpersonaNavigation?.Email;
             if (string.IsNullOrEmpty(emailDestino))
             {
                 return Results.BadRequest(new { Mensaje = "El empleado no tiene una dirección de correo configurada" });

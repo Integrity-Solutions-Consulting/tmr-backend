@@ -1,9 +1,10 @@
 using System;
-using System.Net;
-using System.Net.Mail;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using MimeKit;
+using MailKit.Net.Smtp;
+using MailKit.Security;
 
 namespace tmr_backend.Infrastructure.Shared;
 
@@ -40,31 +41,52 @@ public class EmailService : IEmailService
                 toEmail = overrideEmail;
             }
 
-            _logger.LogInformation("Enviando correo SMTP a {ToEmail} vía {SmtpServer}:{Port}", toEmail, smtpServer, port);
+            _logger.LogInformation("Enviando correo SMTP con MailKit a {ToEmail} vía {SmtpServer}:{Port}", toEmail, smtpServer, port);
 
-            using var client = new SmtpClient(smtpServer, port)
+            var message = new MimeMessage();
+            message.From.Add(new MailboxAddress(senderName, senderEmail));
+            message.To.Add(new MailboxAddress("", toEmail));
+            message.Subject = subject;
+
+            var bodyBuilder = new BodyBuilder
             {
-                Credentials = new NetworkCredential(username, password),
-                EnableSsl = true // Gmail requiere SSL/TLS
+                HtmlBody = htmlBody
             };
+            message.Body = bodyBuilder.ToMessageBody();
 
-            var mailMessage = new MailMessage
+            // Configurar cabeceras de identificación de agente limpias
+            message.Headers.Add("X-Mailer", "MailKit (.NET Core)");
+
+            using var client = new SmtpClient();
+            
+            // Determinar tipo de socket de conexión seguro
+            SecureSocketOptions socketOptions = SecureSocketOptions.Auto;
+            if (port == 465)
             {
-                From = new MailAddress(senderEmail, senderName),
-                Subject = subject,
-                Body = htmlBody,
-                IsBodyHtml = true
-            };
+                socketOptions = SecureSocketOptions.SslOnConnect;
+            }
+            else if (port == 587)
+            {
+                socketOptions = SecureSocketOptions.StartTls;
+            }
 
-            mailMessage.To.Add(toEmail);
+            await client.ConnectAsync(smtpServer, port, socketOptions);
 
-            await client.SendMailAsync(mailMessage);
-            _logger.LogInformation("Correo enviado exitosamente a {ToEmail}", toEmail);
+            if (!string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password))
+            {
+                await client.AuthenticateAsync(username, password);
+            }
+
+            await client.SendAsync(message);
+            await client.DisconnectAsync(true);
+
+            _logger.LogInformation("Correo enviado exitosamente con MailKit a {ToEmail}", toEmail);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error al enviar correo SMTP a {ToEmail}", toEmail);
+            _logger.LogError(ex, "Error al enviar correo SMTP con MailKit a {ToEmail}", toEmail);
             throw;
         }
     }
 }
+

@@ -135,7 +135,7 @@ public sealed class WeeklyNotificationService : BackgroundService
             var persona = empleado.IdpersonaNavigation;
             if (persona == null) continue;
 
-            var emailDestino = persona.Email ?? empleado.Emailcorporativo;
+            var emailDestino = empleado.Emailcorporativo ?? persona.Email;
             if (string.IsNullOrEmpty(emailDestino))
             {
                 _logger.LogWarning("WeeklyNotificationService: Colaborador {Nombre} (ID: {EmpId}) no tiene correo electrónico configurado. Omitiendo notificación.", 
