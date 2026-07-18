@@ -15,3 +15,10 @@ public class DatabaseHealthCheckDetails
     public Dictionary<string, int> TableRecordCounts { get; set; } = new();
     public string? ErrorMessage { get; set; }
 }
+
+public class HealthCheckLiveResponse
+{
+    public string Status { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+}
