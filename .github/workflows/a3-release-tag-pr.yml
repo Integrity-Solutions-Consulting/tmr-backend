@@ -1,0 +1,57 @@
+name: Release Please
+
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      pr: ${{ steps.release.outputs.pr }}
+      prs_created: ${{ steps.release.outputs.prs_created }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          # Use a Personal Access Token here, NOT the default GITHUB_TOKEN.
+          # Tags/releases created with GITHUB_TOKEN do not trigger other
+          # workflows (like a4-build-release+deploy.yml), due to GitHub's
+          # recursive workflow protection.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          release-type: simple
+
+  auto-merge:
+    name: Auto-merge Release PR
+    needs: release-please
+    if: needs.release-please.outputs.prs_created == 'true'
+    runs-on: ubuntu-latest
+    # Job separado a propósito: si habilitar el auto-merge falla (p.ej. checks
+    # todavía corriendo, permisos, rate limit de la API), se puede
+    # re-ejecutar SOLO este job sin que release-please vuelva a correr.
+    steps:
+      - name: Wait for PR checks and auto-merge Release PR
+        run: |
+          pr_number=$(echo '${{ needs.release-please.outputs.pr }}' | jq -r '.number')
+          echo "Habilitando auto-merge en PR #$pr_number"
+          gh pr merge "$pr_number" \
+            --repo "${{ github.repository }}" \
+            --auto \
+            --merge \
+            --delete-branch=false
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+# How this works:
+# 1. Every push to master updates a "Release PR" with a changelog and next
+#    version number, computed from Conventional Commit messages
+#    (feat: -> minor, fix: -> patch, feat!:/fix!: -> major).
+# 2. Nothing is tagged or built yet at this point.
+# 3. When you're ready to ship, review and merge the Release PR (now automated
+#    via the auto-merge job below, gated on required status checks).
+# 4. Merging it makes release-please create the git tag (vX.Y.Z) and the
+#    GitHub Release. That tag push is what triggers a4-build-release+deploy.yml.

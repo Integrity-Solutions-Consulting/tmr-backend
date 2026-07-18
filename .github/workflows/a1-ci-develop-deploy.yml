@@ -1,0 +1,92 @@
+name: CI - Build and Publish Develop Image
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v4
+
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login en GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extraer metadata de la imagen
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=,format=short
+
+      - name: Build y push de la imagen
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./.docker/containerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-dev:
+    name: Disparar redeploy en Dokploy (Dev)
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    # Job separado a propósito: si el webhook falla (p.ej. Dokploy caído),
+    # se puede re-ejecutar SOLO este job desde la UI de GitHub sin
+    # necesidad de rebuildear y re-pushear la imagen otra vez.
+    steps:
+      - name: Disparar redeploy en Dokploy (Dev)
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          COMMIT_AUTHOR: ${{ github.event.head_commit.author.name }}
+        run: |
+          if [ -n "${{ secrets.DOKPLOY_WEBHOOK_URL_DEV }}" ]; then
+            echo "Disparando redeploy en Dokploy (Dev)..."
+            short_sha=${GITHUB_SHA::7}
+
+            FULL_MESSAGE="[${COMMIT_AUTHOR}] ${COMMIT_MESSAGE}"
+
+            payload=$(jq -n \
+              --arg ref "$GITHUB_REF" \
+              --arg id "$short_sha" \
+              --arg msg "$FULL_MESSAGE" \
+              '{ref: $ref, head_commit: {id: $id, message: $msg}}')
+
+            response=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+              "${{ secrets.DOKPLOY_WEBHOOK_URL_DEV }}" \
+              -H 'Content-Type: application/json' \
+              -H 'X-GitHub-Event: push' \
+              -d "$payload")
+
+            if [ "$response" -ne 200 ]; then
+              echo "Deployment failed with HTTP status $response"
+              exit 1
+            fi
+            echo "Dokploy deployment (Dev) triggered successfully!"
+          else
+            echo "DOKPLOY_WEBHOOK_URL_DEV no está configurado; se omite el redeploy."
+          fi
