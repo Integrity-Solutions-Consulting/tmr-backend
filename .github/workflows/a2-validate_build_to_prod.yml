@@ -20,8 +20,8 @@ jobs:
       - name: Build de la imagen (carga local, sin push)
         uses: docker/build-push-action@v5
         with:
-          context: ./tmr-backend
-          file: ./tmr-backend/.docker/containerfile
+          context: .
+          file: ./.docker/containerfile
           push: false
           load: true
           tags: build-validation:pr-${{ github.event.pull_request.number }}
