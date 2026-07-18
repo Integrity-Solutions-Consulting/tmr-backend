@@ -1,0 +1,96 @@
+name: Build and Publish Release Image
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v4
+
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login en GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extraer metadata de la imagen
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=,format=short
+            type=ref,event=tag
+            type=semver,pattern=v{{major}}.{{minor}}.{{patch}}
+            type=semver,pattern=v{{major}}
+
+      - name: Build y push de la imagen
+        uses: docker/build-push-action@v5
+        with:
+          context: ./tmr-backend
+          file: ./tmr-backend/.docker/containerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-prod:
+    name: Disparar redeploy en Dokploy (Prod)
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: production
+    # Job separado a propósito: si el webhook de Dokploy falla, se puede
+    # re-ejecutar SOLO este job desde la UI de GitHub sin rebuildear y
+    # re-pushear la imagen de producción otra vez.
+    steps:
+      - name: Disparar redeploy en Dokploy (Prod)
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          if [ -n "${{ secrets.DOKPLOY_WEBHOOK_URL_PROD }}" ]; then
+            echo "Disparando redeploy en Dokploy (Prod)..."
+            short_sha=${GITHUB_SHA::7}
+            tag_name="${GITHUB_REF#refs/tags/}"
+
+            FULL_MESSAGE="[Release ${tag_name}] ${COMMIT_MESSAGE}"
+
+            payload=$(jq -n \
+              --arg ref "$GITHUB_REF" \
+              --arg id "$short_sha" \
+              --arg msg "$FULL_MESSAGE" \
+              '{ref: $ref, head_commit: {id: $id, message: $msg}}')
+
+            response=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+              "${{ secrets.DOKPLOY_WEBHOOK_URL_PROD }}" \
+              -H 'Content-Type: application/json' \
+              -H 'X-GitHub-Event: push' \
+              -d "$payload")
+
+            if [ "$response" -ne 200 ]; then
+              echo "Deployment failed with HTTP status $response"
+              exit 1
+            fi
+            echo "Dokploy deployment (Prod) triggered successfully!"
+          else
+            echo "DOKPLOY_WEBHOOK_URL_PROD no está configurado; se omite el redeploy."
+          fi

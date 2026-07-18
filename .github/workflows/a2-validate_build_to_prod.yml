@@ -1,0 +1,68 @@
+name: Validate Build
+
+on:
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build-check:
+    if: "!startsWith(github.head_ref, 'release-please--')"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build de la imagen (carga local, sin push)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./tmr-backend
+          file: ./tmr-backend/.docker/containerfile
+          push: false
+          load: true
+          tags: build-validation:pr-${{ github.event.pull_request.number }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Levantar contenedor de prueba
+        run: |
+          docker run -d --name build-validation-container \
+            -p 8080:8080 \
+            build-validation:pr-${{ github.event.pull_request.number }}
+
+      - name: Esperar a que el contenedor responda
+        run: |
+          echo "Esperando a que el contenedor esté listo..."
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null http://localhost:8080/health/live; then
+              echo "Contenedor respondiendo en /health/live."
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "El contenedor no respondió a tiempo."
+              docker logs build-validation-container
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: Smoke test - liveness endpoint
+        run: |
+          status=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health/live)
+          echo "HTTP status recibido: $status"
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "El liveness check no respondió correctamente. Status: $status"
+            docker logs build-validation-container
+            exit 1
+          fi
+          echo "Liveness check OK ($status)"
+
+      - name: Limpiar contenedor
+        if: always()
+        run: |
+          docker stop build-validation-container || true
+          docker rm build-validation-container || true
