@@ -86,7 +86,7 @@ public class HealthCheckService : IHealthCheckService
             }
 
             response.Status = "Healthy";
-            response.Message = "Aplicación funcionando correctamente";
+            response.Message = "Aplicación funcionando";
             return response;
         }
         catch (Exception ex)
