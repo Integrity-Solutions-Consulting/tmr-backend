@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.0.0...v1.0.1) (2026-07-18)
+
+
+### Bug Fixes
+
+* actions update ([d3494c4](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/d3494c418072403c04fbc844e3df2f996ddb7a15))
+
 ## 1.0.0 (2026-07-18)
 
 
