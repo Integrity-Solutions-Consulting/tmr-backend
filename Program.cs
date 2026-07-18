@@ -7,10 +7,11 @@ using tmr_backend.Features.Clientes.DTOs.Request;
 using tmr_backend.Features.Clientes.Services;
 using tmr_backend.Features.Clientes.Validators;
 using tmr_backend.Features.Auth;
-using tmr_backend.Features.Usuarios.Endpoints;
 using tmr_backend.Features.CargaActividades;
 using tmr_backend.Features.Colaboradores;
+using tmr_backend.Features.Colaboradores.DTOs.Request;
 using tmr_backend.Features.Colaboradores.Services;
+using tmr_backend.Features.Colaboradores.Validators;
 using tmr_backend.Features.Configuracion;
 using tmr_backend.Features.Dashboard;
 using tmr_backend.Features.Lideres;
@@ -25,6 +26,8 @@ using tmr_backend.Features.Configuracion.Roles.Application;
 using tmr_backend.Features.Configuracion.Roles.Endpoints;
 using tmr_backend.Features.Configuracion.DiasFestivos.Application;
 using tmr_backend.Features.Configuracion.DiasFestivos.Endpoints;
+using tmr_backend.Features.Configuracion.Catalogos.Application;
+using tmr_backend.Features.Configuracion.Catalogos.Endpoints;
 using tmr_backend.Features.HealthCheck.Endpoints;
 using Scalar.AspNetCore;
 using tmr_backend.Infrastructure.Security;
@@ -35,6 +38,7 @@ using System.IdentityModel.Tokens.Jwt;
 using Microsoft.Extensions.Caching.Memory;
 using FluentValidation;
 using tmr_backend.Infrastructure.Shared;
+using tmr_backend.Features.Auth.Register;
 using tmr_backend.Features.Auth.Validators;
 using tmr_backend.Features.Auth.Services;
 using tmr_backend.Features.Lideres.Services;
@@ -42,6 +46,10 @@ using tmr_backend.Shared.Wrappers;
 using Microsoft.AspNetCore.Authorization;
 using tmr_backend.Shared.Middleware;
 using Microsoft.OpenApi;
+using tmr_backend.Shared;
+using System.Text.Json.Serialization;
+using tmr_backend.Infrastructure.Extensions;
+using tmr_backend.Infrastructure.BackgroundServices;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -51,6 +59,12 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
+
+// ── JSON Serializer Configuration ──
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.Converters.Add(new DateOnlyJsonConverter());
+});
 
 // ── OpenAPI / Swagger ──
 builder.Services.AddOpenApi(options =>
@@ -81,16 +95,20 @@ builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
            .AddInterceptors(sp.GetRequiredService<AuditInterceptor>()));
 
 // ── CORS ──
+ String[] allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? new[] { "http://localhost:3000" };
+
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("PermitirFrontend", policy =>
+    options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins("http://localhost:4200")
-              .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials();
+        policy
+            .WithOrigins(allowedOrigins)
+            .AllowAnyMethod()
+            .AllowAnyHeader()
+            .AllowCredentials();
     });
 });
+
 
 // ── Memory Cache & HttpContext ──
 builder.Services.AddMemoryCache();
@@ -101,8 +119,16 @@ builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"))
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<RegisterUserHandler>();
 builder.Services.AddScoped<IPermissionService, PermissionService>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+builder.Services.AddScoped<IEmailService, EmailService>();
+
+// ── Background Services ──
+builder.Services.Configure<SessionCleanupSettings>(builder.Configuration.GetSection("SessionCleanup"));
+builder.Services.AddHostedService<SessionCleanupService>();
+builder.Services.Configure<WeeklyNotificationSettings>(builder.Configuration.GetSection("WeeklyNotificationSettings"));
+builder.Services.AddHostedService<WeeklyNotificationService>();
 
 
 
@@ -122,6 +148,7 @@ builder.Services.AddScoped<ILiderService, LiderService>();
 builder.Services.AddScoped<IUsuariosConfigService, UsuariosConfigService>();
 builder.Services.AddScoped<IRolesConfigService, RolesConfigService>();
 builder.Services.AddScoped<IDiasFestivosService, DiasFestivosService>();
+builder.Services.AddScoped<ICatalogosConfigService, CatalogosConfigService>();
 
 // Feature: Carga Actividades
 builder.Services.AddScoped<ICargarActividadesExcelHandler, CargarActividadesExcelHandler>();
@@ -131,6 +158,11 @@ builder.Services.AddScoped<IHealthCheckService, HealthCheckService>();
 
 // ── Fluent Validation ──
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
+
+// ================================================================
+// VALIDADORES DE COLABORADORES (nuevo)
+// ================================================================
+builder.Services.AddScoped<IValidator<RegistrarSalidaRequest>, RegistrarSalidaRequestValidator>();
 
 // ── Authentication & JWT Setup ──
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtSettings>()!;
@@ -194,7 +226,7 @@ app.UseMiddleware<GlobalExceptionMiddleware>();
 
 app.UseHttpsRedirection();
 
-app.UseCors("PermitirFrontend");
+// app.UseCors("PermitirFrontend");
 
 app.UseAuthentication();
 
@@ -202,6 +234,7 @@ app.UseMiddleware<JwtBlacklistMiddleware>();
 
 app.UseMiddleware<PermissionEnrichmentMiddleware>();
 
+app.UseCors("AllowFrontend");
 app.UseAuthorization();
 
 // ── Scalar API Reference ──
@@ -224,7 +257,6 @@ if (app.Environment.IsDevelopment())
 app.MapHealthCheckEndpoints();
 app.MapClientesEndpoints();
 app.MapAuthEndpoints();
-app.MapUsuariosEndpoints();
 app.MapCargaActividadesEndpoints();
 app.MapColaboradoresEndpoints();
 app.MapDashboardEndpoints();
@@ -236,5 +268,19 @@ app.MapTimeReportEndpoints();
 app.MapUsuariosConfigEndpoints();
 app.MapRolesConfigEndpoints();
 app.MapDiasFestivosEndpoints();
+app.MapCatalogosConfigEndpoints();
+
+// ── Seed Template Data (Desarrollo) ──
+/*if (app.Environment.IsDevelopment())
+{
+    try
+    {
+        await app.SeedTemplateDataAsync();
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"⚠️  Seeding skipped: {ex.Message}");
+    }
+}*/
 
 app.Run();

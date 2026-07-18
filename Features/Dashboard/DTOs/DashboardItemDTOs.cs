@@ -21,17 +21,47 @@ public record DashboardProyectoResumenResponse(
     string Cliente,
     string Estado,
     decimal Horas,
-    decimal Presupuesto
+    decimal Presupuesto,
+    DateOnly? FechaFinPlaneada
 );
 
 public record DashboardHorasPorProyectoResponse(
+    int Id,
     string Proyecto,
     decimal Horas,
-    string Codigo
+    string Codigo,
+    decimal HorasAsignadas
+);
+
+public record DashboardProyectosPorClienteResponse(
+    string Cliente,
+    int ProyectosAsignados,
+    decimal Porcentaje
 );
 
 public record DashboardDataResponse(
     DashboardMetricasResponse Metricas,
     System.Collections.Generic.IEnumerable<DashboardProyectoResumenResponse> ProximosACerrar,
-    System.Collections.Generic.IEnumerable<DashboardHorasPorProyectoResponse> HorasPorProyecto
+    System.Collections.Generic.IEnumerable<DashboardHorasPorProyectoResponse> HorasPorProyecto,
+    System.Collections.Generic.IEnumerable<DashboardProyectosPorClienteResponse> ProyectosPorCliente
 );
+
+public record DiaIncompletoDto(DateOnly Fecha, decimal HorasRegistradas, decimal HorasFaltantes);
+
+public record CollaboratorMissingHoursResponse(
+    int IdEmpleado,
+    string NombreCompleto,
+    string Email,
+    decimal HorasEsperadas,
+    decimal HorasRegistradas,
+    decimal HorasFaltantes,
+    System.Collections.Generic.IEnumerable<DiaIncompletoDto> DiasIncompletos
+);
+
+public record NotificarFaltantesEmailRequest(
+    int IdEmpleado,
+    string NombreCompleto,
+    string Proyecto,
+    decimal HorasFaltantes
+);
+

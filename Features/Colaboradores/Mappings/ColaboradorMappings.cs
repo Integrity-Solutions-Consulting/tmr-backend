@@ -6,7 +6,6 @@ namespace tmr_backend.Features.Colaboradores.Mappings;
 // Mappings de las entidades de BD hacia los DTOs de respuesta.
 public static class ColaboradorMappings
 {
-    
     // ColaboradorListaResponse (item de la tabla)
     // Recibe numProyectos aparte porque ese conteo se calcula en el servicio.
     public static ColaboradorListaResponse ToListaResponse(
@@ -17,6 +16,7 @@ public static class ColaboradorMappings
 
         return new ColaboradorListaResponse(
             Id: e.Id,
+            IdPersona: e.Idpersona,
             CodigoEmpleado: e.Codigoempleado,
             NumeroIdentificacion: persona?.Numeroidentificacion ?? "",
             // Asociación: el valor del catálogo de empresa (RPS, ISC, RPS E ISC).
@@ -31,7 +31,7 @@ public static class ColaboradorMappings
     }
 
     // -------------------------------------------------------------------------
-    // ColaboradorDetalleResponse (modal de detalle)
+    // ColaboradorDetalleResponse (modal de detalle / editar)
     // Recibe la lista de proyectos aparte (se consulta en el servicio).
     // -------------------------------------------------------------------------
     public static ColaboradorDetalleResponse ToDetalleResponse(
@@ -45,6 +45,18 @@ public static class ColaboradorMappings
             Asociacion: e.IdempresacatalogoNavigation?.Valor ?? "",
             TipoContrato: e.IdtipocontratoNavigation?.Valor ?? "",
             Activo: e.Activo,
+
+            // ── IDs necesarios para precargar el modal editar ──
+            IdEmpresaCatalogo: e.Idempresacatalogo,
+            TipoPersona: persona?.Tipopersona ?? "NATURAL",
+            IdTipoIdentificacion: persona?.Idtipoidentificacion,
+            IdGenero: persona?.Idgenero,
+            IdNacionalidad: persona?.Idnacionalidad,
+            IdTipoContrato: e.Idtipocontrato,
+            IdDepartamento: e.IdcargoNavigation?.Iddepartamento,
+            IdCargo: e.Idcargo,
+            IdModoTrabajo: e.Idmodotrabajo,
+            IdCategoriaEmpleado: e.Idcategoriaempleado,
 
             // ── Datos laborales ──
             // El departamento se obtiene a través del cargo (cargo → departamento).
@@ -62,6 +74,7 @@ public static class ColaboradorMappings
             NumeroIdentificacion: persona?.Numeroidentificacion ?? "",
             FechaNacimiento: persona?.Fechanacimiento,
             Genero: persona?.IdgeneroNavigation?.Valor ?? "",
+            Nacionalidad: persona?.IdnacionalidadNavigation?.Valor ?? "",
 
             // ── Datos de contacto ──
             Email: persona?.Email ?? "",
@@ -69,34 +82,36 @@ public static class ColaboradorMappings
             Direccion: persona?.Direccion ?? "",
 
             // ── Proyectos ──
-            Proyectos: proyectos
+            Proyectos: proyectos,
+
+            // ── CAMPOS PARA DATOS DE SALIDA ───────────────────────────
+            FechaSalida: e.Fechaterminacion,
+            TipoSalida: e.TipoSalidaNavigation != null ? e.TipoSalidaNavigation.Valor : null,
+            CausaSalida: e.CausaSalidaNavigation != null ? e.CausaSalidaNavigation.Valor : null,
+            ComentarioSalida: e.ComentarioSalida,
+            ReemplazoNombre: e.EmpleadoReemplazoNavigation != null
+                ? $"{e.EmpleadoReemplazoNavigation.IdpersonaNavigation.Nombres} {e.EmpleadoReemplazoNavigation.IdpersonaNavigation.Apellidos}".Trim()
+                : null,
+
+            // ================================================================
+            // A QUIÉN REEMPLAZA (para colaboradores activos)
+            // ================================================================
+            ReemplazaANombre: e.EmpleadosReemplazados != null && e.EmpleadosReemplazados.Any()
+                ? e.EmpleadosReemplazados
+                    .Where(er => er.IdEmpleadoReemplazo == e.Id)  // El que tiene este empleado como reemplazo
+                    .Select(er => $"{er.IdpersonaNavigation.Nombres} {er.IdpersonaNavigation.Apellidos}".Trim())
+                    .FirstOrDefault()
+                : null
         );
     }
 
- 
-    //para los dropdowns
+    // Para los dropdowns.
     public static CatalogoResponse ToCatalogoResponse(
         this TblAdministracionCatalogoDetalle c) =>
         new(c.Id, c.Valor);
 
-    //dropdown de cargos por departamento
+    // Dropdown de cargos por departamento.
     public static CargoResponse ToCargoResponse(
         this TblAdministracionCargo c) =>
         new(c.Id, c.Nombrecargo);
-
-
-    // ComboBox de personas
-    public static PersonaResponse ToPersonaResponse(
-        this TblAdministracionPersona p) =>
-        new(
-            p.Id,
-            p.Nombres,
-            p.Apellidos,
-            p.Numeroidentificacion,
-            p.Fechanacimiento,
-            p.Idgenero,
-            p.Email,
-            p.Telefono,
-            p.Direccion
-            );
 }

@@ -85,7 +85,18 @@ public static class LideresEndpoints
             return resultado ? Results.NoContent() : Results.NotFound();
         });
 
-        // 10. Personas no líderes (Elisa - redundancia)
+        // 10. Eliminar físicamente líder (y su persona si es externo)
+        group.MapDelete("/{id:int}/fisico", async (int id, ILiderService service, CancellationToken ct) =>
+        {
+            var resultado = await service.EliminarFisicoAsync(id, ct);
+            return resultado ? Results.NoContent() : Results.NotFound();
+        }).WithName("EliminarLiderFisico")
+         .WithOpenApi()
+         .Produces(204)
+         .Produces(404)
+         .WithDescription("Elimina físicamente un líder y sus registros asociados. Si es externo, también elimina la persona vinculada.");
+
+        // 11. Personas no líderes (Elisa - redundancia)
         group.MapGet("/personasNoLideres", PersonasNoLideres)
              .WithName("PersonasNoLideres");
 

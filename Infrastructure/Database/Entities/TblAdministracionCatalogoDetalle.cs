@@ -63,8 +63,6 @@ public partial class TblAdministracionCatalogoDetalle
 
     public virtual ICollection<TblAutenticacionPrivilegioUsuario> TblAutenticacionPrivilegioUsuarios { get; set; } = new List<TblAutenticacionPrivilegioUsuario>();
 
-    public virtual ICollection<TblAutenticacionRolModulo> TblAutenticacionRolModulos { get; set; } = new List<TblAutenticacionRolModulo>();
-
     public virtual ICollection<TblInventarioBajaEquipo> TblInventarioBajaEquipos { get; set; } = new List<TblInventarioBajaEquipo>();
 
     public virtual ICollection<TblInventarioCaracteristicaEquipo> TblInventarioCaracteristicaEquipos { get; set; } = new List<TblInventarioCaracteristicaEquipo>();

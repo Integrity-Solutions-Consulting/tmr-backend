@@ -9,6 +9,9 @@ public class RegisterRequestValidator : AbstractValidator<RegisterRequest>
 {
     public RegisterRequestValidator()
     {
+        RuleFor(x => x.IdRol)
+            .GreaterThan(0).WithMessage("El rol es requerido.");
+
         RuleFor(x => x.IdGenero)
             .GreaterThan(0).WithMessage("El género es requerido.");
 

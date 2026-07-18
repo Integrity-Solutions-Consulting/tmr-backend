@@ -1,28 +1,21 @@
 namespace tmr_backend.Features.Configuracion.Usuarios.DTOs;
 
-public record CreateUsuarioRequest(
-    string numeroidentificacion,
-    string nombres,
-    string apellidos,
+public record CrearUsuarioConfigRequest(
+    int? idPersona,
     string email,
     string password,
-    int? idtipoidentificacion = null,
-    int? idgenero = null,
-    int? idnacionalidad = null,
-    DateOnly? fechanacimiento = null,
-    string? telefono = null,
-    string? direccion = null,
-    List<int>? rolesids = null);
+    List<int>? rolesids = null,
+    bool? debeCambiarPassword = true);
 
 public record UpdateUsuarioRequest(
-    string nombres,
-    string apellidos,
-    int? idgenero = null,
-    int? idnacionalidad = null,
-    DateOnly? fechanacimiento = null,
-    string? telefono = null,
-    string? direccion = null,
-    List<int>? rolesids = null);
+    int? idPersona = null,
+    List<int>? rolesids = null,
+    string? email = null,
+    string? nombreusuario = null,
+    string? password = null,
+    bool? debeCambiarPassword = null);
+
+public record ActivarUsuarioRequest(bool activo);
 
 public record ChangePasswordRequest(
     string passwordactual,
@@ -34,19 +27,24 @@ public record AsignarRolesRequest(
 
 public record UsuarioListaResponse(
     int id,
-    string numeroidentificacion,
-    string nombres,
-    string apellidos,
+    int idUsuario,
+    int? idPersona,
+    string? numeroidentificacion,
+    string? nombres,
+    string? apellidos,
     string email,
     List<string> roles,
     bool activo,
+    bool debecambiarpassword,
     DateTime? ultimologin);
 
 public record UsuarioDetalleResponse(
     int id,
-    string numeroidentificacion,
-    string nombres,
-    string apellidos,
+    int idUsuario,
+    int? idPersona,
+    string? numeroidentificacion,
+    string? nombres,
+    string? apellidos,
     string email,
     int? idtipoidentificacion,
     string? tipoidentificacionvalor,
@@ -78,11 +76,10 @@ public record PaginatedResponse<T>(
     int pagesize,
     int totalpages);
 
-public record CrearUsuarioResponse(
+public record CrearUsuarioConfigResponse(
     int id,
-    string numeroidentificacion,
-    string nombres,
-    string apellidos,
+    int idusuario,
+    int? idpersona,
     string email,
     List<RolResponse> roles,
     bool activo,

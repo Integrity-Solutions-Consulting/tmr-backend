@@ -28,21 +28,32 @@ public static class CargaActividadesEndpoints
                 .Where(c => c.Activo)
                 .Select(c => new
                 {
-                    c.Id,
-                    c.Idempleado,
-                    c.Idproyecto,
-                    c.Idtipoactividad,
-                    c.Codigorequerimiento,
-                    c.Cantidadhoras,
-                    Fechaactividad = c.Fechaactividad.ToString("yyyy-MM-dd"),
-                    c.Descripcionactividad,
-                    c.Notas,
-                    c.Esbillable,
-                    c.Aprobadopor,
-                    c.Fechaaprobacion,
-                    c.Activo,
-                    c.Usuariocreacion,
-                    c.Fechacreacion
+                    id = c.Id,
+
+                    colaborador = c.IdempleadoNavigation != null && c.IdempleadoNavigation.IdpersonaNavigation != null
+                        ? ((c.IdempleadoNavigation.IdpersonaNavigation.Nombres ?? "") + " " + (c.IdempleadoNavigation.IdpersonaNavigation.Apellidos ?? "")).Trim()
+                        : "Sin colaborador",
+
+                    proyecto = c.IdproyectoNavigation != null
+                        ? c.IdproyectoNavigation.Nombre
+                        : "Sin proyecto",
+
+                    cliente = c.IdproyectoNavigation != null && c.IdproyectoNavigation.IdclienteNavigation != null
+                        ? (c.IdproyectoNavigation.IdclienteNavigation.Razonsocial ?? c.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial ?? "Sin cliente")
+                        : "Sin cliente",
+
+                    liderTecnico = c.IdproyectoNavigation != null
+                        ? (c.IdproyectoNavigation.TblTimeReportAsignacionProyectos
+                            .Where(ap => ap.Activo && ap.IdliderNavigation != null && ap.IdliderNavigation.IdpersonaNavigation != null)
+                            .Select(ap => ((ap.IdliderNavigation.IdpersonaNavigation.Nombres ?? "") + " " + (ap.IdliderNavigation.IdpersonaNavigation.Apellidos ?? "")).Trim())
+                            .FirstOrDefault() ?? "Sin líder")
+                        : "Sin líder",
+
+                    fecha = c.Fechaactividad.ToString("yyyy-MM-dd"),
+
+                    nroHoras = c.Cantidadhoras,
+
+                    estado = "Cargado"
                 })
                 .ToListAsync();
 
@@ -103,8 +114,11 @@ public static class CargaActividadesEndpoints
                     Cliente = c.IdproyectoNavigation != null && c.IdproyectoNavigation.IdclienteNavigation != null
                         ? c.IdproyectoNavigation.IdclienteNavigation.Razonsocial ?? c.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial ?? "Cliente desconocido"
                         : "Sin cliente",
-                    LiderTecnico = c.IdproyectoNavigation != null && c.IdproyectoNavigation.IdliderNavigation != null && c.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation != null
-                        ? (c.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Nombres + " " + c.IdproyectoNavigation.IdliderNavigation.IdpersonaNavigation.Apellidos).Trim()
+                    LiderTecnico = c.IdproyectoNavigation != null
+                        ? (c.IdproyectoNavigation.TblTimeReportAsignacionProyectos
+                            .Where(ep => ep.Activo && ep.Idlider != null && ep.IdliderNavigation != null && ep.IdliderNavigation.IdpersonaNavigation != null)
+                            .Select(ep => (ep.IdliderNavigation.IdpersonaNavigation.Nombres + " " + ep.IdliderNavigation.IdpersonaNavigation.Apellidos).Trim())
+                            .FirstOrDefault() ?? "Sin líder")
                         : "Sin líder",
                     c.Codigorequerimiento,
                     Horas = c.Cantidadhoras,

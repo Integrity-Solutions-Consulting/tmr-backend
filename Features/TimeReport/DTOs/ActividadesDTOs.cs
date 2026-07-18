@@ -25,3 +25,35 @@ public record ResumenHorasDto(
     decimal HorasSemana,
     decimal HorasMes
 );
+
+public record ProyectoLookupDto(
+    int Id,
+    string Nombre,
+    string? Codigo
+);
+
+public record CalendarioActividadDto(
+    int Id,
+    int IdEmpleado,
+    int? IdProyecto,
+    string ProyectoNombre,
+    int IdTipoActividad,
+    string TipoActividadNombre,
+    string? CodigoRequerimiento,
+    decimal CantidadHoras,
+    DateOnly FechaActividad,
+    string DescripcionActividad,
+    string? Notas,
+    bool? EsBillable
+);
+
+public record ActualizarActividadDto(
+    int? IdProyecto,
+    int IdTipoActividad,
+    string? CodigoRequerimiento,
+    decimal CantidadHoras,
+    DateOnly FechaActividad,
+    string DescripcionActividad,
+    string? Notas,
+    bool? EsBillable
+);

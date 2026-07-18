@@ -7,11 +7,11 @@ using tmr_backend.Features.Clientes.Domain;
 using tmr_backend.Features.CargaActividades.Domain;
 using tmr_backend.Features.Colaboradores.Domain;
 using tmr_backend.Features.Dashboard.Domain;
-using tmr_backend.Features.Usuarios.Domain;
 using tmr_backend.Features.Proyectos.Domain;
 using tmr_backend.Features.Reportes.Domain;
 using tmr_backend.Features.TimeReport.Domain;
 using tmr_backend.Features.Lideres.Domain;
+
 
 namespace tmr_backend.Infrastructure.Database;
 
@@ -23,7 +23,6 @@ public partial class ApplicationDbContext : DbContext
     }
 
     public DbSet<Cliente> Clientes { get; set; } = null!;
-    public DbSet<Usuario> Usuarios { get; set; } = null!;
     public DbSet<Actividad> Actividades { get; set; } = null!;
     public DbSet<Colaborador> Colaboradores { get; set; } = null!;
     public DbSet<DashboardItem> DashboardItems { get; set; } = null!;
@@ -70,7 +69,6 @@ public partial class ApplicationDbContext : DbContext
     public virtual DbSet<TblAutenticacionMenuUsuario> TblAutenticacionMenuUsuarios { get; set; } = null!;
     public virtual DbSet<TblAutenticacionPrivilegioRol> TblAutenticacionPrivilegioRols { get; set; } = null!;
     public virtual DbSet<TblAutenticacionPrivilegioUsuario> TblAutenticacionPrivilegioUsuarios { get; set; } = null!;
-    public virtual DbSet<TblAutenticacionRolModulo> TblAutenticacionRolModulos { get; set; } = null!;
     public virtual DbSet<TblAutenticacionSesionApp> TblAutenticacionSesionApps { get; set; } = null!;
     public virtual DbSet<TblAutenticacionUsuarioAplicacion> TblAutenticacionUsuarioAplicacions { get; set; } = null!;
     public virtual DbSet<TblAutenticacionUsuarioModulo> TblAutenticacionUsuarioModulos { get; set; } = null!;
@@ -89,7 +87,7 @@ public partial class ApplicationDbContext : DbContext
 
     // Time Report
     public virtual DbSet<TblTimeReportActividadDiarium> TblTimeReportActividadDiaria { get; set; } = null!;
-    public virtual DbSet<TblTimeReportEmpleadoProyecto> TblTimeReportEmpleadoProyectos { get; set; } = null!;
+    public virtual DbSet<TblTimeReportAsignacionProyecto> TblTimeReportAsignacionProyectos { get; set; } = null!;
     public virtual DbSet<TblTimeReportFeriado> TblTimeReportFeriados { get; set; } = null!;
     public virtual DbSet<TblTimeReportHomologacionBanco> TblTimeReportHomologacionBancos { get; set; } = null!;
     public virtual DbSet<TblTimeReportOutboxCargo> TblTimeReportOutboxCargos { get; set; } = null!;
@@ -108,8 +106,37 @@ public partial class ApplicationDbContext : DbContext
     {
         modelBuilder
             .UseCollation("en_US.utf8")
-            .HasPostgresEnum("autenticacion", "audit_evento_enum", new[] { "LOGIN_OK", "LOGIN_FAIL", "LOGOUT", "REFRESH_OK", "REFRESH_FAIL", "TOKEN_REVOKE", "PASSWORD_CHANGE", "USER_CREATE", "USER_BLOCK" })
-            .HasPostgresEnum("autenticacion", "revocacion_razon_enum", new[] { "LOGOUT", "ADMIN_REVOKE", "PASSWORD_CHANGE", "SECURITY_BREACH", "EXPIRED" })
+            // ─── FIX: HasPostgresEnum debe declarar TODOS los valores del enum C# RevocacionRazonEnum ───
+            // Si tu enum C# tiene más valores que los declarados aquí, Npgsql no puede mapearlos.
+            // También debes asegurarte de que el tipo en PostgreSQL tenga estos valores.
+            // Si la columna revocadorazon en PG es de tipo "autenticacion.revocacion_razon_enum",
+            // la alternativa más simple y robusta es eliminar esa restricción de tipo y usar TEXT.
+            // Ver comentario al final de este archivo.
+            .HasPostgresEnum("autenticacion", "audit_evento_enum", new[]
+            {
+                "LOGIN_OK", "LOGIN_FAIL", "LOGOUT", "REFRESH_OK", "REFRESH_FAIL",
+                "TOKEN_REVOKE", "PASSWORD_CHANGE", "USER_CREATE", "USER_BLOCK"
+            })
+            // ─── CORREGIDO: se agregan todos los valores que usa RevocacionRazonEnum en C# ───
+            .HasPostgresEnum("autenticacion", "revocacion_razon_enum", new[]
+            {
+                "LOGOUT",
+                "ADMIN_REVOKE",
+                "ADMIN_REVOKE_ALL",
+                "PASSWORD_CHANGE",
+                "SECURITY_BREACH",
+                "EXPIRED",
+                "SESSION_LIMIT",
+                "TOKEN_REUSED",
+                "TOKEN_REVOKED",
+                "TOKEN_INVALID",
+                "TOKEN_EXPIRED",
+                "IP_MISMATCH",
+                "USER_AGENT_MISMATCH",
+                "SESSION_IDLE_TIMEOUT",
+                "SESSION_EXPIRED",
+                "REVOKE"
+            })
             .HasPostgresExtension("pgcrypto")
             .HasPostgresExtension("uuid-ossp");
 
@@ -397,6 +424,10 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Ipmodificacion).HasMaxLength(45).HasColumnName("ipmodificacion");
             entity.Property(e => e.Salario).HasPrecision(12, 2).HasColumnName("salario");
             entity.Property(e => e.Aniosexperiencia).HasColumnName("aniosexperiencia");
+            entity.Property(e => e.IdTipoSalida).HasColumnName("idtiposalida");
+            entity.Property(e => e.IdCausaSalida).HasColumnName("idcausasalida");
+            entity.Property(e => e.ComentarioSalida).HasColumnName("comentariosalida");
+            entity.Property(e => e.IdEmpleadoReemplazo).HasColumnName("idempleadoreemplazo");
             entity.Property(e => e.Usuariocreacion).HasMaxLength(50).HasColumnName("usuariocreacion");
             entity.Property(e => e.Usuariomodificacion).HasMaxLength(50).HasColumnName("usuariomodificacion");
             entity.HasOne(d => d.IdcargoNavigation).WithMany(p => p.TblAdministracionEmpleados)
@@ -430,7 +461,6 @@ public partial class ApplicationDbContext : DbContext
             entity.HasKey(e => e.Id).HasName("pk_administracion_lider");
             entity.ToTable("tbl_administracion_lider", "administracion");
             entity.Property(e => e.Id).UseIdentityAlwaysColumn().HasColumnName("id");
-            entity.Property(e => e.EsInterno).HasColumnName("EsInterno");
             entity.Property(e => e.Activo).HasDefaultValue(true).HasColumnName("activo");
             entity.Property(e => e.Fechacreacion).HasDefaultValueSql("now()").HasColumnName("fechacreacion");
             entity.Property(e => e.Fechamodificacion).HasColumnName("fechamodificacion");
@@ -1068,26 +1098,26 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Id)
                 .UseIdentityAlwaysColumn()
                 .HasColumnName("id");
-            entity.Property(e => e.Accion)
-                .HasMaxLength(40)
-                .HasColumnName("accion");
-            entity.Property(e => e.Activo)
-                .HasDefaultValue(true)
-                .HasColumnName("activo");
+            entity.Property(e => e.Idmodulo).HasColumnName("idmodulo");
             entity.Property(e => e.Codigo)
                 .HasMaxLength(100)
                 .HasColumnName("codigo");
+            entity.Property(e => e.Accion)
+                .HasMaxLength(50)
+                .HasColumnName("accion");
             entity.Property(e => e.Descripcion).HasColumnName("descripcion");
-            entity.Property(e => e.Fechacreacion)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("fechacreacion");
-            entity.Property(e => e.Idmodulo).HasColumnName("idmodulo");
-            entity.Property(e => e.Ipcreacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipcreacion");
+            entity.Property(e => e.Activo)
+                .HasDefaultValue(true)
+                .HasColumnName("activo");
             entity.Property(e => e.Usuariocreacion)
                 .HasMaxLength(50)
                 .HasColumnName("usuariocreacion");
+            entity.Property(e => e.Fechacreacion)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("fechacreacion");
+            entity.Property(e => e.Ipcreacion)
+                .HasMaxLength(45)
+                .HasColumnName("ipcreacion");
 
             entity.HasOne<TblAutenticacionModulo>()
                 .WithMany()
@@ -1245,52 +1275,6 @@ public partial class ApplicationDbContext : DbContext
                 .HasColumnName("usuariomodificacion");
         });
 
-        modelBuilder.Entity<TblAutenticacionRolModulo>(entity =>
-        {
-            entity.HasKey(e => e.Id).HasName("pk_autenticacion_rol_modulo");
-
-            entity.ToTable("tbl_autenticacion_rol_modulo", "autenticacion");
-
-            entity.Property(e => e.Id)
-                .UseIdentityAlwaysColumn()
-                .HasColumnName("id");
-            entity.Property(e => e.Activo)
-                .HasDefaultValue(true)
-                .HasColumnName("activo");
-            entity.Property(e => e.Fechacreacion)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("fechacreacion");
-            entity.Property(e => e.Fechamodificacion).HasColumnName("fechamodificacion");
-            entity.Property(e => e.Idmodulo).HasColumnName("idmodulo");
-            entity.Property(e => e.Idrol).HasColumnName("idrol");
-            entity.Property(e => e.Ipcreacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipcreacion");
-            entity.Property(e => e.Ipmodificacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipmodificacion");
-            entity.Property(e => e.Puedecrear).HasColumnName("puedecrear");
-            entity.Property(e => e.Puedeeditar).HasColumnName("puedeeditar");
-            entity.Property(e => e.Puedeeliminar).HasColumnName("puedeeliminar");
-            entity.Property(e => e.Puedever).HasColumnName("puedever");
-            entity.Property(e => e.Usuariocreacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariocreacion");
-            entity.Property(e => e.Usuariomodificacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariomodificacion");
-
-            entity.HasOne(d => d.IdmoduloNavigation).WithMany(p => p.TblAutenticacionRolModulos)
-                .HasForeignKey(d => d.Idmodulo)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_autenticacion_rol_modulo_modulo");
-
-            entity.HasOne(d => d.IdrolNavigation).WithMany(p => p.TblAutenticacionRolModulos)
-                .HasForeignKey(d => d.Idrol)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_autenticacion_rol_modulo_rol");
-        });
-
         modelBuilder.Entity<TblAutenticacionRolPermiso>(entity =>
         {
             entity.HasKey(e => new { e.Idrol, e.Idpermiso }).HasName("pk_autenticacion_rol_permiso");
@@ -1362,12 +1346,6 @@ public partial class ApplicationDbContext : DbContext
                 .HasMaxLength(45)
                 .HasColumnName("ipmodificacion");
             entity.Property(e => e.Revocadofecha).HasColumnName("revocadofecha");
-            entity.Property(e => e.Fechaexpiracion).HasColumnName("fechaexpiracion");
-            entity.Property(e => e.Revocadofecha).HasColumnName("revocadofecha");
-            entity.Property(e => e.Revocadorazon)
-                .HasColumnName("revocadorazon")
-                .HasMaxLength(50)
-                .HasConversion<string?>();
             entity.Property(e => e.Ubicacioninfo)
                 .HasMaxLength(255)
                 .HasColumnName("ubicacioninfo");
@@ -1380,6 +1358,12 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Usuariomodificacion)
                 .HasMaxLength(50)
                 .HasColumnName("usuariomodificacion");
+
+            // ─── La columna revocadorazon en BD es VARCHAR(50), no enum ───
+            // Ver script 03-Inv_tmr_db_ajustes_tblSesion_tblProyecto.sql
+            entity.Property(e => e.Revocadorazon)
+                .HasMaxLength(50)
+                .HasColumnName("revocadorazon");
 
             entity.HasOne(d => d.IdusuarioNavigation).WithMany(p => p.TblAutenticacionSesions)
                 .HasForeignKey(d => d.Idusuario)
@@ -1481,9 +1465,6 @@ public partial class ApplicationDbContext : DbContext
                 .HasDefaultValueSql("now()")
                 .HasColumnName("fechacreacion");
             entity.Property(e => e.Fechamodificacion).HasColumnName("fechamodificacion");
-            entity.Property(e => e.Hashpassword).HasColumnName("hashpassword");
-            entity.Property(e => e.Idpersona).HasColumnName("idpersona");
-            entity.Property(e => e.Intentosfallidos).HasColumnName("intentosfallidos");
             entity.Property(e => e.Hashpassword)
                 .HasMaxLength(255)
                 .HasColumnName("hashpassword");
@@ -1505,10 +1486,6 @@ public partial class ApplicationDbContext : DbContext
             entity.HasOne(d => d.IdpersonaNavigation).WithMany(p => p.TblAutenticacionUsuarios)
                 .HasForeignKey(d => d.Idpersona)
                 .OnDelete(DeleteBehavior.Restrict)
-                .HasConstraintName("fk_autenticacion_usuario_persona");
-
-            entity.HasOne(d => d.IdpersonaNavigation).WithMany(p => p.TblAutenticacionUsuarios)
-                .HasForeignKey(d => d.Idpersona)
                 .HasConstraintName("fk_autenticacion_usuario_persona");
         });
 
@@ -1593,43 +1570,6 @@ public partial class ApplicationDbContext : DbContext
                 .HasConstraintName("fk_autenticacion_usuario_modulo_usuario");
         });
 
-        modelBuilder.Entity<TblAutenticacionRol>(entity =>
-        {
-            entity.HasKey(e => e.Id).HasName("pk_autenticacion_rol");
-
-            entity.ToTable("tbl_autenticacion_rol", "autenticacion");
-
-            entity.HasIndex(e => e.Nombre, "uq_autenticacion_rol_nombre").IsUnique();
-
-            entity.Property(e => e.Id)
-                .UseIdentityAlwaysColumn()
-                .HasColumnName("id");
-            entity.Property(e => e.Activo)
-                .HasDefaultValue(true)
-                .HasColumnName("activo");
-            entity.Property(e => e.Descripcion).HasColumnName("descripcion");
-            entity.Property(e => e.Essistema).HasColumnName("essistema");
-            entity.Property(e => e.Fechacreacion)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("fechacreacion");
-            entity.Property(e => e.Fechamodificacion).HasColumnName("fechamodificacion");
-            entity.Property(e => e.Ipcreacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipcreacion");
-            entity.Property(e => e.Ipmodificacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipmodificacion");
-            entity.Property(e => e.Nombre)
-                .HasMaxLength(50)
-                .HasColumnName("nombre");
-            entity.Property(e => e.Usuariocreacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariocreacion");
-            entity.Property(e => e.Usuariomodificacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariomodificacion");
-        });
-
         modelBuilder.Entity<TblAutenticacionUsuarioRol>(entity =>
         {
             entity.HasKey(e => new { e.Idusuario, e.Idrol }).HasName("pk_autenticacion_usuario_rol");
@@ -1678,9 +1618,7 @@ public partial class ApplicationDbContext : DbContext
             entity.ToTable("tbl_inventario_asignacion_equipo", "inventario");
 
             entity.HasIndex(e => e.Fechadevolucion, "idx_inv_asignacion_devolucion");
-
             entity.HasIndex(e => e.Idempleado, "idx_inv_asignacion_empleado");
-
             entity.HasIndex(e => e.Idequipo, "idx_inv_asignacion_equipo");
 
             entity.Property(e => e.Id)
@@ -1733,7 +1671,6 @@ public partial class ApplicationDbContext : DbContext
             entity.ToTable("tbl_inventario_baja_equipo", "inventario");
 
             entity.HasIndex(e => e.Idequipo, "idx_inv_baja_equipo");
-
             entity.HasIndex(e => e.Idtipobaja, "idx_inv_baja_tipo");
 
             entity.Property(e => e.Id)
@@ -1933,11 +1870,8 @@ public partial class ApplicationDbContext : DbContext
             entity.ToTable("tbl_inventario_equipo", "inventario");
 
             entity.HasIndex(e => e.Activo, "idx_inv_equipo_activo");
-
             entity.HasIndex(e => e.Idcategoria, "idx_inv_equipo_categoria");
-
             entity.HasIndex(e => e.Idestado, "idx_inv_equipo_estado");
-
             entity.HasIndex(e => e.Numeroserie, "uq_inventario_equipo_serie").IsUnique();
 
             entity.Property(e => e.Id)
@@ -2018,7 +1952,6 @@ public partial class ApplicationDbContext : DbContext
             entity.ToTable("tbl_inventario_factura", "inventario");
 
             entity.HasIndex(e => e.Idproveedor, "idx_inv_factura_proveedor");
-
             entity.HasIndex(e => e.Numerofactura, "uq_inventario_factura_numero").IsUnique();
 
             entity.Property(e => e.Id)
@@ -2195,9 +2128,7 @@ public partial class ApplicationDbContext : DbContext
             entity.ToTable("tbl_time_report_actividad_diaria", "time_report");
 
             entity.HasIndex(e => e.Idempleado, "idx_tr_actividad_empleado");
-
             entity.HasIndex(e => e.Fechaactividad, "idx_tr_actividad_fecha");
-
             entity.HasIndex(e => e.Idproyecto, "idx_tr_actividad_proyecto");
 
             entity.Property(e => e.Id)
@@ -2259,13 +2190,14 @@ public partial class ApplicationDbContext : DbContext
                 .HasConstraintName("fk_time_report_actividad_diaria_tipo");
         });
 
-        modelBuilder.Entity<TblTimeReportEmpleadoProyecto>(entity =>
+        modelBuilder.Entity<TblTimeReportAsignacionProyecto>(entity =>
         {
-            entity.HasKey(e => e.Id).HasName("pk_time_report_empleado_proyecto");
+            entity.HasKey(e => e.Id).HasName("pk_time_report_asignacion_proyecto");
 
-            entity.ToTable("tbl_time_report_empleado_proyecto", "time_report");
+            entity.ToTable("tbl_time_report_asignacion_proyecto", "time_report");
 
-            entity.HasIndex(e => e.Idempleado, "idx_tr_empleado_proyecto_emp");
+            entity.HasIndex(e => e.Idempleado, "idx_tr_asignacion_proyecto_emp");
+            entity.HasIndex(e => e.Idlider, "idx_tr_asignacion_proyecto_lider");
 
             entity.Property(e => e.Id)
                 .UseIdentityAlwaysColumn()
@@ -2286,6 +2218,7 @@ public partial class ApplicationDbContext : DbContext
                 .HasPrecision(10, 2)
                 .HasColumnName("horasasignadas");
             entity.Property(e => e.Idempleado).HasColumnName("idempleado");
+            entity.Property(e => e.Idlider).HasColumnName("idlider");
             entity.Property(e => e.Idproveedor).HasColumnName("idproveedor");
             entity.Property(e => e.Idproyecto).HasColumnName("idproyecto");
             entity.Property(e => e.Ipcreacion)
@@ -2294,6 +2227,12 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Ipmodificacion)
                 .HasMaxLength(45)
                 .HasColumnName("ipmodificacion");
+            entity.Property(e => e.Lidercosto)
+                .HasPrecision(15, 2)
+                .HasColumnName("lidercosto");
+            entity.Property(e => e.Liderhoras)
+                .HasPrecision(10, 2)
+                .HasColumnName("liderhoras");
             entity.Property(e => e.Rolasignado)
                 .HasMaxLength(100)
                 .HasColumnName("rolasignado");
@@ -2304,14 +2243,18 @@ public partial class ApplicationDbContext : DbContext
                 .HasMaxLength(50)
                 .HasColumnName("usuariomodificacion");
 
-            entity.HasOne(d => d.IdempleadoNavigation).WithMany(p => p.TblTimeReportEmpleadoProyectos)
+            entity.HasOne(d => d.IdempleadoNavigation).WithMany(p => p.TblTimeReportAsignacionProyectos)
                 .HasForeignKey(d => d.Idempleado)
-                .HasConstraintName("fk_time_report_empleado_proyecto_empleado");
+                .HasConstraintName("fk_time_report_asignacion_proyecto_empleado");
 
-            entity.HasOne(d => d.IdproyectoNavigation).WithMany(p => p.TblTimeReportEmpleadoProyectos)
+            entity.HasOne(d => d.IdliderNavigation).WithMany(p => p.TblTimeReportAsignacionProyectos)
+                .HasForeignKey(d => d.Idlider)
+                .HasConstraintName("fk_time_report_asignacion_proyecto_lider");
+
+            entity.HasOne(d => d.IdproyectoNavigation).WithMany(p => p.TblTimeReportAsignacionProyectos)
                 .HasForeignKey(d => d.Idproyecto)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_time_report_empleado_proyecto_proyecto");
+                .HasConstraintName("fk_time_report_asignacion_proyecto_proyecto");
         });
 
         modelBuilder.Entity<TblTimeReportFeriado>(entity =>
@@ -2433,7 +2376,6 @@ public partial class ApplicationDbContext : DbContext
             entity.ToTable("tbl_time_report_permiso", "time_report");
 
             entity.HasIndex(e => e.Idempleado, "idx_tr_permiso_empleado");
-
             entity.HasIndex(e => e.Idestadoaprobacion, "idx_tr_permiso_estado");
 
             entity.Property(e => e.Id)
@@ -2624,9 +2566,6 @@ public partial class ApplicationDbContext : DbContext
             entity.ToTable("tbl_time_report_proyecto", "time_report");
 
             entity.HasIndex(e => e.Idcliente, "idx_tr_proyecto_cliente");
-
-            entity.HasIndex(e => e.Idlider, "idx_tr_proyecto_lider");
-
             entity.HasIndex(e => e.Idtipoproyecto, "idx_tr_proyecto_tipo");
 
             entity.Property(e => e.Id)
@@ -2656,7 +2595,6 @@ public partial class ApplicationDbContext : DbContext
                 .HasColumnName("horasasignadas");
             entity.Property(e => e.Idcliente).HasColumnName("idcliente");
             entity.Property(e => e.Idestadoproyecto).HasColumnName("idestadoproyecto");
-            entity.Property(e => e.Idlider).HasColumnName("idlider");
             entity.Property(e => e.Idtipoproyecto).HasColumnName("idtipoproyecto");
             entity.Property(e => e.Ipcreacion)
                 .HasMaxLength(45)
@@ -2688,10 +2626,6 @@ public partial class ApplicationDbContext : DbContext
                 .HasForeignKey(d => d.Idestadoproyecto)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_time_report_proyecto_estado");
-
-            entity.HasOne(d => d.IdliderNavigation).WithMany(p => p.TblTimeReportProyectos)
-                .HasForeignKey(d => d.Idlider)
-                .HasConstraintName("fk_time_report_proyecto_lider");
 
             entity.HasOne(d => d.IdtipoproyectoNavigation).WithMany(p => p.TblTimeReportProyectos)
                 .HasForeignKey(d => d.Idtipoproyecto)
@@ -2771,80 +2705,34 @@ public partial class ApplicationDbContext : DbContext
                 .HasColumnName("usuariomodificacion");
         });
 
-        modelBuilder.Entity<TblAutenticacionPermiso>(entity =>
-        {
-            entity.HasKey(e => e.Id).HasName("pk_autenticacion_permiso");
+        // ================================================================
+        // RELACIONES PARA SALIDA DE COLABORADORES
+        // ================================================================
 
-            entity.ToTable("tbl_autenticacion_permiso", "autenticacion");
+        // Relación: Empleado → TipoSalida (catálogo TOS)
+        modelBuilder.Entity<TblAdministracionEmpleado>()
+            .HasOne(e => e.TipoSalidaNavigation)
+            .WithMany()
+            .HasForeignKey(e => e.IdTipoSalida)
+            .OnDelete(DeleteBehavior.SetNull);
 
-            entity.HasIndex(e => e.Codigo, "uq_autenticacion_permiso_codigo").IsUnique();
+        // Relación: Empleado → CausaSalida (catálogo CAS)
+        modelBuilder.Entity<TblAdministracionEmpleado>()
+            .HasOne(e => e.CausaSalidaNavigation)
+            .WithMany()
+            .HasForeignKey(e => e.IdCausaSalida)
+            .OnDelete(DeleteBehavior.SetNull);
 
-            entity.Property(e => e.Id)
-                .UseIdentityAlwaysColumn()
-                .HasColumnName("id");
-            entity.Property(e => e.Idmodulo).HasColumnName("idmodulo");
-            entity.Property(e => e.Codigo)
-                .HasMaxLength(100)
-                .HasColumnName("codigo");
-            entity.Property(e => e.Accion)
-                .HasMaxLength(50)
-                .HasColumnName("accion");
-            entity.Property(e => e.Descripcion).HasColumnName("descripcion");
-            entity.Property(e => e.Activo)
-                .HasDefaultValue(true)
-                .HasColumnName("activo");
-            entity.Property(e => e.Usuariocreacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariocreacion");
-            entity.Property(e => e.Fechacreacion)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("fechacreacion");
-            entity.Property(e => e.Ipcreacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipcreacion");
-        });
+        // Relación: Empleado → EmpleadoReemplazo (self-referencing)
+        modelBuilder.Entity<TblAdministracionEmpleado>()
+            .HasOne(e => e.EmpleadoReemplazoNavigation)
+            .WithMany(e => e.EmpleadosReemplazados)
+            .HasForeignKey(e => e.IdEmpleadoReemplazo)
+            .OnDelete(DeleteBehavior.SetNull);
 
-        modelBuilder.Entity<TblAutenticacionRolPermiso>(entity =>
-        {
-            // PK compuesta — la tabla NO tiene columna Id surrogate
-            entity.HasKey(e => new { e.Idrol, e.Idpermiso }).HasName("pk_autenticacion_rol_permiso");
-
-            entity.ToTable("tbl_autenticacion_rol_permiso", "autenticacion");
-
-            entity.Property(e => e.Idrol).HasColumnName("idrol");
-            entity.Property(e => e.Idpermiso).HasColumnName("idpermiso");
-            entity.Property(e => e.Otorgado)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("otorgado");
-            entity.Property(e => e.Activo)
-                .HasDefaultValue(true)
-                .HasColumnName("activo");
-            entity.Property(e => e.Usuariocreacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariocreacion");
-            entity.Property(e => e.Fechacreacion)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("fechacreacion");
-            entity.Property(e => e.Ipcreacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipcreacion");
-
-            entity.HasOne(d => d.IdpermisoNavigation)
-                .WithMany(p => p.TblAutenticacionRolPermisos)
-                .HasForeignKey(d => d.Idpermiso)
-                .OnDelete(DeleteBehavior.Cascade)
-                .HasConstraintName("fk_autenticacion_rol_permiso_permiso");
-
-            entity.HasOne(d => d.IdrolNavigation)
-                .WithMany()
-                .HasForeignKey(d => d.Idrol)
-                .OnDelete(DeleteBehavior.Cascade)
-                .HasConstraintName("fk_autenticacion_rol_permiso_rol");
-        });
 
         OnModelCreatingPartial(modelBuilder);
     }
 
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder);
 }
- // Archivo modificado actualizado

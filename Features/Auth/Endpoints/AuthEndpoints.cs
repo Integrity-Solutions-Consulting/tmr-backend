@@ -17,11 +17,12 @@ public static class AuthEndpoints
         // ── Endpoints públicos (sin autenticación) ─────────────────────────
 
         group.MapPost("/register", Register)
-            .WithName("Register")
-            .WithSummary("Registrar nuevo usuario")
+            .WithName("RegistraUsuario")
+            .WithSummary("Registra usuario")
             .Produces<ApiResponse<RegisterResponse>>(StatusCodes.Status201Created)
             .Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
             .Produces<ProblemDetails>(StatusCodes.Status409Conflict);
+
 
         group.MapPost("/login", Login)
             .WithName("Login")
@@ -44,6 +45,11 @@ public static class AuthEndpoints
             .Produces(StatusCodes.Status204NoContent)
             .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
 
+        group.MapPost("/logout-rt", LogoutWithRefreshToken)
+            .WithName("LogoutWithRefreshToken")
+            .WithSummary("Cerrar sesión usando solo el Refresh Token — útil cuando el AT ya expiró")
+            .Produces(StatusCodes.Status204NoContent);
+
         group.MapPost("/revoke-token", RevokeToken)
             .WithName("RevokeToken")
             .WithSummary("Revocar toda la familia de tokens (todos los dispositivos)")
@@ -56,6 +62,13 @@ public static class AuthEndpoints
             .WithSummary("Cambia la contraseña")
             .RequireAuthorization()
             .Produces(StatusCodes.Status200OK)
+            .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
+
+        group.MapGet("/modules", GetModules)
+            .WithName("GetModules")
+            .WithSummary("Obtener módulos asignados al usuario")
+            .RequireAuthorization()
+            .Produces<ApiResponse<string[]>>(StatusCodes.Status200OK)
             .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
     }
 
@@ -74,6 +87,7 @@ public static class AuthEndpoints
             $"/api/auth/{result.Id}",
             ApiResponse<RegisterResponse>.Ok(result, "Usuario registrado correctamente. Verifique su email."));
     }
+
 
     private static async Task<IResult> Login(
         LoginRequest request,
@@ -125,6 +139,15 @@ public static class AuthEndpoints
         return Results.NoContent();
     }
 
+    private static async Task<IResult> LogoutWithRefreshToken(
+        LogoutRequest request,
+        IAuthService authService,
+        CancellationToken ct)
+    {
+        await authService.LogoutWithRefreshTokenAsync(request.RefreshToken, ct);
+        return Results.NoContent();
+    }
+
     private static async Task<IResult> RevokeToken(
         RevokeTokenRequest request,
         HttpContext context,
@@ -148,5 +171,20 @@ public static class AuthEndpoints
     {
         await authService.ChangePasswordAsync(request, context, ct);
         return Results.NoContent();
+    }
+
+    private static async Task<IResult> GetModules(
+        HttpContext context,
+        IAuthService authService,
+        CancellationToken ct)
+    {
+        var subRaw = context.User.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                  ?? context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (!int.TryParse(subRaw, out var idUsuario))
+            return Results.Unauthorized();
+
+        var modules = await authService.GetUserModulesAsync(idUsuario, ct);
+        return Results.Ok(ApiResponse<string[]>.Ok(modules, "Módulos cargados correctamente."));
     }
 }

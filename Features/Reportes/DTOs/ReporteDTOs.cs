@@ -24,7 +24,8 @@ public record ReporteHorasResponse(
     int Recursos,
     decimal Horas,
     string Mes,
-    string Anio
+    string Anio,
+    string EstadoCliente
 );
 
 // --- Reporte por Fechas ---
@@ -44,5 +45,15 @@ public record ReporteFechasResponse(
     string Recurso,
     string Cargo,
     DateTime FechaInicio,
-    DateTime FechaFin
+    DateTime FechaFin,
+    string? CodigoProyecto,
+    string? Proyecto,
+    string? EstadoProyecto,
+    string? TipoProyecto,
+    DateTime? FechaFinReal,
+    decimal? Presupuesto,
+    decimal? Horas,
+    DateTime? FechaInicioEspera,
+    DateTime? FechaFinEspera,
+    string? Observaciones
 );

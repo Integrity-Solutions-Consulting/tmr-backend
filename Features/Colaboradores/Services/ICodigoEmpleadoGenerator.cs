@@ -8,3 +8,5 @@ public interface ICodigoEmpleadoGenerator
     // Es async porque consulta la base para saber cuál es el último número usado.
     Task<string> GenerarAsync(string prefijoAsociacion, CancellationToken ct);
 }
+
+

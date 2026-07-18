@@ -19,9 +19,21 @@ public class ActualizarColaboradorRequestValidator : AbstractValidator<Actualiza
             .GreaterThan(0).WithMessage("El cargo es requerido.");
 
         RuleFor(x => x.IdModoTrabajo)
-            .GreaterThan(0).WithMessage("La modalidad es requerida.");
+            .GreaterThan(0)
+            .When(x => x.IdModoTrabajo.HasValue)
+            .WithMessage("La modalidad seleccionada no es válida.");
 
         RuleFor(x => x.IdCategoriaEmpleado)
-            .GreaterThan(0).WithMessage("La categoría es requerida.");
+            .GreaterThan(0)
+            .When(x => x.IdCategoriaEmpleado.HasValue)
+            .WithMessage("La categoría seleccionada no es válida.");
+
+        // ================================================================
+        // NUEVO: Validar reemplazo (si se envía, debe existir)
+        // ================================================================
+        RuleFor(x => x.IdEmpleadoReemplazo)
+            .GreaterThan(0)
+            .When(x => x.IdEmpleadoReemplazo.HasValue)
+            .WithMessage("El colaborador de reemplazo no es válido.");
     }
 }

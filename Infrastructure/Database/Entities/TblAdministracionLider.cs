@@ -5,8 +5,7 @@ namespace tmr_backend.Infrastructure.Database.Entities;
 
 public partial class TblAdministracionLider
 {
-    //agregue bool es interno
-    public bool EsInterno { get; set; }  // true = Interno, false = Externo
+
     public int Id { get; set; }
 
     public int Idpersona { get; set; }
@@ -31,5 +30,5 @@ public partial class TblAdministracionLider
 
     public virtual TblAdministracionCatalogoDetalle? IdtipoNavigation { get; set; }
 
-    public virtual ICollection<TblTimeReportProyecto> TblTimeReportProyectos { get; set; } = new List<TblTimeReportProyecto>();
+    public virtual ICollection<TblTimeReportAsignacionProyecto> TblTimeReportAsignacionProyectos { get; set; } = new List<TblTimeReportAsignacionProyecto>();
 }

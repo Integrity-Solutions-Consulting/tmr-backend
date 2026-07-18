@@ -1,6 +1,7 @@
 namespace tmr_backend.Features.Auth.DTOs.Request;
 
 public record RegisterRequest(
+    int IdRol,
     int IdGenero,
     int IdNacionalidad,
     int IdTipoIdentificacion,

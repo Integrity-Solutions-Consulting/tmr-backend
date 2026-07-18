@@ -5,4 +5,5 @@ namespace tmr_backend.Features.HealthCheck.Services;
 public interface IHealthCheckService
 {
     Task<HealthCheckResponse> CheckHealthAsync();
+    Task<HealthCheckLiveResponse> CheckLiveAsync();
 }

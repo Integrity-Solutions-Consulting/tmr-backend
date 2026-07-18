@@ -50,14 +50,18 @@ public sealed class ColaboradorService(
         }
 
         // Traemos los datos a memoria para poder contar proyectos por empleado.
-        var empleados = await query.ToListAsync(ct);
+        // Orden: activos primero, y dentro de cada grupo los más nuevos primero.
+        var empleados = await query
+            .OrderByDescending(e => e.Activo)
+            .ThenByDescending(e => e.Id)
+            .ToListAsync(ct);
 
         // Lista de Ids de los empleados encontrados (para el conteo de proyectos).
         var idsEmpleados = empleados.Select(e => e.Id).ToList();
 
         // Contamos los proyectos activos por empleado.
         // Traemos las asignaciones a memoria y agrupamos ahí para evitar warnings de null.
-        var asignaciones = await db.TblTimeReportEmpleadoProyectos
+        var asignaciones = await db.TblTimeReportAsignacionProyectos
             .Where(ep => ep.Idempleado != null
                       && idsEmpleados.Contains(ep.Idempleado.Value)
                       && ep.Activo)
@@ -98,18 +102,26 @@ public sealed class ColaboradorService(
         var empleado = await db.TblAdministracionEmpleados
             .Include(e => e.IdpersonaNavigation)
                 .ThenInclude(p => p.IdgeneroNavigation)
+            .Include(e => e.IdpersonaNavigation)
+                .ThenInclude(p => p.IdnacionalidadNavigation)
             .Include(e => e.IdcargoNavigation)
                 .ThenInclude(c => c!.IddepartamentoNavigation)  // departamento vía cargo
             .Include(e => e.IdempresacatalogoNavigation)       // asociación
             .Include(e => e.IdmodotrabajoNavigation)
             .Include(e => e.IdcategoriaempleadoNavigation)     // categoría
             .Include(e => e.IdtipocontratoNavigation)
+            .Include(e => e.TipoSalidaNavigation)
+            .Include(e => e.CausaSalidaNavigation)
+            .Include(e => e.EmpleadoReemplazoNavigation)
+                .ThenInclude(r => r.IdpersonaNavigation)
+            .Include(e => e.EmpleadosReemplazados)
+                .ThenInclude(er => er.IdpersonaNavigation)
             .FirstOrDefaultAsync(e => e.Id == id, ct);
 
         if (empleado is null) return null;
 
         // Traemos los proyectos asignados activos del colaborador.
-        var proyectos = await db.TblTimeReportEmpleadoProyectos
+        var proyectos = await db.TblTimeReportAsignacionProyectos
             .Include(ep => ep.IdproyectoNavigation)
                 .ThenInclude(p => p.IdclienteNavigation)
             .Include(ep => ep.IdproyectoNavigation)
@@ -122,8 +134,10 @@ public sealed class ColaboradorService(
                     ? (ep.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial
                        ?? ep.IdproyectoNavigation.IdclienteNavigation.Razonsocial ?? "")
                     : "",
-                ep.IdproyectoNavigation != null && ep.IdproyectoNavigation.IdestadoproyectoNavigation != null
-                    ? ep.IdproyectoNavigation.IdestadoproyectoNavigation.Valor
+                ep.IdproyectoNavigation != null
+                    ? (ep.IdproyectoNavigation.Activo
+                        ? ep.IdproyectoNavigation.IdestadoproyectoNavigation!.Valor
+                        : "Desactivado")
                     : ""
             ))
             .ToListAsync(ct);
@@ -134,7 +148,7 @@ public sealed class ColaboradorService(
 
 
     // =========================================================================
-    // CREAR — solo crea el Empleado, usando una Persona existente del ComboBox
+    // CREAR — crea Persona + Empleado en una transacción.
     // =========================================================================
     public async Task<int> CrearAsync(CrearColaboradorRequest request, CancellationToken ct)
     {
@@ -143,55 +157,106 @@ public sealed class ColaboradorService(
         if (!validation.IsValid)
             throw new ValidationException(validation.Errors);
 
-        // Verificar que la persona seleccionada exista.
-        var persona = await db.TblAdministracionPersonas
-            .FirstOrDefaultAsync(p => p.Id == request.IdPersona, ct);
-        if (persona is null)
-            throw new InvalidOperationException("La persona seleccionada no existe.");
+        // Verificar que no exista ya una persona con la misma identificación.
+        var existePersona = await db.TblAdministracionPersonas
+            .AnyAsync(p => p.Numeroidentificacion == request.NumeroIdentificacion.Trim(), ct);
 
-        // Verificar que esa persona NO sea ya un colaborador (evitar duplicados).
-        var yaEsColaborador = await db.TblAdministracionEmpleados
-            .AnyAsync(e => e.Idpersona == request.IdPersona, ct);
-        if (yaEsColaborador)
-            throw new InvalidOperationException("Esta persona ya es un colaborador.");
+        if (existePersona)
+            throw new InvalidOperationException("Ya existe una persona con esa identificación.");
 
-        // Obtener el prefijo de la asociación para generar el código.
-        var asociacion = await db.TblAdministracionCatalogoDetalles
+        // Obtener la empresa para generar el código de empleado.
+        var empresa = await db.TblAdministracionCatalogoDetalles
             .FirstOrDefaultAsync(c => c.Id == request.IdEmpresaCatalogo, ct);
-        if (asociacion is null)
-            throw new InvalidOperationException("La asociación seleccionada no existe.");
 
-        // Generar el código de empleado 
-        var codigoEmpleado = await codigoGenerator.GenerarAsync(asociacion.Codigovalor, ct);
+        if (empresa is null)
+            throw new InvalidOperationException("La empresa seleccionada no existe.");
 
-        // Crear el empleado 
-        var empleado = new TblAdministracionEmpleado
+        // Usamos transacción para evitar que quede una Persona creada sin Empleado.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+
+        try
         {
-            Idpersona = request.IdPersona,
-            Codigoempleado = codigoEmpleado,
-            Idcargo = request.IdCargo,
-            Idmodotrabajo = request.IdModoTrabajo,
-            Idcategoriaempleado = request.IdCategoriaEmpleado,
-            Idempresacatalogo = request.IdEmpresaCatalogo,
-            Idtipocontrato = request.IdTipoContrato,
-            Fechaingreso = request.FechaIngreso,
-            Aniosexperiencia = request.AniosExperiencia,
-            Activo = true,
-            Usuariocreacion = UsuarioSistema,
-            Ipcreacion = IpSistema
-        };
+            // Crear la persona con los datos ingresados desde el modal.
+            var persona = new TblAdministracionPersona
+            {
+                Numeroidentificacion = request.NumeroIdentificacion.Trim(),
+                Idtipoidentificacion = request.TipoPersona == "NATURAL"
+                    ? request.IdTipoIdentificacion
+                    : null,
+                Idgenero = request.IdGenero,
+                Idnacionalidad = request.IdNacionalidad,
+                Tipopersona = request.TipoPersona,
+                Nombres = request.Nombres.Trim(),
+                Apellidos = request.Apellidos.Trim(),
+                Fechanacimiento = request.FechaNacimiento,
+                Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim(),
+                Telefono = string.IsNullOrWhiteSpace(request.Telefono) ? null : request.Telefono.Trim(),
+                Direccion = string.IsNullOrWhiteSpace(request.Direccion) ? null : request.Direccion.Trim(),
+                Activo = true,
+                Usuariocreacion = UsuarioSistema,
+                Ipcreacion = IpSistema
+            };
 
-        await db.TblAdministracionEmpleados.AddAsync(empleado, ct);
-        await db.SaveChangesAsync(ct);
-        // El trigger de auditoría se dispara solo al insertar el empleado.
+            await db.TblAdministracionPersonas.AddAsync(persona, ct);
+            await db.SaveChangesAsync(ct);
 
-        return empleado.Id;
+            // Generar el código de empleado con el prefijo de la empresa.
+            var codigoEmpleado = await codigoGenerator.GenerarAsync(empresa.Codigovalor, ct);
+
+            // Crear el empleado usando el Id de la persona recién creada.
+            var empleado = new TblAdministracionEmpleado
+            {
+                Idpersona = persona.Id,
+                Codigoempleado = codigoEmpleado,
+                Idcargo = request.IdCargo,
+                Idmodotrabajo = request.IdModoTrabajo,
+                Idcategoriaempleado = request.IdCategoriaEmpleado,
+                Idempresacatalogo = request.IdEmpresaCatalogo,
+                Idtipocontrato = request.IdTipoContrato,
+                Fechaingreso = request.FechaIngreso,
+                Aniosexperiencia = request.AniosExperiencia,
+                Activo = true,
+                Usuariocreacion = UsuarioSistema,
+                Ipcreacion = IpSistema
+            };
+
+            await db.TblAdministracionEmpleados.AddAsync(empleado, ct);
+            await db.SaveChangesAsync(ct);
+
+            // ================================================================
+            // NUEVO: Si se envió un reemplazo, actualizar el inactivo
+            // ================================================================
+            if (request.IdEmpleadoReemplazo.HasValue)
+            {
+                var inactivo = await db.TblAdministracionEmpleados
+                    .FirstOrDefaultAsync(e => e.Id == request.IdEmpleadoReemplazo.Value && e.Activo == false, ct);
+
+                if (inactivo != null)
+                {
+                    inactivo.IdEmpleadoReemplazo = empleado.Id;  // El nuevo colaborador reemplaza al inactivo
+                    inactivo.Usuariomodificacion = UsuarioSistema;
+                    inactivo.Fechamodificacion = DateTime.UtcNow;
+                    inactivo.Ipmodificacion = IpSistema;
+                    await db.SaveChangesAsync(ct);
+                }
+            }
+
+            // Si todo salió bien, confirmamos Persona + Empleado.
+            await transaction.CommitAsync(ct);
+
+            return empleado.Id;
+        }
+        catch
+        {
+            // Si falla algo, revertimos para no dejar datos incompletos.
+            await transaction.RollbackAsync(ct);
+            throw;
+        }
     }
 
 
     // =========================================================================
-    // ACTUALIZAR — solo modifica los datos laborales del empleado.
-    // Los datos personales NO se tocan (se gestionan en el módulo de Personas).
+    // ACTUALIZAR — modifica datos personales de Persona + datos laborales de Empleado.
     // =========================================================================
     public async Task ActualizarAsync(int id, ActualizarColaboradorRequest request, CancellationToken ct)
     {
@@ -200,14 +265,60 @@ public sealed class ColaboradorService(
         if (!validation.IsValid)
             throw new ValidationException(validation.Errors);
 
-        // Buscar el empleado.
+        // Buscar el empleado junto con su Persona.
         var empleado = await db.TblAdministracionEmpleados
+            .Include(e => e.IdpersonaNavigation)
             .FirstOrDefaultAsync(e => e.Id == id, ct);
 
         if (empleado is null)
             throw new InvalidOperationException("El colaborador no existe.");
 
-        // Actualizar solo los datos laborales.
+        if (empleado.IdpersonaNavigation is null)
+            throw new InvalidOperationException("El colaborador no tiene una persona asociada.");
+
+        var persona = empleado.IdpersonaNavigation;
+
+        // ── Actualizar datos personales ──────────────────────────────
+        var tipoPersona = string.IsNullOrWhiteSpace(request.TipoPersona)
+            ? persona.Tipopersona
+            : request.TipoPersona.Trim().ToUpper();
+
+        persona.Tipopersona = tipoPersona;
+
+        persona.Idtipoidentificacion = tipoPersona == "JURIDICA"
+            ? null
+            : request.IdTipoIdentificacion ?? persona.Idtipoidentificacion;
+
+        if (!string.IsNullOrWhiteSpace(request.NumeroIdentificacion))
+            persona.Numeroidentificacion = request.NumeroIdentificacion.Trim();
+
+        if (!string.IsNullOrWhiteSpace(request.Nombres))
+            persona.Nombres = request.Nombres.Trim();
+
+        if (!string.IsNullOrWhiteSpace(request.Apellidos))
+            persona.Apellidos = request.Apellidos.Trim();
+
+        persona.Fechanacimiento = request.FechaNacimiento;
+        persona.Idgenero = request.IdGenero;
+        persona.Idnacionalidad = request.IdNacionalidad;
+
+        persona.Email = string.IsNullOrWhiteSpace(request.Email)
+            ? null
+            : request.Email.Trim();
+
+        persona.Telefono = string.IsNullOrWhiteSpace(request.Telefono)
+            ? null
+            : request.Telefono.Trim();
+
+        persona.Direccion = string.IsNullOrWhiteSpace(request.Direccion)
+            ? null
+            : request.Direccion.Trim();
+
+        persona.Usuariomodificacion = UsuarioSistema;
+        persona.Fechamodificacion = DateTime.UtcNow;
+        persona.Ipmodificacion = IpSistema;
+
+        // ── Actualizar datos laborales ───────────────────────────────
         empleado.Idcargo = request.IdCargo;
         empleado.Idmodotrabajo = request.IdModoTrabajo;
         empleado.Idcategoriaempleado = request.IdCategoriaEmpleado;
@@ -215,9 +326,45 @@ public sealed class ColaboradorService(
         empleado.Fechaingreso = request.FechaIngreso;
         empleado.Aniosexperiencia = request.AniosExperiencia;
         empleado.Activo = request.Activo;
+
+        // Empresa / asociación.
+        if (request.IdEmpresaCatalogo.HasValue)
+            empleado.Idempresacatalogo = request.IdEmpresaCatalogo.Value;
+
         empleado.Usuariomodificacion = UsuarioSistema;
         empleado.Fechamodificacion = DateTime.UtcNow;
         empleado.Ipmodificacion = IpSistema;
+
+        // ================================================================
+        // NUEVO: Manejar el reemplazo en edición
+        // ================================================================
+        // Buscar el reemplazo actual (el inactivo que tiene este empleado como reemplazo)
+        var reemplazoActual = await db.TblAdministracionEmpleados
+            .FirstOrDefaultAsync(e => e.IdEmpleadoReemplazo == id && e.Activo == false, ct);
+
+        // Si hay un reemplazo actual y es diferente al nuevo, limpiarlo
+        if (reemplazoActual != null && (request.IdEmpleadoReemplazo == null || reemplazoActual.Id != request.IdEmpleadoReemplazo))
+        {
+            reemplazoActual.IdEmpleadoReemplazo = null;
+            reemplazoActual.Usuariomodificacion = UsuarioSistema;
+            reemplazoActual.Fechamodificacion = DateTime.UtcNow;
+            reemplazoActual.Ipmodificacion = IpSistema;
+        }
+
+        // Si se envió un nuevo reemplazo, asignarlo
+        if (request.IdEmpleadoReemplazo.HasValue)
+        {
+            var inactivo = await db.TblAdministracionEmpleados
+                .FirstOrDefaultAsync(e => e.Id == request.IdEmpleadoReemplazo.Value && e.Activo == false, ct);
+
+            if (inactivo != null && inactivo.Id != id)
+            {
+                inactivo.IdEmpleadoReemplazo = id;
+                inactivo.Usuariomodificacion = UsuarioSistema;
+                inactivo.Fechamodificacion = DateTime.UtcNow;
+                inactivo.Ipmodificacion = IpSistema;
+            }
+        }
 
         await db.SaveChangesAsync(ct);
         // El trigger de auditoría de UPDATE se dispara solo.
@@ -240,6 +387,60 @@ public sealed class ColaboradorService(
         empleado.Usuariomodificacion = UsuarioSistema;
         empleado.Fechamodificacion = DateTime.UtcNow;
         empleado.Ipmodificacion = IpSistema;
+
+        await db.SaveChangesAsync(ct);
+    }
+
+
+    // ================================================================
+    // REGISTRAR SALIDA
+    // ================================================================
+    public async Task RegistrarSalidaAsync(int id, RegistrarSalidaRequest request, CancellationToken ct)
+    {
+        var empleado = await db.TblAdministracionEmpleados
+            .Include(e => e.IdpersonaNavigation)
+            .FirstOrDefaultAsync(e => e.Id == id, ct);
+
+        if (empleado is null)
+            throw new InvalidOperationException("El colaborador no existe.");
+
+        if (!empleado.Activo)
+            throw new InvalidOperationException("El colaborador ya está inactivo.");
+
+        if (request.IdEmpleadoReemplazo.HasValue)
+        {
+            var reemplazo = await db.TblAdministracionEmpleados
+                .FirstOrDefaultAsync(e => e.Id == request.IdEmpleadoReemplazo.Value, ct);
+
+            if (reemplazo is null)
+                throw new InvalidOperationException("El colaborador de reemplazo no existe.");
+
+            if (reemplazo.Id == id)
+                throw new InvalidOperationException("Un colaborador no puede reemplazarse a sí mismo.");
+        }
+
+        var tipoSalida = await db.TblAdministracionCatalogoDetalles
+            .FirstOrDefaultAsync(d => d.Id == request.IdTipoSalida, ct);
+
+        if (tipoSalida is null)
+            throw new InvalidOperationException("El tipo de salida seleccionado no es válido.");
+
+        var causaSalida = await db.TblAdministracionCatalogoDetalles
+            .FirstOrDefaultAsync(d => d.Id == request.IdCausaSalida, ct);
+
+        if (causaSalida is null)
+            throw new InvalidOperationException("La causa de salida seleccionada no es válida.");
+
+        empleado.Activo = false;
+        empleado.Fechaterminacion = request.FechaSalida;
+        empleado.IdTipoSalida = request.IdTipoSalida;
+        empleado.IdCausaSalida = request.IdCausaSalida;
+        empleado.ComentarioSalida = request.Comentario;
+        empleado.IdEmpleadoReemplazo = request.IdEmpleadoReemplazo;
+
+        empleado.Usuariomodificacion = "SYSTEM";
+        empleado.Fechamodificacion = DateTime.UtcNow;
+        empleado.Ipmodificacion = "127.0.0.1";
 
         await db.SaveChangesAsync(ct);
     }

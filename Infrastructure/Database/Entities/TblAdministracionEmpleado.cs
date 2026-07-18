@@ -46,6 +46,14 @@ public partial class TblAdministracionEmpleado
 
     public string? Ipmodificacion { get; set; }
 
+    public int? IdTipoSalida { get; set; }
+
+    public int? IdCausaSalida { get; set; }
+
+    public string? ComentarioSalida { get; set; }
+
+    public int? IdEmpleadoReemplazo { get; set; }
+
     public virtual TblAdministracionCargo? IdcargoNavigation { get; set; }
 
     public virtual TblAdministracionCatalogoDetalle? IdcategoriaempleadoNavigation { get; set; }
@@ -58,6 +66,14 @@ public partial class TblAdministracionEmpleado
 
     public virtual TblAdministracionCatalogoDetalle? IdtipocontratoNavigation { get; set; }
 
+    public virtual TblAdministracionCatalogoDetalle? TipoSalidaNavigation { get; set; }
+    
+    public virtual TblAdministracionCatalogoDetalle? CausaSalidaNavigation { get; set; }
+   
+    public virtual TblAdministracionEmpleado? EmpleadoReemplazoNavigation { get; set; }
+   
+    public virtual ICollection<TblAdministracionEmpleado>? EmpleadosReemplazados { get; set; }
+
     public virtual ICollection<TblAdministracionRegistroAsignacion> TblAdministracionRegistroAsignacions { get; set; } = new List<TblAdministracionRegistroAsignacion>();
 
     public virtual ICollection<TblInventarioAsignacionEquipo> TblInventarioAsignacionEquipos { get; set; } = new List<TblInventarioAsignacionEquipo>();
@@ -66,7 +82,7 @@ public partial class TblAdministracionEmpleado
 
     public virtual ICollection<TblTimeReportActividadDiarium> TblTimeReportActividadDiariumIdempleadoNavigations { get; set; } = new List<TblTimeReportActividadDiarium>();
 
-    public virtual ICollection<TblTimeReportEmpleadoProyecto> TblTimeReportEmpleadoProyectos { get; set; } = new List<TblTimeReportEmpleadoProyecto>();
+    public virtual ICollection<TblTimeReportAsignacionProyecto> TblTimeReportAsignacionProyectos { get; set; } = new List<TblTimeReportAsignacionProyecto>();
 
     public virtual ICollection<TblTimeReportHomologacionBanco> TblTimeReportHomologacionBancos { get; set; } = new List<TblTimeReportHomologacionBanco>();
 

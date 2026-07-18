@@ -9,6 +9,7 @@ public record LiderResponse(
     string Tipopersona,
     int? Idtipo,
     string? TipoNombre,
+    string NumeroIdentificacion,
     bool Activo,
     DateTime Fechacreacion
 );

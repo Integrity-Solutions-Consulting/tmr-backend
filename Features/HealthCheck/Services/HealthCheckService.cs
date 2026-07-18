@@ -68,4 +68,33 @@ public class HealthCheckService : IHealthCheckService
             return response;
         }
     }
+
+    public async Task<HealthCheckLiveResponse> CheckLiveAsync()
+    {
+        var response = new HealthCheckLiveResponse();
+
+        try
+        {
+            // Verificar conexión rápida a la base de datos (sin contar registros)
+            var isConnected = await _context.Database.CanConnectAsync();
+
+            if (!isConnected)
+            {
+                response.Status = "Unhealthy";
+                response.Message = "Aplicación no disponible - sin acceso a base de datos";
+                return response;
+            }
+
+            response.Status = "Healthy";
+            response.Message = "Aplicación funcionando correctamente";
+            return response;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Error en liveness check: {ex.Message}");
+            response.Status = "Unhealthy";
+            response.Message = "Aplicación no disponible - error interno";
+            return response;
+        }
+    }
 }

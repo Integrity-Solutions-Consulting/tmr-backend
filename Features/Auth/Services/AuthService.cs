@@ -45,6 +45,11 @@ public sealed class AuthService(
         if (existe)
             throw new ConflictException("El email ya está registrado.");
 
+        var rolExiste = await db.TblAutenticacionRols
+            .AnyAsync(r => r.Id == request.IdRol && r.Activo, ct);
+        if (!rolExiste)
+            throw new ValidationException("El rol enviado no existe o no esta activo.");
+
         var hash = passwordHasher.Hash(contraseniaDefecto);
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -92,7 +97,7 @@ public sealed class AuthService(
             var usuarioRol = new TblAutenticacionUsuarioRol
             {
                 Idusuario       = usuario.Id,
-                Idrol           = 4, // Rol Colaborador por defecto
+                Idrol           = request.IdRol,
                 Asignadoen      = fecha,
                 Activo          = true,
                 Usuariocreacion = request.Usuario,
@@ -142,6 +147,7 @@ public sealed class AuthService(
         var normalizedUser = request.User.ToLowerInvariant();
 
         var usuario = await db.TblAutenticacionUsuarios
+            .Include(u => u.IdpersonaNavigation)
             .FirstOrDefaultAsync(u => u.Email == normalizedUser && u.Activo, ct)
             ?? throw new UnauthorizedException("Credenciales inválidas.", "INVALID_CREDENTIALS");
         
@@ -186,7 +192,7 @@ public sealed class AuthService(
             var masAntigua = sesionesActivas.First();
             masAntigua.Estaactiva          = false;
             masAntigua.Revocadofecha       = fecha;
-            masAntigua.Revocadorazon       = RevocacionRazonEnum.SESSION_LIMIT;
+            masAntigua.Revocadorazon       = RevocacionRazonEnum.SESSION_LIMIT.ToString();
             masAntigua.Usuariomodificacion = usuarioModificacion;
             masAntigua.Fechamodificacion   = fecha;
 
@@ -216,7 +222,7 @@ public sealed class AuthService(
         await db.SaveChangesAsync(ct);
 
         // Generar AT + RT
-        var (at, _)                    = tokenService.GenerateAccessToken(usuario, roles);
+        var (at, _, atExpiry)          = tokenService.GenerateAccessToken(usuario, roles);
         var familyId                   = Guid.NewGuid();
         var (rawRt, rtHash, rtExpiry)  = tokenService.GenerateRefreshTokenRaw();
 
@@ -236,7 +242,12 @@ public sealed class AuthService(
         db.TblAutenticacionRefreshTokens.Add(refreshToken);
         await db.SaveChangesAsync(ct);
 
-        return new AuthResponse(at, rawRt, rtExpiry, familyId, usuario.ToUserResponse());
+        var idEmpleado = await db.TblAdministracionEmpleados
+            .Where(e => e.Idpersona == usuario.Idpersona && e.Activo)
+            .Select(e => (int?)e.Id)
+            .FirstOrDefaultAsync(ct);
+
+        return new AuthResponse(at, rawRt, atExpiry, familyId, usuario.ToUserResponse(idEmpleado));
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -267,7 +278,11 @@ public sealed class AuthService(
             throw new UnauthorizedException("Refresh token revocado.", "TOKEN_REVOKED");
 
         if (rt.Fechaexpiracion < DateTime.UtcNow)
+        {
+            // Mecanismo 2: desactivar la sesión cuando el RT ya expiró, ya no puede extenderse
+            await DeactivateSessionAsync(rt.Idsesion, RevocacionRazonEnum.EXPIRED, ct);
             throw new UnauthorizedException("Refresh token expirado.", "TOKEN_EXPIRED");
+        }
 
         // Idle + Absolute timeout — verificar antes de marcar RT como usado para evitar falso reuse attack
         var sesion = await db.TblAutenticacionSesions.FirstOrDefaultAsync(s => s.Id == rt.Idsesion, ct);
@@ -322,6 +337,7 @@ public sealed class AuthService(
         await db.SaveChangesAsync(ct);
 
         var usuario = await db.TblAutenticacionUsuarios
+            .Include(u => u.IdpersonaNavigation)
             .FirstOrDefaultAsync(u => u.Id == rt.Idusuario && u.Activo, ct)
             ?? throw new UnauthorizedException("Usuario no encontrado o inactivo.");
 
@@ -339,7 +355,7 @@ public sealed class AuthService(
         }
 
         // Generar nuevo par AT + RT con el MISMO familyId
-        var (at, _)                   = tokenService.GenerateAccessToken(usuario, roles);
+        var (at, _, atExpiry)         = tokenService.GenerateAccessToken(usuario, roles);
         var (rawRt, rtHash, rtExpiry) = tokenService.GenerateRefreshTokenRaw();
 
         var newRt = new TblAutenticacionRefreshToken
@@ -358,7 +374,12 @@ public sealed class AuthService(
         db.TblAutenticacionRefreshTokens.Add(newRt);
         await db.SaveChangesAsync(ct);
 
-        return new AuthResponse(at, rawRt, rtExpiry, rt.Familiatoken, usuario.ToUserResponse());
+        var idEmpleado = await db.TblAdministracionEmpleados
+            .Where(e => e.Idpersona == usuario.Idpersona && e.Activo)
+            .Select(e => (int?)e.Id)
+            .FirstOrDefaultAsync(ct);
+
+        return new AuthResponse(at, rawRt, atExpiry, rt.Familiatoken, usuario.ToUserResponse(idEmpleado));
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -427,7 +448,7 @@ public sealed class AuthService(
             sesion.Estaactiva          = false;
             sesion.Activo              = false;
             sesion.Revocadofecha       = fecha;
-            sesion.Revocadorazon       = RevocacionRazonEnum.LOGOUT;
+            sesion.Revocadorazon       = RevocacionRazonEnum.LOGOUT.ToString();
             sesion.Usuariomodificacion = usuarioEmail;
             sesion.Fechamodificacion   = fecha;
             sesion.Ipmodificacion      = httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? "unknown";
@@ -469,7 +490,7 @@ public sealed class AuthService(
             throw new UnauthorizedException("Usuario no encontrado.");
 
         if (!passwordHasher.Verify(request.OldPassword, user.Hashpassword))
-            throw new UnauthorizedException("La contraseña actual es incorrecta.");
+            throw new ArgumentException("La contraseña actual es incorrecta.");
 
         var passwordHistory = await db.TblAutenticacionPasswordHistorials
             .Where(ph => ph.Idusuario == userId)
@@ -510,8 +531,62 @@ public sealed class AuthService(
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // LOGOUT WITH REFRESH TOKEN — cierra sesión sin necesitar AT válido (Mecanismo 1)
+    // ─────────────────────────────────────────────────────────────────────────
+    public async Task LogoutWithRefreshTokenAsync(string? rawRefreshToken, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(rawRefreshToken))
+            return; // silent — no hay RT, nada que cerrar
+
+        var hash = tokenService.HashToken(rawRefreshToken);
+
+        var rt = await db.TblAutenticacionRefreshTokens
+            .FirstOrDefaultAsync(r => r.Tokenhash == hash, ct);
+
+        if (rt is null)
+            return; // silent — RT desconocido, nada que cerrar
+
+        // Marcar el RT como revocado si aún no lo está
+        if (!rt.Estarevocado)
+        {
+            rt.Estarevocado = true;
+            rt.Activo       = false;
+        }
+
+        // Desactivar la sesión asociada (independientemente del estado del RT)
+        await DeactivateSessionAsync(rt.Idsesion, RevocacionRazonEnum.LOGOUT, ct);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Helpers privados
     // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Desactiva una sesión específica por su ID, marcando Estaactiva = false y Activo = false.
+    /// No lanza excepciones si la sesión no existe o ya está inactiva.
+    /// </summary>
+    private async Task DeactivateSessionAsync(long sessionId, RevocacionRazonEnum razon, CancellationToken ct)
+    {
+        var sesion = await db.TblAutenticacionSesions
+            .FirstOrDefaultAsync(s => s.Id == sessionId, ct);
+
+        if (sesion is null || (!sesion.Estaactiva && !sesion.Activo))
+        {
+            await db.SaveChangesAsync(ct); // guarda cualquier cambio pendiente (ej. RT revocado)
+            return;
+        }
+
+        var fecha = DateTime.UtcNow;
+        sesion.Estaactiva          = false;
+        sesion.Activo              = false;
+        sesion.Revocadofecha       = fecha;
+        sesion.Revocadorazon       = razon.ToString(); // Convertir enum a string
+        sesion.Usuariomodificacion = "system";
+        sesion.Fechamodificacion   = fecha;
+        sesion.Ipmodificacion      = httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? "system";
+
+        await db.SaveChangesAsync(ct);
+    }
     private async Task RevokeTokenFamilyInternalAsync(Guid familyId, int idUser, RevocacionRazonEnum razon, CancellationToken ct)
     {
         var usuario = await db.TblAutenticacionUsuarios
@@ -544,7 +619,7 @@ public sealed class AuthService(
             sesion.Estaactiva          = false;
             sesion.Activo              = false;
             sesion.Revocadofecha       = fecha;
-            sesion.Revocadorazon       = razon;
+            sesion.Revocadorazon       = razon.ToString();
             sesion.Usuariomodificacion = usuarioEmail;
             sesion.Fechamodificacion   = fecha;
         }
@@ -558,4 +633,23 @@ public sealed class AuthService(
             .Include(ur => ur.IdrolNavigation)
             .Select(ur => ur.IdrolNavigation.Nombre)
             .ToListAsync(ct);
+
+    public async Task<string[]> GetUserModulesAsync(int idUsuario, CancellationToken ct)
+    {
+        var roleIds = await db.TblAutenticacionUsuarioRols
+            .Where(ur => ur.Idusuario == idUsuario && ur.Activo)
+            .Select(ur => ur.Idrol)
+            .ToListAsync(ct);
+
+        var query = from rp in db.TblAutenticacionRolPermisos
+                    join p in db.TblAutenticacionPermisos on rp.Idpermiso equals p.Id
+                    join m in db.TblAutenticacionModulos on p.Idmodulo equals m.Id
+                    where roleIds.Contains(rp.Idrol)
+                       && rp.Activo
+                       && p.Activo
+                       && m.Activo
+                    select m.Nombremodulo;
+
+        return await query.Distinct().ToArrayAsync(ct);
+    }
 }

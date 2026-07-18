@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using tmr_backend.Features.Configuracion.DiasFestivos.Application;
 using tmr_backend.Features.Configuracion.DiasFestivos.DTOs;
 
@@ -20,7 +22,7 @@ public static class DiasFestivosEndpoints
             return Results.Ok(result);
         })
         .WithName("ObtenerDiasFestivos")
-        .WithDescription("Obtiene la lista de todos los días festivos activos.");
+        .WithDescription("Obtiene la lista de todos los dias festivos activos.");
 
         // GET /api/configuracion/dias-festivos/{id}
         group.MapGet("/{id:int}", async (int id, [FromServices] IDiasFestivosService service) =>
@@ -32,11 +34,11 @@ public static class DiasFestivosEndpoints
         .WithDescription("Obtiene el detalle de un feriado por su ID.");
 
         // POST /api/configuracion/dias-festivos
-        group.MapPost("/", async ([FromBody] CreateFeriadoRequest request, [FromServices] IDiasFestivosService service) =>
+        group.MapPost("/", async ([FromBody] CreateFeriadoRequest request, HttpContext context, [FromServices] IDiasFestivosService service) =>
         {
-            var usuarioActual = "SYSTEM";
-            var ipActual = "127.0.0.1";
-            
+            var usuarioActual = ObtenerUsuarioActual(context);
+            var ipActual = ObtenerIpActual(context);
+
             var result = await service.CrearFeriadoAsync(request, usuarioActual, ipActual);
             return Results.Ok(result);
         })
@@ -44,10 +46,10 @@ public static class DiasFestivosEndpoints
         .WithDescription("Crea un nuevo feriado.");
 
         // PUT /api/configuracion/dias-festivos/{id}
-        group.MapPut("/{id:int}", async (int id, [FromBody] UpdateFeriadoRequest request, [FromServices] IDiasFestivosService service) =>
+        group.MapPut("/{id:int}", async (int id, [FromBody] UpdateFeriadoRequest request, HttpContext context, [FromServices] IDiasFestivosService service) =>
         {
-            var usuarioActual = "SYSTEM";
-            var ipActual = "127.0.0.1";
+            var usuarioActual = ObtenerUsuarioActual(context);
+            var ipActual = ObtenerIpActual(context);
 
             var result = await service.ActualizarFeriadoAsync(id, request, usuarioActual, ipActual);
             return Results.Ok(result);
@@ -56,15 +58,37 @@ public static class DiasFestivosEndpoints
         .WithDescription("Actualiza un feriado existente.");
 
         // DELETE /api/configuracion/dias-festivos/{id}
-        group.MapDelete("/{id:int}", async (int id, [FromServices] IDiasFestivosService service) =>
+        group.MapDelete("/{id:int}", async (int id, HttpContext context, [FromServices] IDiasFestivosService service) =>
         {
-            var usuarioActual = "SYSTEM";
-            var ipActual = "127.0.0.1";
+            var usuarioActual = ObtenerUsuarioActual(context);
+            var ipActual = ObtenerIpActual(context);
 
             var result = await service.EliminarFeriadoAsync(id, usuarioActual, ipActual);
             return Results.Ok(result);
         })
         .WithName("EliminarDiaFestivo")
-        .WithDescription("Elimina (desactiva) lógicamente un feriado.");
+        .WithDescription("Elimina logicamente un feriado.");
+    }
+
+    private static string ObtenerUsuarioActual(HttpContext context)
+    {
+        var email = context.User.FindFirstValue(JwtRegisteredClaimNames.Email)
+            ?? context.User.FindFirstValue(ClaimTypes.Email);
+
+        if (!string.IsNullOrWhiteSpace(email))
+            return email.Contains('@') ? email.Split('@')[0] : email;
+
+        return context.User.FindFirstValue(JwtRegisteredClaimNames.Sub)
+            ?? context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? "SYSTEM";
+    }
+
+    private static string ObtenerIpActual(HttpContext context)
+    {
+        var forwardedFor = context.Request.Headers["X-Forwarded-For"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(forwardedFor))
+            return forwardedFor.Split(',')[0].Trim();
+
+        return context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
     }
 }
