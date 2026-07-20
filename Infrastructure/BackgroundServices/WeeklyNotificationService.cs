@@ -201,14 +201,15 @@ public sealed class WeeklyNotificationService : BackgroundService
                 ));
 
                 var subject = "Recordatorio: Registro de horas pendientes";
-                var frontendUrl = _configuration["EmailSettings:FrontendUrl"] ?? "http://localhost:3000";
+
                 var body = $@"
                 <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;'>
                     <div style='text-align: center; margin-bottom: 24px;'>
+                        <img src='cid:logo_isc' alt='Integrity Solutions' style='max-height: 48px; width: auto; margin-bottom: 8px;' />
                         <h2 style='color: #163572; margin: 0;'>ISC Time Report</h2>
                         <p style='color: #64748b; margin: 4px 0 0 0;'>Recordatorio de Horas Pendientes</p>
                     </div>
-                    <div style='background-color: #f8fafc; padding: 16px; border-radius: 6px; margin-bottom: 24px; border-left: 4px solid #ef4444;'>
+                    <div style='background-color: #f8fafc; padding: 16px; border-radius: 6px; margin-bottom: 20px; border-left: 4px solid #ef4444;'>
                         <p style='margin: 0; font-size: 16px; color: #1e293b;'>Hola <strong>{nombreColaborador}</strong>,</p>
                         <p style='margin: 12px 0 0 0; font-size: 14px; color: #475569; line-height: 1.5;'>
                             Se ha detectado que tienes un registro de horas pendiente en el sistema.
@@ -217,13 +218,15 @@ public sealed class WeeklyNotificationService : BackgroundService
                             Horas faltantes: <strong style='color: #ef4444; font-size: 16px;'>{faltantes} horas</strong>
                         </p>
                     </div>
-                    <p style='font-size: 14px; color: #475569; line-height: 1.5;'>
-                        Por favor, ingresa a la plataforma de Time Report a la brevedad para completar tus registros diarios de actividades.
-                    </p>
-                    <div style='text-align: center; margin: 28px 0 12px 0;'>
-                        <a href='{frontendUrl}' style='background-color: #163572; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 4px; font-weight: bold; font-size: 14px;'>Ir a Time Report</a>
+                    <div style='background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 16px; margin-bottom: 20px;'>
+                        <h4 style='margin: 0 0 10px 0; font-size: 14px; color: #163572;'>📌 Pasos para completar tu registro:</h4>
+                        <ol style='margin: 0; padding-left: 20px; font-size: 13px; color: #475569; line-height: 1.8;'>
+                            <li>Abre la plataforma <strong>TMR</strong> en tu navegador habitual.</li>
+                            <li>Ingresa al módulo <strong>Time Report</strong> &gt; <strong>Actividades</strong>.</li>
+                            <li>Registra y guarda tus horas pendientes para el proyecto correspondiente.</li>
+                        </ol>
                     </div>
-                    <hr style='border: 0; border-top: 1px solid #e5e7eb; margin: 24px 0;' />
+                    <hr style='border: 0; border-top: 1px solid #e5e7eb; margin: 20px 0;' />
                     <p style='font-size: 11px; color: #94a3b8; text-align: center; margin: 0;'>
                         Este es un correo automático, por favor no respondas a este mensaje.
                     </p>
