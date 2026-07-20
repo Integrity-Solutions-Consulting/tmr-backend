@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.2](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.0.1...v1.0.2) (2026-07-20)
+
+
+### Bug Fixes
+
+* **dashboard/email:** plantilla de correo con logo CID e instrucciones (AD) ([dfb913e](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/dfb913e215be3af4b4e140d2a240e470611deaf4))
+* plantilla de correo con logo CID e instruccione… ([4b9353b](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/4b9353b2781900337be2db9c2b29f939a9f45a91))
+* test actions desde develop hasta master ([3308767](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/3308767051535066640ad76f836235d38ee16f33))
+* test actions desde develop hasta master ([a397d16](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/a397d16678ab216d47875d8d656907eb108d51d3))
+
 ## [1.0.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.0.0...v1.0.1) (2026-07-18)
 
 
