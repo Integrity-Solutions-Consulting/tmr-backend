@@ -52,6 +52,19 @@ public class EmailService : IEmailService
             {
                 HtmlBody = htmlBody
             };
+
+            var logoPath = Path.Combine(AppContext.BaseDirectory, "Resources", "logo-isc.png");
+            if (!File.Exists(logoPath))
+            {
+                logoPath = Path.Combine(Directory.GetCurrentDirectory(), "Resources", "logo-isc.png");
+            }
+
+            if (File.Exists(logoPath))
+            {
+                var image = bodyBuilder.LinkedResources.Add(logoPath);
+                image.ContentId = "logo_isc";
+            }
+
             message.Body = bodyBuilder.ToMessageBody();
 
             // Configurar cabeceras de identificación de agente limpias
