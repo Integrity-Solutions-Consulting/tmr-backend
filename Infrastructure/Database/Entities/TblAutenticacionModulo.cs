@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace tmr_backend.Infrastructure.Database.Entities;
@@ -30,6 +30,4 @@ public partial class TblAutenticacionModulo
     public string Ipcreacion { get; set; } = null!;
 
     public string? Ipmodificacion { get; set; }
-
-    public virtual ICollection<TblAutenticacionUsuarioModulo> TblAutenticacionUsuarioModulos { get; set; } = new List<TblAutenticacionUsuarioModulo>();
 }

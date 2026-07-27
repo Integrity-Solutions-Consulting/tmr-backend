@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace tmr_backend.Infrastructure.Database.Entities;
@@ -54,14 +54,6 @@ public partial class TblAdministracionCatalogoDetalle
     public virtual ICollection<TblAdministracionPersona> TblAdministracionPersonaIdnacionalidadNavigations { get; set; } = new List<TblAdministracionPersona>();
 
     public virtual ICollection<TblAdministracionPersona> TblAdministracionPersonaIdtipoidentificacionNavigations { get; set; } = new List<TblAdministracionPersona>();
-
-    public virtual ICollection<TblAutenticacionMenuRol> TblAutenticacionMenuRols { get; set; } = new List<TblAutenticacionMenuRol>();
-
-    public virtual ICollection<TblAutenticacionPrivilegioRol> TblAutenticacionPrivilegioRolIdprivilegioNavigations { get; set; } = new List<TblAutenticacionPrivilegioRol>();
-
-    public virtual ICollection<TblAutenticacionPrivilegioRol> TblAutenticacionPrivilegioRolIdrolNavigations { get; set; } = new List<TblAutenticacionPrivilegioRol>();
-
-    public virtual ICollection<TblAutenticacionPrivilegioUsuario> TblAutenticacionPrivilegioUsuarios { get; set; } = new List<TblAutenticacionPrivilegioUsuario>();
 
     public virtual ICollection<TblInventarioBajaEquipo> TblInventarioBajaEquipos { get; set; } = new List<TblInventarioBajaEquipo>();
 

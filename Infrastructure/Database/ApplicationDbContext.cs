@@ -63,15 +63,7 @@ public partial class ApplicationDbContext : DbContext
     public virtual DbSet<TblAutenticacionTokenBlacklist> TblAutenticacionTokenBlacklists { get; set; } = null!;
     public virtual DbSet<TblAutenticacionUsuario> TblAutenticacionUsuarios { get; set; } = null!;
     public virtual DbSet<TblAutenticacionUsuarioRol> TblAutenticacionUsuarioRols { get; set; } = null!;
-    public virtual DbSet<TblAutenticacionAplicacion> TblAutenticacionAplicacions { get; set; } = null!;
-    public virtual DbSet<TblAutenticacionMenu> TblAutenticacionMenus { get; set; } = null!;
-    public virtual DbSet<TblAutenticacionMenuRol> TblAutenticacionMenuRols { get; set; } = null!;
-    public virtual DbSet<TblAutenticacionMenuUsuario> TblAutenticacionMenuUsuarios { get; set; } = null!;
-    public virtual DbSet<TblAutenticacionPrivilegioRol> TblAutenticacionPrivilegioRols { get; set; } = null!;
-    public virtual DbSet<TblAutenticacionPrivilegioUsuario> TblAutenticacionPrivilegioUsuarios { get; set; } = null!;
-    public virtual DbSet<TblAutenticacionSesionApp> TblAutenticacionSesionApps { get; set; } = null!;
-    public virtual DbSet<TblAutenticacionUsuarioAplicacion> TblAutenticacionUsuarioAplicacions { get; set; } = null!;
-    public virtual DbSet<TblAutenticacionUsuarioModulo> TblAutenticacionUsuarioModulos { get; set; } = null!;
+
 
     // Inventario
     public virtual DbSet<TblInventarioAsignacionEquipo> TblInventarioAsignacionEquipos { get; set; } = null!;
@@ -105,7 +97,6 @@ public partial class ApplicationDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder
-            .UseCollation("en_US.utf8")
             // ─── FIX: HasPostgresEnum debe declarar TODOS los valores del enum C# RevocacionRazonEnum ───
             // Si tu enum C# tiene más valores que los declarados aquí, Npgsql no puede mapearlos.
             // También debes asegurarte de que el tipo en PostgreSQL tenga estos valores.
@@ -810,44 +801,6 @@ public partial class ApplicationDbContext : DbContext
                 .HasConstraintName("fk_autenticacion_audit_log_usuario");
         });
 
-        modelBuilder.Entity<TblAutenticacionAplicacion>(entity =>
-        {
-            entity.HasKey(e => e.Id).HasName("pk_autenticacion_aplicacion");
-
-            entity.ToTable("tbl_autenticacion_aplicacion", "autenticacion");
-
-            entity.Property(e => e.Id)
-                .UseIdentityAlwaysColumn()
-                .HasColumnName("id");
-            entity.Property(e => e.Activo)
-                .HasDefaultValue(true)
-                .HasColumnName("activo");
-            entity.Property(e => e.Descripcion)
-                .HasMaxLength(255)
-                .HasColumnName("descripcion");
-            entity.Property(e => e.Fechacreacion)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("fechacreacion");
-            entity.Property(e => e.Fechamodificacion).HasColumnName("fechamodificacion");
-            entity.Property(e => e.Ipcreacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipcreacion");
-            entity.Property(e => e.Ipmodificacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipmodificacion");
-            entity.Property(e => e.Nombreaplicacion)
-                .HasMaxLength(100)
-                .HasColumnName("nombreaplicacion");
-            entity.Property(e => e.Urlbase)
-                .HasMaxLength(255)
-                .HasColumnName("urlbase");
-            entity.Property(e => e.Usuariocreacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariocreacion");
-            entity.Property(e => e.Usuariomodificacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariomodificacion");
-        });
 
         modelBuilder.Entity<TblAutenticacionRefreshToken>(entity =>
         {
@@ -890,126 +843,7 @@ public partial class ApplicationDbContext : DbContext
                 .HasConstraintName("fk_autenticacion_refresh_token_usuario");
         });
 
-        modelBuilder.Entity<TblAutenticacionMenu>(entity =>
-        {
-            entity.HasKey(e => e.Id).HasName("pk_autenticacion_menu");
 
-            entity.ToTable("tbl_autenticacion_menu", "autenticacion");
-
-            entity.Property(e => e.Id)
-                .UseIdentityAlwaysColumn()
-                .HasColumnName("id");
-            entity.Property(e => e.Activo)
-                .HasDefaultValue(true)
-                .HasColumnName("activo");
-            entity.Property(e => e.Fechacreacion)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("fechacreacion");
-            entity.Property(e => e.Fechamodificacion).HasColumnName("fechamodificacion");
-            entity.Property(e => e.Icono)
-                .HasMaxLength(50)
-                .HasColumnName("icono");
-            entity.Property(e => e.Idaplicacion).HasColumnName("idaplicacion");
-            entity.Property(e => e.Idmenupadre).HasColumnName("idmenupadre");
-            entity.Property(e => e.Ipcreacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipcreacion");
-            entity.Property(e => e.Ipmodificacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipmodificacion");
-            entity.Property(e => e.Nombremenu)
-                .HasMaxLength(100)
-                .HasColumnName("nombremenu");
-            entity.Property(e => e.Ordenvisualizacion).HasColumnName("ordenvisualizacion");
-            entity.Property(e => e.Rutamenu)
-                .HasMaxLength(255)
-                .HasColumnName("rutamenu");
-            entity.Property(e => e.Usuariocreacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariocreacion");
-            entity.Property(e => e.Usuariomodificacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariomodificacion");
-
-            entity.HasOne(d => d.IdaplicacionNavigation).WithMany(p => p.TblAutenticacionMenus)
-                .HasForeignKey(d => d.Idaplicacion)
-                .HasConstraintName("fk_autenticacion_menu_aplicacion");
-
-            entity.HasOne(d => d.IdmenupadreNavigation).WithMany(p => p.InverseIdmenupadreNavigation)
-                .HasForeignKey(d => d.Idmenupadre)
-                .OnDelete(DeleteBehavior.Cascade)
-                .HasConstraintName("fk_autenticacion_menu_padre");
-        });
-
-        modelBuilder.Entity<TblAutenticacionMenuRol>(entity =>
-        {
-            entity.HasKey(e => e.Id).HasName("pk_autenticacion_menu_rol");
-
-            entity.ToTable("tbl_autenticacion_menu_rol", "autenticacion");
-
-            entity.Property(e => e.Id)
-                .UseIdentityAlwaysColumn()
-                .HasColumnName("id");
-            entity.Property(e => e.Activo)
-                .HasDefaultValue(true)
-                .HasColumnName("activo");
-            entity.Property(e => e.Fechacreacion)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("fechacreacion");
-            entity.Property(e => e.Idmenu).HasColumnName("idmenu");
-            entity.Property(e => e.Idrol).HasColumnName("idrol");
-            entity.Property(e => e.Ipcreacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipcreacion");
-            entity.Property(e => e.Usuariocreacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariocreacion");
-
-            entity.HasOne(d => d.IdmenuNavigation).WithMany(p => p.TblAutenticacionMenuRols)
-                .HasForeignKey(d => d.Idmenu)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_autenticacion_menu_rol_menu");
-
-            entity.HasOne(d => d.IdrolNavigation).WithMany(p => p.TblAutenticacionMenuRols)
-                .HasForeignKey(d => d.Idrol)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_autenticacion_menu_rol_rol");
-        });
-
-        modelBuilder.Entity<TblAutenticacionMenuUsuario>(entity =>
-        {
-            entity.HasKey(e => e.Id).HasName("pk_autenticacion_menu_usuario");
-
-            entity.ToTable("tbl_autenticacion_menu_usuario", "autenticacion");
-
-            entity.Property(e => e.Id)
-                .UseIdentityAlwaysColumn()
-                .HasColumnName("id");
-            entity.Property(e => e.Activo)
-                .HasDefaultValue(true)
-                .HasColumnName("activo");
-            entity.Property(e => e.Fechacreacion)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("fechacreacion");
-            entity.Property(e => e.Idmenu).HasColumnName("idmenu");
-            entity.Property(e => e.Idusuario).HasColumnName("idusuario");
-            entity.Property(e => e.Ipcreacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipcreacion");
-            entity.Property(e => e.Usuariocreacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariocreacion");
-
-            entity.HasOne(d => d.IdmenuNavigation).WithMany(p => p.TblAutenticacionMenuUsuarios)
-                .HasForeignKey(d => d.Idmenu)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_autenticacion_menu_usuario_menu");
-
-            entity.HasOne(d => d.IdusuarioNavigation).WithMany(p => p.TblAutenticacionMenuUsuarios)
-                .HasForeignKey(d => d.Idusuario)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_autenticacion_menu_usuario_usuario");
-        });
 
         modelBuilder.Entity<TblAutenticacionModulo>(entity =>
         {
@@ -1168,75 +1002,6 @@ public partial class ApplicationDbContext : DbContext
                 .HasConstraintName("fk_autenticacion_pregunta_usuario_usuario");
         });
 
-        modelBuilder.Entity<TblAutenticacionPrivilegioRol>(entity =>
-        {
-            entity.HasKey(e => e.Id).HasName("pk_autenticacion_privilegio_rol");
-
-            entity.ToTable("tbl_autenticacion_privilegio_rol", "autenticacion");
-
-            entity.Property(e => e.Id)
-                .UseIdentityAlwaysColumn()
-                .HasColumnName("id");
-            entity.Property(e => e.Activo)
-                .HasDefaultValue(true)
-                .HasColumnName("activo");
-            entity.Property(e => e.Fechacreacion)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("fechacreacion");
-            entity.Property(e => e.Idprivilegio).HasColumnName("idprivilegio");
-            entity.Property(e => e.Idrol).HasColumnName("idrol");
-            entity.Property(e => e.Ipcreacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipcreacion");
-            entity.Property(e => e.Usuariocreacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariocreacion");
-
-            entity.HasOne(d => d.IdprivilegioNavigation).WithMany(p => p.TblAutenticacionPrivilegioRolIdprivilegioNavigations)
-                .HasForeignKey(d => d.Idprivilegio)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_autenticacion_privilegio_rol_privilegio");
-
-            entity.HasOne(d => d.IdrolNavigation).WithMany(p => p.TblAutenticacionPrivilegioRolIdrolNavigations)
-                .HasForeignKey(d => d.Idrol)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_autenticacion_privilegio_rol_rol");
-        });
-
-        modelBuilder.Entity<TblAutenticacionPrivilegioUsuario>(entity =>
-        {
-            entity.HasKey(e => e.Id).HasName("pk_autenticacion_privilegio_usuario");
-
-            entity.ToTable("tbl_autenticacion_privilegio_usuario", "autenticacion");
-
-            entity.Property(e => e.Id)
-                .UseIdentityAlwaysColumn()
-                .HasColumnName("id");
-            entity.Property(e => e.Activo)
-                .HasDefaultValue(true)
-                .HasColumnName("activo");
-            entity.Property(e => e.Fechacreacion)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("fechacreacion");
-            entity.Property(e => e.Idprivilegio).HasColumnName("idprivilegio");
-            entity.Property(e => e.Idusuario).HasColumnName("idusuario");
-            entity.Property(e => e.Ipcreacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipcreacion");
-            entity.Property(e => e.Usuariocreacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariocreacion");
-
-            entity.HasOne(d => d.IdprivilegioNavigation).WithMany(p => p.TblAutenticacionPrivilegioUsuarios)
-                .HasForeignKey(d => d.Idprivilegio)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_autenticacion_privilegio_usuario_privilegio");
-
-            entity.HasOne(d => d.IdusuarioNavigation).WithMany(p => p.TblAutenticacionPrivilegioUsuarios)
-                .HasForeignKey(d => d.Idusuario)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_autenticacion_privilegio_usuario_usuario");
-        });
 
         modelBuilder.Entity<TblAutenticacionRol>(entity =>
         {
@@ -1370,42 +1135,6 @@ public partial class ApplicationDbContext : DbContext
                 .HasConstraintName("fk_autenticacion_sesion_usuario");
         });
 
-        modelBuilder.Entity<TblAutenticacionSesionApp>(entity =>
-        {
-            entity.HasKey(e => e.Id).HasName("pk_autenticacion_sesion_app");
-
-            entity.ToTable("tbl_autenticacion_sesion_app", "autenticacion");
-
-            entity.Property(e => e.Id)
-                .UseIdentityAlwaysColumn()
-                .HasColumnName("id");
-            entity.Property(e => e.Activo)
-                .HasDefaultValue(true)
-                .HasColumnName("activo");
-            entity.Property(e => e.Fechacreacion)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("fechacreacion");
-            entity.Property(e => e.Fechaexpiracion).HasColumnName("fechaexpiracion");
-            entity.Property(e => e.Idusuario).HasColumnName("idusuario");
-            entity.Property(e => e.Idaplicacion).HasColumnName("idaplicacion");
-            entity.Property(e => e.Ipcreacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipcreacion");
-            entity.Property(e => e.Tokenapp).HasColumnName("tokenapp");
-            entity.Property(e => e.Usuariocreacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariocreacion");
-
-            entity.HasOne(d => d.IdaplicacionNavigation).WithMany(p => p.TblAutenticacionSesionApps)
-                .HasForeignKey(d => d.Idaplicacion)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_autenticacion_sesion_app_aplicacion");
-
-            entity.HasOne(d => d.IdusuarioNavigation).WithMany(p => p.TblAutenticacionSesionApps)
-                .HasForeignKey(d => d.Idusuario)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_autenticacion_sesion_app_usuario");
-        });
 
         modelBuilder.Entity<TblAutenticacionTokenBlacklist>(entity =>
         {
@@ -1489,86 +1218,6 @@ public partial class ApplicationDbContext : DbContext
                 .HasConstraintName("fk_autenticacion_usuario_persona");
         });
 
-        modelBuilder.Entity<TblAutenticacionUsuarioAplicacion>(entity =>
-        {
-            entity.HasKey(e => e.Id).HasName("pk_autenticacion_usuario_aplicacion");
-
-            entity.ToTable("tbl_autenticacion_usuario_aplicacion", "autenticacion");
-
-            entity.Property(e => e.Id)
-                .UseIdentityAlwaysColumn()
-                .HasColumnName("id");
-            entity.Property(e => e.Activo)
-                .HasDefaultValue(true)
-                .HasColumnName("activo");
-            entity.Property(e => e.Fechacreacion)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("fechacreacion");
-            entity.Property(e => e.Idaplicacion).HasColumnName("idaplicacion");
-            entity.Property(e => e.Idusuario).HasColumnName("idusuario");
-            entity.Property(e => e.Ipcreacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipcreacion");
-            entity.Property(e => e.Usuariocreacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariocreacion");
-
-            entity.HasOne(d => d.IdaplicacionNavigation).WithMany(p => p.TblAutenticacionUsuarioAplicacions)
-                .HasForeignKey(d => d.Idaplicacion)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_autenticacion_usuario_aplicacion_aplicacion");
-
-            entity.HasOne(d => d.IdusuarioNavigation).WithMany(p => p.TblAutenticacionUsuarioAplicacions)
-                .HasForeignKey(d => d.Idusuario)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_autenticacion_usuario_aplicacion_usuario");
-        });
-
-        modelBuilder.Entity<TblAutenticacionUsuarioModulo>(entity =>
-        {
-            entity.HasKey(e => e.Id).HasName("pk_autenticacion_usuario_modulo");
-
-            entity.ToTable("tbl_autenticacion_usuario_modulo", "autenticacion");
-
-            entity.Property(e => e.Id)
-                .UseIdentityAlwaysColumn()
-                .HasColumnName("id");
-            entity.Property(e => e.Activo)
-                .HasDefaultValue(true)
-                .HasColumnName("activo");
-            entity.Property(e => e.Fechacreacion)
-                .HasDefaultValueSql("now()")
-                .HasColumnName("fechacreacion");
-            entity.Property(e => e.Fechamodificacion).HasColumnName("fechamodificacion");
-            entity.Property(e => e.Idmodulo).HasColumnName("idmodulo");
-            entity.Property(e => e.Idusuario).HasColumnName("idusuario");
-            entity.Property(e => e.Ipcreacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipcreacion");
-            entity.Property(e => e.Ipmodificacion)
-                .HasMaxLength(45)
-                .HasColumnName("ipmodificacion");
-            entity.Property(e => e.Puedecrear).HasColumnName("puedecrear");
-            entity.Property(e => e.Puedeeditar).HasColumnName("puedeeditar");
-            entity.Property(e => e.Puedeeliminar).HasColumnName("puedeeliminar");
-            entity.Property(e => e.Puedever).HasColumnName("puedever");
-            entity.Property(e => e.Usuariocreacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariocreacion");
-            entity.Property(e => e.Usuariomodificacion)
-                .HasMaxLength(50)
-                .HasColumnName("usuariomodificacion");
-
-            entity.HasOne(d => d.IdmoduloNavigation).WithMany(p => p.TblAutenticacionUsuarioModulos)
-                .HasForeignKey(d => d.Idmodulo)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_autenticacion_usuario_modulo_modulo");
-
-            entity.HasOne(d => d.IdusuarioNavigation).WithMany(p => p.TblAutenticacionUsuarioModulos)
-                .HasForeignKey(d => d.Idusuario)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_autenticacion_usuario_modulo_usuario");
-        });
 
         modelBuilder.Entity<TblAutenticacionUsuarioRol>(entity =>
         {
