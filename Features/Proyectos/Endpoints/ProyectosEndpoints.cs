@@ -112,6 +112,8 @@ public static class ProyectosEndpoints
                 Idestadoproyecto = request.IdEstadoProyecto ?? idEstadoProyectoActivo,
                 Fechainicioplaneada = request.FechaInicio,
                 Fechafinplaneada = request.FechaFin,
+                Fechainicioreal = request.FechaInicioReal,
+                Fechafinreal = request.FechaFinReal,
                 Presupuesto = request.Presupuesto,
                 Horasasignadas = request.Horas,
                 Activo = request.Estado is null ? true : EsEstadoActivo(request.Estado),
@@ -169,10 +171,11 @@ public static class ProyectosEndpoints
             proyecto.Idestadoproyecto = request.IdEstadoProyecto ?? idEstadoProyectoActivo ?? proyecto.Idestadoproyecto;
             proyecto.Fechainicioplaneada = request.FechaInicio;
             proyecto.Fechafinplaneada = request.FechaFin;
+            proyecto.Fechainicioreal = request.FechaInicioReal;
+            proyecto.Fechafinreal = request.FechaFinReal;
             proyecto.Presupuesto = request.Presupuesto;
             proyecto.Horasasignadas = request.Horas;
             proyecto.Observacion = request.Observacion;
-            proyecto.Fechafinreal = request.FechaFinReal;
             proyecto.Fechainicioespera = request.FechaInicioEspera;
             proyecto.Fechafinespera = request.FechaFinEspera;
 
@@ -307,6 +310,7 @@ public static class ProyectosEndpoints
             IdTipoProyecto: proyecto.Idtipoproyecto,
             Tipo: nombreTipo,
             Observacion: proyecto.Observacion,
+            FechaInicioReal: proyecto.Fechainicioreal,
             FechaFinReal: proyecto.Fechafinreal,
             FechaInicioEspera: proyecto.Fechainicioespera,
             FechaFinEspera: proyecto.Fechafinespera,
