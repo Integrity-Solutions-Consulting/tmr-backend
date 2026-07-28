@@ -56,6 +56,32 @@ public class CatalogosConfigService : ICatalogosConfigService
             return new SuccessResponse("Tipo de actividad creado exitosamente.");
         }
 
+        if (request.idCatalogo == -103)
+        {
+            if (string.IsNullOrWhiteSpace(request.valor))
+                throw new DatosInvalidosDetalleException("El nombre es requerido.");
+
+            int? idDepartamento = null;
+            if (!string.IsNullOrWhiteSpace(request.codigoValor) && int.TryParse(request.codigoValor, out var parsedId))
+            {
+                idDepartamento = parsedId;
+            }
+
+            var nuevoCargo = new TblAdministracionCargo
+            {
+                Nombrecargo = request.valor.Trim(),
+                Descripcion = request.descripcion?.Trim(),
+                Iddepartamento = idDepartamento,
+                Activo = true,
+                Usuariocreacion = usuarioActual,
+                Fechacreacion = DateTime.UtcNow,
+                Ipcreacion = ipActual
+            };
+            _dbContext.TblAdministracionCargos.Add(nuevoCargo);
+            await _dbContext.SaveChangesAsync();
+            return new SuccessResponse("Cargo creado exitosamente.");
+        }
+
         // 1. Validaciones de Entrada (Input Validation)
         if (request.idCatalogo <= 0)
             throw new DatosInvalidosDetalleException("El ID del catálogo es requerido y debe ser mayor a 0.");
@@ -160,6 +186,33 @@ public class CatalogosConfigService : ICatalogosConfigService
             return new SuccessResponse("Tipo de actividad actualizado exitosamente.");
         }
 
+        if (request.idCatalogo == -103)
+        {
+            if (string.IsNullOrWhiteSpace(request.valor))
+                throw new DatosInvalidosDetalleException("El nombre es requerido.");
+
+            var cargo = await _dbContext.TblAdministracionCargos.FirstOrDefaultAsync(c => c.Id == id);
+            if (cargo == null) throw new DetalleNoEncontradoException(id);
+
+            int? idDepartamento = null;
+            if (!string.IsNullOrWhiteSpace(request.codigoValor) && int.TryParse(request.codigoValor, out var parsedId))
+            {
+                idDepartamento = parsedId;
+            }
+
+            cargo.Nombrecargo = request.valor.Trim();
+            cargo.Descripcion = request.descripcion?.Trim();
+            cargo.Iddepartamento = idDepartamento;
+            if (request.activo.HasValue) cargo.Activo = request.activo.Value;
+            cargo.Usuariomodificacion = usuarioActual;
+            cargo.Fechamodificacion = DateTime.UtcNow;
+            cargo.Ipmodificacion = ipActual;
+
+            _dbContext.TblAdministracionCargos.Update(cargo);
+            await _dbContext.SaveChangesAsync();
+            return new SuccessResponse("Cargo actualizado exitosamente.");
+        }
+
         // 1. Validaciones de Entrada
         if (string.IsNullOrWhiteSpace(request.valor))
             throw new DatosInvalidosDetalleException("El valor es requerido.");
@@ -235,6 +288,21 @@ public class CatalogosConfigService : ICatalogosConfigService
             return new SuccessResponse("Tipo de actividad eliminado exitosamente.");
         }
 
+        if (idCatalogo == -103)
+        {
+            var cargo = await _dbContext.TblAdministracionCargos.FirstOrDefaultAsync(c => c.Id == id);
+            if (cargo == null) throw new DetalleNoEncontradoException(id);
+
+            cargo.Activo = false;
+            cargo.Usuariomodificacion = usuarioActual;
+            cargo.Fechamodificacion = DateTime.UtcNow;
+            cargo.Ipmodificacion = ipActual;
+
+            _dbContext.TblAdministracionCargos.Update(cargo);
+            await _dbContext.SaveChangesAsync();
+            return new SuccessResponse("Cargo eliminado exitosamente.");
+        }
+
         var detalle = await _dbContext.TblAdministracionCatalogoDetalles
             .FirstOrDefaultAsync(d => d.Id == id);
 
@@ -289,6 +357,24 @@ public class CatalogosConfigService : ICatalogosConfigService
                 .ToListAsync();
         }
 
+        if (idCatalogo == -103)
+        {
+            return await _dbContext.TblAdministracionCargos
+                .Include(c => c.IddepartamentoNavigation)
+                .OrderBy(c => c.Nombrecargo)
+                .Select(c => new CatalogoDetalleConfigResponse(
+                    c.Id,
+                    -103,
+                    c.Id.ToString(),
+                    c.Nombrecargo,
+                    c.Descripcion,
+                    null,
+                    c.Iddepartamento != null ? c.Iddepartamento.ToString() : null,
+                    c.Activo
+                ))
+                .ToListAsync();
+        }
+
         var catalogoExiste = await _dbContext.TblAdministracionCatalogos
             .AnyAsync(c => c.Id == idCatalogo);
 
@@ -321,6 +407,10 @@ public class CatalogosConfigService : ICatalogosConfigService
         {
             return await ObtenerDetallesPorCatalogoIdAsync(-102);
         }
+        if (codigoCatalogo.ToLower() == "car")
+        {
+            return await ObtenerDetallesPorCatalogoIdAsync(-103);
+        }
 
         var catalogo = await _dbContext.TblAdministracionCatalogos
             .FirstOrDefaultAsync(c => c.Codigo.ToLower() == codigoCatalogo.ToLower());
@@ -347,10 +437,11 @@ public class CatalogosConfigService : ICatalogosConfigService
     public async Task<List<CatalogoMasterResponse>> ObtenerCatalogosAsync()
     {
         var dbCatalogos = await _dbContext.TblAdministracionCatalogos
-            .Where(c => c.Codigo != "TPR" && c.Codigo != "TAC" 
-                        && c.Tipocatalogo != "TIPO_PROYECTO" && c.Tipocatalogo != "TIPO_ACTIVIDAD"
+            .Where(c => c.Codigo != "TPR" && c.Codigo != "TAC" && c.Codigo != "CAR"
+                        && c.Tipocatalogo != "TIPO_PROYECTO" && c.Tipocatalogo != "TIPO_ACTIVIDAD" && c.Tipocatalogo != "CARGO"
                         && !c.Descripcion.ToLower().Contains("tipo de proyecto")
-                        && !c.Descripcion.ToLower().Contains("tipo de actividad"))
+                        && !c.Descripcion.ToLower().Contains("tipo de actividad")
+                        && !c.Descripcion.ToLower().Contains("cargo"))
             .OrderBy(c => c.Tipocatalogo)
             .ThenBy(c => c.Codigo)
             .Select(c => new CatalogoMasterResponse(
@@ -364,6 +455,7 @@ public class CatalogosConfigService : ICatalogosConfigService
 
         dbCatalogos.Add(new CatalogoMasterResponse(-101, "TMR", "TPR", "Tipo de Proyecto", true));
         dbCatalogos.Add(new CatalogoMasterResponse(-102, "TMR", "TAC", "Tipo de Actividad", true));
+        dbCatalogos.Add(new CatalogoMasterResponse(-103, "TMR", "CAR", "Cargo", true));
 
         return dbCatalogos;
     }
