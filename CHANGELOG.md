@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.3](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.0.2...v1.0.3) (2026-07-27)
+
+
+### Bug Fixes
+
+* unused entities + iniciofechareal added to Proyectos ([39dcade](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/39dcade3486ddb30007d218c9cb06af26a4f28cd))
+
 ## [1.0.2](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.0.1...v1.0.2) (2026-07-20)
 
 

@@ -15,7 +15,8 @@ public record UpdateCatalogoDetalleRequest(
     short? orden,
     string? valorExtra,
     bool? activo,
-    int? idCatalogo = null
+    int? idCatalogo = null,
+    string? codigoValor = null
 );
 
 public record CatalogoDetalleConfigResponse(
