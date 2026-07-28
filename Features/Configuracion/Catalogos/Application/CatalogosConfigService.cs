@@ -61,17 +61,10 @@ public class CatalogosConfigService : ICatalogosConfigService
             if (string.IsNullOrWhiteSpace(request.valor))
                 throw new DatosInvalidosDetalleException("El nombre es requerido.");
 
-            int? idDepartamento = null;
-            if (!string.IsNullOrWhiteSpace(request.codigoValor) && int.TryParse(request.codigoValor, out var parsedId))
-            {
-                idDepartamento = parsedId;
-            }
-
             var nuevoCargo = new TblAdministracionCargo
             {
                 Nombrecargo = request.valor.Trim(),
                 Descripcion = request.descripcion?.Trim(),
-                Iddepartamento = idDepartamento,
                 Activo = true,
                 Usuariocreacion = usuarioActual,
                 Fechacreacion = DateTime.UtcNow,
@@ -194,15 +187,8 @@ public class CatalogosConfigService : ICatalogosConfigService
             var cargo = await _dbContext.TblAdministracionCargos.FirstOrDefaultAsync(c => c.Id == id);
             if (cargo == null) throw new DetalleNoEncontradoException(id);
 
-            int? idDepartamento = null;
-            if (!string.IsNullOrWhiteSpace(request.codigoValor) && int.TryParse(request.codigoValor, out var parsedId))
-            {
-                idDepartamento = parsedId;
-            }
-
             cargo.Nombrecargo = request.valor.Trim();
             cargo.Descripcion = request.descripcion?.Trim();
-            cargo.Iddepartamento = idDepartamento;
             if (request.activo.HasValue) cargo.Activo = request.activo.Value;
             cargo.Usuariomodificacion = usuarioActual;
             cargo.Fechamodificacion = DateTime.UtcNow;
@@ -360,7 +346,6 @@ public class CatalogosConfigService : ICatalogosConfigService
         if (idCatalogo == -103)
         {
             return await _dbContext.TblAdministracionCargos
-                .Include(c => c.IddepartamentoNavigation)
                 .OrderBy(c => c.Nombrecargo)
                 .Select(c => new CatalogoDetalleConfigResponse(
                     c.Id,
@@ -369,7 +354,7 @@ public class CatalogosConfigService : ICatalogosConfigService
                     c.Nombrecargo,
                     c.Descripcion,
                     null,
-                    c.Iddepartamento != null ? c.Iddepartamento.ToString() : null,
+                    null,
                     c.Activo
                 ))
                 .ToListAsync();
