@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.5](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.0.4...v1.0.5) (2026-07-28)
+
+
+### Bug Fixes
+
+* cambio en catalogo el codigo ([ba629f1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/ba629f124226b2e25d06ac20bf0504c573ac51f7))
+* Modificacion en catalogo en cargos para que se guarde el id ([42c20dc](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/42c20dc56bd7b29d5b49d82d4d41931727c7d30f))
+
 ## [1.0.4](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.0.3...v1.0.4) (2026-07-28)
 
 
