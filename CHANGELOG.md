@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.4](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.0.3...v1.0.4) (2026-07-28)
+
+
+### Bug Fixes
+
+* added cargos a la gestion de catalogos ([eaa7a12](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/eaa7a12872685c2a345ab51cfc67eeb4284083b7))
+* Se agrego en catalogo de cargos ([2355e5c](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/2355e5c11cc263ab0558f2723ce767550576f37d))
+
 ## [1.0.3](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.0.2...v1.0.3) (2026-07-27)
 
 
