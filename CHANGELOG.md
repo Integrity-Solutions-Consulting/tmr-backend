@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.6](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.0.5...v1.0.6) (2026-07-29)
+
+
+### Bug Fixes
+
+* remove unused catalogo, uso de tabla tipoProyecto ([fae2902](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/fae29024a8896235fc81087dca4cb911dd1aa266))
+
 ## [1.0.5](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.0.4...v1.0.5) (2026-07-28)
 
 
