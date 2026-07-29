@@ -64,11 +64,10 @@ public static class ProyectosEndpoints
                 .Select(d => new LookupDto(d.Id, d.Valor))
                 .ToListAsync();
 
-            var tipos = await db.TblAdministracionCatalogoDetalles
-                .Include(d => d.IdcatalogoNavigation)
-                .Where(d => d.Activo && d.IdcatalogoNavigation.Codigo == "TPR")
-                .OrderBy(d => d.Valor)
-                .Select(d => new LookupDto(d.Id, d.Valor))
+            var tipos = await db.TblTimeReportTipoProyectos
+                .Where(d => d.Activo)
+                .OrderBy(d => d.Nombretipo)
+                .Select(d => new LookupDto(d.Id, d.Nombretipo))
                 .ToListAsync();
 
             var departamentos = await db.TblAdministracionCatalogoDetalles
