@@ -36,5 +36,9 @@ public interface IAuthService
 
     Task ChangePasswordAsync(ChangePasswordRequest request, HttpContext context, CancellationToken ct);
 
+    Task<ForgotPasswordResponse> ForgotPasswordAsync(ForgotPasswordRequest request, string clientIp, CancellationToken ct);
+
+    Task<ResetPasswordResponse> ResetPasswordAsync(ResetPasswordRequest request, string clientIp, CancellationToken ct);
+
     Task<string[]> GetUserModulesAsync(int idUsuario, CancellationToken ct);
 }

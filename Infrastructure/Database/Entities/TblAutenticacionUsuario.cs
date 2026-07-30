@@ -43,6 +43,8 @@ public partial class TblAutenticacionUsuario
 
     public virtual ICollection<TblAutenticacionPasswordHistorial> TblAutenticacionPasswordHistorials { get; set; } = new List<TblAutenticacionPasswordHistorial>();
 
+    public virtual ICollection<TblAutenticacionPasswordReset> TblAutenticacionPasswordResets { get; set; } = new List<TblAutenticacionPasswordReset>();
+
     public virtual ICollection<TblAutenticacionPreguntaUsuario> TblAutenticacionPreguntaUsuarios { get; set; } = new List<TblAutenticacionPreguntaUsuario>();
 
     public virtual ICollection<TblAutenticacionRefreshToken> TblAutenticacionRefreshTokens { get; set; } = new List<TblAutenticacionRefreshToken>();

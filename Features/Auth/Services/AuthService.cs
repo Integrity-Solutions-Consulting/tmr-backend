@@ -1,14 +1,17 @@
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Text;
 using tmr_backend.Features.Auth.DTOs.Request;
 using tmr_backend.Features.Auth.DTOs.Response;
 using tmr_backend.Features.Auth.Mappings;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
 using tmr_backend.Infrastructure.Security;
+using tmr_backend.Infrastructure.Shared;
 using tmr_backend.Shared.Exceptions;
 
 namespace tmr_backend.Features.Auth.Services;
@@ -20,12 +23,16 @@ public sealed class AuthService(
     IPasswordHasher passwordHasher,
     IValidator<RegisterRequest> registerValidator,
     IValidator<LoginRequest> loginValidator,
-    IOptions<JwtSettings> jwtOptions) : IAuthService
+    IOptions<JwtSettings> jwtOptions,
+    ILogger<AuthService> logger,
+    IConfiguration configuration) : IAuthService
 {
     private const int MaxFailedAttempts = 5;
     private const int LockoutMinutes    = 15;
     private const int PASSWORD_HISTORY_LIMIT = 5;
+    private readonly ILogger<AuthService> _logger = logger;
     private readonly JwtSettings _jwt   = jwtOptions.Value;
+    private readonly IConfiguration _configuration = configuration;
 
     // ─────────────────────────────────────────────────────────────────────────
     // REGISTER — crea persona + usuario + rol base. Sin tokens.
@@ -651,5 +658,256 @@ public sealed class AuthService(
                     select m.Nombremodulo;
 
         return await query.Distinct().ToArrayAsync(ct);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // FORGOT PASSWORD — Genera token temporal para recuperación de contraseña
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public async Task<ForgotPasswordResponse> ForgotPasswordAsync(
+        ForgotPasswordRequest request, 
+        string clientIp, 
+        CancellationToken ct)
+    {
+        var normalizedEmail = request.Email.ToLowerInvariant();
+
+        var user = await db.TblAutenticacionUsuarios
+            .Include(u => u.IdpersonaNavigation)
+            .FirstOrDefaultAsync(u => u.Email == normalizedEmail && u.Activo, ct);
+
+        var expirationTime = DateTime.UtcNow.AddMinutes(30);
+
+        // Por seguridad, no revelar si el email existe o no
+        if (user is null)
+        {
+            return new ForgotPasswordResponse(
+                "Si el email existe en nuestro sistema, recibirás un enlace para recuperar tu contraseña.",
+                expirationTime
+            );
+        }
+
+        // Generar token único
+        var token = GenerateRandomToken();
+        var tokenHash = passwordHasher.Hash(token);
+        var fecha = DateTime.UtcNow;
+
+        // Limpiar tokens previos no utilizados
+        var oldTokens = await db.TblAutenticacionPasswordResets
+            .Where(pr => pr.IdUsuario == user.Id && !pr.Utilizado)
+            .ToListAsync(ct);
+        db.TblAutenticacionPasswordResets.RemoveRange(oldTokens);
+
+        // Crear nuevo reset token
+        var resetToken = new TblAutenticacionPasswordReset
+        {
+            IdUsuario = user.Id,
+            TokenHash = tokenHash,
+            FechaExpiracion = expirationTime,
+            Utilizado = false,
+            Activo = true,
+            UsuarioCreacion = user.Email.Contains('@') ? user.Email.Split('@')[0] : user.Email,
+            FechaCreacion = fecha,
+            IpCreacion = clientIp
+        };
+
+        db.TblAutenticacionPasswordResets.Add(resetToken);
+        await db.SaveChangesAsync(ct);
+
+        // Enviar email con enlace de recuperación
+        await SendPasswordResetEmailAsync(user, token, ct);
+
+        return new ForgotPasswordResponse(
+            "Si el email existe en nuestro sistema, recibirás un enlace para recuperar tu contraseña.",
+            expirationTime
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // RESET PASSWORD — Valida token y actualiza contraseña
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public async Task<ResetPasswordResponse> ResetPasswordAsync(
+        ResetPasswordRequest request, 
+        string clientIp, 
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Token))
+            throw new InvalidOperationException("El token es requerido.");
+
+        // Validar que el token no haya sido usado y no haya expirado
+        var resetTokens = await db.TblAutenticacionPasswordResets
+            .Include(pr => pr.IdUsuarioNavigation)
+            .ThenInclude(u => u.IdpersonaNavigation)
+            .Where(pr => !pr.Utilizado && pr.FechaExpiracion > DateTime.UtcNow && pr.Activo)
+            .ToListAsync(ct);
+
+        if (resetTokens.Count == 0)
+            throw new InvalidOperationException("El enlace de recuperación es inválido o ha expirado.");
+
+        // Buscar el token que coincide usando comparación constante en tiempo
+        TblAutenticacionPasswordReset? resetToken = null;
+        foreach (var token in resetTokens)
+        {
+            if (ConstantTimeComparison(request.Token, token.TokenHash))
+            {
+                resetToken = token;
+                break;
+            }
+        }
+
+        if (resetToken is null)
+            throw new InvalidOperationException("El enlace de recuperación es inválido o ha expirado.");
+
+        var user = resetToken.IdUsuarioNavigation;
+        if (user is null || !user.Activo)
+            throw new InvalidOperationException("El usuario no existe o está inactivo.");
+
+        // Validar que la nueva contraseña no sea una de las últimas 5
+        var passwordHistory = await db.TblAutenticacionPasswordHistorials
+            .Where(ph => ph.Idusuario == user.Id)
+            .OrderByDescending(ph => ph.Fechacambio)
+            .Take(PASSWORD_HISTORY_LIMIT)
+            .ToListAsync(ct);
+
+        foreach (var historicalHash in passwordHistory)
+        {
+            if (passwordHasher.Verify(request.NewPassword, historicalHash.Hashpassword))
+                throw new InvalidOperationException(
+                    $"No puede reutilizar una de las últimas {PASSWORD_HISTORY_LIMIT} contraseñas.");
+        }
+
+        var newHash = passwordHasher.Hash(request.NewPassword);
+        var fecha = DateTime.UtcNow;
+        var userEmail = user.Email.Contains('@') ? user.Email.Split('@')[0] : "system";
+
+        // Actualizar contraseña
+        user.Hashpassword = newHash;
+        user.Fechamodificacion = fecha;
+        user.Usuariomodificacion = userEmail;
+        user.Debecambiarpassword = false;
+        user.Intentosfallidos = 0;
+        user.Bloqueadohasta = null;
+
+        // Registrar en historial
+        var historialEntry = new TblAutenticacionPasswordHistorial
+        {
+            Idusuario = user.Id,
+            Hashpassword = newHash,
+            Fechacambio = fecha,
+            Activo = true,
+            Usuariocreacion = userEmail,
+            Fechacreacion = fecha,
+            Ipcreacion = clientIp
+        };
+
+        // Marcar token como utilizado
+        resetToken.Utilizado = true;
+        resetToken.FechaUtilizacion = fecha;
+
+        db.TblAutenticacionPasswordHistorials.Add(historialEntry);
+        db.TblAutenticacionPasswordResets.Update(resetToken);
+        await db.SaveChangesAsync(ct);
+
+        // Enviar email de confirmación
+        await SendPasswordResetConfirmationEmailAsync(user, ct);
+
+        return new ResetPasswordResponse(
+            "Tu contraseña ha sido restablecida exitosamente. Puedes iniciar sesión con tu nueva contraseña.",
+            true
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Métodos privados de utilidad
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private string GenerateRandomToken()
+    {
+        const string validChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        var random = new Random();
+        var token = new StringBuilder();
+        
+        for (int i = 0; i < 32; i++)
+        {
+            token.Append(validChars[random.Next(validChars.Length)]);
+        }
+        
+        return token.ToString();
+    }
+
+    private bool ConstantTimeComparison(string input, string hash)
+    {
+        try
+        {
+            return passwordHasher.Verify(input, hash);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private async Task SendPasswordResetEmailAsync(TblAutenticacionUsuario user, string token, CancellationToken ct)
+    {
+        try
+        {
+            var emailService = httpContextAccessor.HttpContext?.RequestServices.GetService(typeof(IEmailService)) as IEmailService;
+            var templateService = httpContextAccessor.HttpContext?.RequestServices.GetService(typeof(IEmailTemplateService)) as IEmailTemplateService;
+
+            if (emailService is null || templateService is null)
+            {
+                _logger.LogWarning("No se pudo obtener los servicios de email para enviar enlace de recuperación.");
+                return;
+            }
+
+            var userFullName = $"{user.IdpersonaNavigation?.Nombres} {user.IdpersonaNavigation?.Apellidos}".Trim();
+            var resetLink = $"{GetResetLink()}/reset?token={Uri.EscapeDataString(token)}";
+            var htmlBody = templateService.GeneratePasswordResetEmailBody(userFullName, resetLink);
+
+            await emailService.SendEmailAsync(
+                user.Email,
+                "[ISC Time Report] Recuperación de Contraseña",
+                htmlBody
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al enviar email de recuperación de contraseña al usuario {UserId}", user.Id);
+        }
+    }
+
+    private async Task SendPasswordResetConfirmationEmailAsync(TblAutenticacionUsuario user, CancellationToken ct)
+    {
+        try
+        {
+            var emailService = httpContextAccessor.HttpContext?.RequestServices.GetService(typeof(IEmailService)) as IEmailService;
+            var templateService = httpContextAccessor.HttpContext?.RequestServices.GetService(typeof(IEmailTemplateService)) as IEmailTemplateService;
+
+            if (emailService is null || templateService is null)
+            {
+                _logger.LogWarning("No se pudo obtener los servicios de email para enviar confirmación de cambio.");
+                return;
+            }
+
+            var userFullName = $"{user.IdpersonaNavigation?.Nombres} {user.IdpersonaNavigation?.Apellidos}".Trim();
+            var htmlBody = templateService.GeneratePasswordResetConfirmationEmailBody(userFullName);
+
+            await emailService.SendEmailAsync(
+                user.Email,
+                "[ISC Time Report] Contraseña Restablecida",
+                htmlBody
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al enviar email de confirmación de cambio de contraseña al usuario {UserId}", user.Id);
+        }
+    }
+
+    private string GetResetLink()
+    {
+        // Use FrontendUrl from configuration (EmailSettings:FrontendUrl)
+        var frontendUrl = _configuration["EmailSettings:FrontendUrl"] ?? "https://localhost:3000";
+        return frontendUrl.TrimEnd('/');
     }
 }
