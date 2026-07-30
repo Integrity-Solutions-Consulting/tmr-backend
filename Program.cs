@@ -41,6 +41,7 @@ using tmr_backend.Infrastructure.Shared;
 using tmr_backend.Features.Auth.Register;
 using tmr_backend.Features.Auth.Validators;
 using tmr_backend.Features.Auth.Services;
+using tmr_backend.Features.Auth.DTOs.Request;
 using tmr_backend.Features.Lideres.Services;
 using tmr_backend.Shared.Wrappers;
 using Microsoft.AspNetCore.Authorization;
@@ -123,6 +124,9 @@ builder.Services.AddScoped<RegisterUserHandler>();
 builder.Services.AddScoped<IPermissionService, PermissionService>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<IEmailTemplateService, EmailTemplateService>();
+builder.Services.AddScoped<IValidator<ForgotPasswordRequest>, ForgotPasswordRequestValidator>();
+builder.Services.AddScoped<IValidator<ResetPasswordRequest>, ResetPasswordRequestValidator>();
 
 // ── Background Services ──
 builder.Services.Configure<SessionCleanupSettings>(builder.Configuration.GetSection("SessionCleanup"));

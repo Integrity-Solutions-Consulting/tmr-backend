@@ -54,6 +54,7 @@ public partial class ApplicationDbContext : DbContext
     public virtual DbSet<TblAutenticacionAuditLog> TblAutenticacionAuditLogs { get; set; } = null!;
     public virtual DbSet<TblAutenticacionModulo> TblAutenticacionModulos { get; set; } = null!;
     public virtual DbSet<TblAutenticacionPasswordHistorial> TblAutenticacionPasswordHistorials { get; set; } = null!;
+    public virtual DbSet<TblAutenticacionPasswordReset> TblAutenticacionPasswordResets { get; set; } = null!;
     public virtual DbSet<TblAutenticacionPermiso> TblAutenticacionPermisos { get; set; } = null!;
     public virtual DbSet<TblAutenticacionPreguntaUsuario> TblAutenticacionPreguntaUsuarios { get; set; } = null!;
     public virtual DbSet<TblAutenticacionRefreshToken> TblAutenticacionRefreshTokens { get; set; } = null!;
@@ -919,6 +920,46 @@ public partial class ApplicationDbContext : DbContext
                 .HasForeignKey(d => d.Idusuario)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_autenticacion_password_historial_usuario");
+        });
+
+        modelBuilder.Entity<TblAutenticacionPasswordReset>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("pk_autenticacion_password_reset");
+
+            entity.ToTable("tbl_autenticacion_password_reset", "autenticacion");
+
+            entity.Property(e => e.Id)
+                .HasColumnName("id");
+            entity.Property(e => e.IdUsuario)
+                .HasColumnName("idusuario");
+            entity.Property(e => e.TokenHash)
+                .HasMaxLength(255)
+                .HasColumnName("tokenhash");
+            entity.Property(e => e.FechaExpiracion)
+                .HasColumnName("fechaexpiracion");
+            entity.Property(e => e.Utilizado)
+                .HasDefaultValue(false)
+                .HasColumnName("utilizado");
+            entity.Property(e => e.FechaUtilizacion)
+                .HasColumnName("fechautilizacion");
+            entity.Property(e => e.Activo)
+                .HasDefaultValue(true)
+                .HasColumnName("activo");
+            entity.Property(e => e.UsuarioCreacion)
+                .HasMaxLength(50)
+                .HasColumnName("usuariocreacion");
+            entity.Property(e => e.FechaCreacion)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("fechacreacion");
+            entity.Property(e => e.IpCreacion)
+                .HasMaxLength(45)
+                .HasColumnName("ipcreacion");
+
+            entity.HasOne(d => d.IdUsuarioNavigation)
+                .WithMany(p => p.TblAutenticacionPasswordResets)
+                .HasForeignKey(d => d.IdUsuario)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_autenticacion_password_reset_usuario");
         });
 
         modelBuilder.Entity<TblAutenticacionPermiso>(entity =>
