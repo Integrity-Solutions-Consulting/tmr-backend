@@ -36,6 +36,19 @@ public static class AuthEndpoints
             .Produces<ApiResponse<AuthResponse>>(StatusCodes.Status200OK)
             .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
 
+        group.MapPost("/forgot-password", ForgotPassword)
+            .WithName("ForgotPassword")
+            .WithSummary("Solicitar enlace para recuperar contraseña")
+            .Produces<ApiResponse<ForgotPasswordResponse>>(StatusCodes.Status200OK)
+            .Produces<ProblemDetails>(StatusCodes.Status400BadRequest);
+
+        group.MapPost("/reset-password", ResetPassword)
+            .WithName("ResetPassword")
+            .WithSummary("Resetear contraseña con token de recuperación")
+            .Produces<ApiResponse<ResetPasswordResponse>>(StatusCodes.Status200OK)
+            .Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
+            .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
+
         // ── Endpoints protegidos (requieren AT válido) ─────────────────────
 
         group.MapPost("/logout", Logout)
@@ -186,5 +199,74 @@ public static class AuthEndpoints
 
         var modules = await authService.GetUserModulesAsync(idUsuario, ct);
         return Results.Ok(ApiResponse<string[]>.Ok(modules, "Módulos cargados correctamente."));
+    }
+
+    private static async Task<IResult> ForgotPassword(
+        ForgotPasswordRequest request,
+        HttpContext context,
+        IAuthService authService,
+        CancellationToken ct)
+    {
+        try
+        {
+            var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            var response = await authService.ForgotPasswordAsync(request, clientIp, ct);
+            return Results.Ok(ApiResponse<ForgotPasswordResponse>.Ok(
+                response,
+                "Si el email existe en nuestro sistema, recibirás un enlace para recuperar tu contraseña."
+            ));
+        }
+        catch (FluentValidation.ValidationException ex)
+        {
+            return Results.BadRequest(new ProblemDetails
+            {
+                Title = "Validation Error",
+                Detail = string.Join(", ", ex.Errors.Select(e => e.ErrorMessage)),
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+        catch (Exception ex)
+        {
+            return Results.StatusCode(StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    private static async Task<IResult> ResetPassword(
+        ResetPasswordRequest request,
+        HttpContext context,
+        IAuthService authService,
+        CancellationToken ct)
+    {
+        try
+        {
+            var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            var response = await authService.ResetPasswordAsync(request, clientIp, ct);
+            return Results.Ok(ApiResponse<ResetPasswordResponse>.Ok(
+                response,
+                "Tu contraseña ha sido restablecida exitosamente."
+            ));
+        }
+        catch (FluentValidation.ValidationException ex)
+        {
+            return Results.BadRequest(new ProblemDetails
+            {
+                Title = "Validation Error",
+                Detail = string.Join(", ", ex.Errors.Select(e => e.ErrorMessage)),
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new ProblemDetails
+            {
+                Title = "Invalid Token",
+                Detail = ex.Message,
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+        catch (Exception ex)
+        {
+            return Results.StatusCode(StatusCodes.Status500InternalServerError);
+        }
     }
 }
