@@ -14,7 +14,6 @@ public static class DashboardEndpoints
 
         group.MapGet("/", async (string? rango, ApplicationDbContext db) =>
         {
-            Console.WriteLine($"[Dashboard] Rango recibido en backend: '{rango}'");
             var queryActividades = db.TblTimeReportActividadDiaria.Where(a => a.Activo);
 
             if (!string.IsNullOrEmpty(rango))
