@@ -56,7 +56,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // =========================
 // SERVICES CONFIGURATION
-// =========================
+// =======================
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
