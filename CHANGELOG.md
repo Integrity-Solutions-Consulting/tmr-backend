@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.1.0...v1.1.1) (2026-08-21)
+
+
+### Bug Fixes
+
+* redeploy roll backs disable ([1679f3c](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/1679f3c2183c1e1f14b0104097026986f064f0e7))
+
 ## [1.1.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.0.6...v1.1.0) (2026-07-30)
 
 
