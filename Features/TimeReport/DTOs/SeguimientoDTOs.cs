@@ -26,3 +26,9 @@ public record SeguimientoColaboradorDto(
 public record AprobarHorasRequest(
     List<int> Ids
 );
+
+public record DescargarSeguimientoMultipleRequest(
+    List<int> Ids,
+    DateOnly FechaDesde,
+    DateOnly FechaHasta
+);
