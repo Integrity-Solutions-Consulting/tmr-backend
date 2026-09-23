@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using tmr_backend.Features.TimeReport.Domain;
 using tmr_backend.Features.TimeReport.DTOs;
+using tmr_backend.Features.TimeReport.Services;
 using tmr_backend.Infrastructure.Database;
 
 namespace tmr_backend.Features.TimeReport;
@@ -476,6 +477,69 @@ public static class TimeReportEndpoints
 
             await db.SaveChangesAsync();
             return Results.NoContent();
+        });
+
+        groupSeguimiento.MapPost("/descarga-multiple", async (DescargarSeguimientoMultipleRequest request, ApplicationDbContext db) =>
+        {
+            if (request.Ids is null || request.Ids.Count < 2 || request.FechaDesde > request.FechaHasta)
+                return Results.BadRequest(new { message = "Selecciona al menos dos colaboradores y un rango de fechas válido." });
+
+            var ids = request.Ids.Distinct().ToList();
+            if (ids.Count < 2)
+                return Results.BadRequest(new { message = "Selecciona al menos dos colaboradores distintos." });
+            var empleados = await db.TblAdministracionEmpleados
+                .Where(e => e.Activo && ids.Contains(e.Id))
+                .Include(e => e.IdpersonaNavigation)
+                .ToListAsync();
+            if (empleados.Count != ids.Count)
+                return Results.BadRequest(new { message = "Uno o más colaboradores seleccionados no son válidos." });
+
+            var actividades = await db.TblTimeReportActividadDiaria
+                .Where(a => a.Activo && ids.Contains(a.Idempleado) && a.Fechaactividad >= request.FechaDesde && a.Fechaactividad <= request.FechaHasta)
+                .Select(a => new
+                {
+                    a.Idempleado,
+                    Fecha = a.Fechaactividad.ToString("yyyy-MM-dd"),
+                    TipoActividad = a.IdtipoactividadNavigation != null ? a.IdtipoactividadNavigation.Nombretipo : "Otro",
+                    CodigoRequerimiento = a.Codigorequerimiento ?? "",
+                    Horas = a.Cantidadhoras,
+                    Descripcion = a.Descripcionactividad ?? "",
+                    LiderProyecto = a.IdproyectoNavigation != null
+                        ? (a.IdproyectoNavigation.TblTimeReportAsignacionProyectos.Where(ep => ep.Activo && ep.Idlider != null && ep.IdliderNavigation != null && ep.IdliderNavigation.IdpersonaNavigation != null)
+                            .Select(ep => ep.IdliderNavigation.IdpersonaNavigation.Nombres + " " + ep.IdliderNavigation.IdpersonaNavigation.Apellidos).FirstOrDefault() ?? "Sin Líder")
+                        : "Sin Líder",
+                    ClienteProyecto = a.IdproyectoNavigation != null && a.IdproyectoNavigation.IdclienteNavigation != null
+                        ? (a.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial ?? a.IdproyectoNavigation.IdclienteNavigation.Razonsocial ?? "Sin Cliente")
+                        : "Sin Cliente",
+                    EsRecurrente = false
+                })
+                .ToListAsync();
+            var feriados = (await db.TblTimeReportFeriados
+                .Where(f => f.Activo && f.Fechaferiado >= request.FechaDesde && f.Fechaferiado <= request.FechaHasta)
+                .Select(f => f.Fechaferiado.ToString("yyyy-MM-dd"))
+                .ToListAsync()).ToHashSet();
+
+            var archivos = new List<(string Nombre, byte[] Contenido)>();
+            foreach (var empleado in empleados)
+            {
+                var nombre = $"{empleado.IdpersonaNavigation.Nombres} {empleado.IdpersonaNavigation.Apellidos}".Trim();
+                var reporte = SeguimientoReportService.CrearReporte(
+                    nombre,
+                    request.FechaDesde,
+                    request.FechaHasta,
+                    actividades.Where(a => a.Idempleado == empleado.Id).Select(a => new SeguimientoActividad(a.Fecha, a.TipoActividad, a.CodigoRequerimiento, a.Horas, a.Descripcion, a.LiderProyecto, a.ClienteProyecto, a.EsRecurrente)).ToList(),
+                    feriados);
+                var nombreArchivo = $"Reporte_{SeguimientoReportService.SanitizarNombreArchivo(nombre)}.xlsx";
+                var baseNombre = nombreArchivo;
+                var sufijo = 1;
+                while (archivos.Any(a => a.Nombre.Equals(nombreArchivo, StringComparison.OrdinalIgnoreCase)))
+                    nombreArchivo = $"{Path.GetFileNameWithoutExtension(baseNombre)}_{sufijo++}.xlsx";
+                archivos.Add((nombreArchivo, reporte));
+            }
+
+            var zip = SeguimientoReportService.CrearZip(archivos);
+            var nombreZip = $"Seguimiento_{request.FechaDesde:yyyy-MM-dd}_a_{request.FechaHasta:yyyy-MM-dd}.zip";
+            return Results.File(zip, "application/zip", nombreZip);
         });
 
         groupSeguimiento.MapGet("/colaborador/{id:int}/actividades", async (int id, DateOnly fechaDesde, DateOnly fechaHasta, ApplicationDbContext db) =>
