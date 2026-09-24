@@ -479,79 +479,12 @@ public static class TimeReportEndpoints
             return Results.NoContent();
         });
 
-        // Se conserva la ruta anterior y se admite opcionalmente el formato en la URL.
-        // Esto permite actualizar frontend y backend de forma independiente sin romper clientes existentes.
-        groupSeguimiento.MapPost("/descarga-multiple/{formato?}", async (string? formato, DescargarSeguimientoMultipleRequest request, ApplicationDbContext db) =>
-        {
-            formato = (formato ?? request.Formato).Trim().ToLowerInvariant();
-            if (request.Ids is null || request.Ids.Count < 1 || request.FechaDesde > request.FechaHasta || formato is not ("xlsx" or "pdf"))
-                return Results.BadRequest(new { message = "Selecciona colaboradores, un rango válido y un formato PDF o Excel." });
-
-            var ids = request.Ids.Distinct().ToList();
-            if (ids.Count < 1)
-                return Results.BadRequest(new { message = "Selecciona al menos un colaborador válido." });
-            var empleados = await db.TblAdministracionEmpleados
-                .Where(e => e.Activo && ids.Contains(e.Id))
-                .Include(e => e.IdpersonaNavigation)
-                .ToListAsync();
-            if (empleados.Count != ids.Count)
-                return Results.BadRequest(new { message = "Uno o más colaboradores seleccionados no son válidos." });
-
-            var actividades = await db.TblTimeReportActividadDiaria
-                .Where(a => a.Activo && ids.Contains(a.Idempleado) && a.Fechaactividad >= request.FechaDesde && a.Fechaactividad <= request.FechaHasta)
-                .Select(a => new
-                {
-                    a.Idempleado,
-                    Fecha = a.Fechaactividad.ToString("yyyy-MM-dd"),
-                    TipoActividad = a.IdtipoactividadNavigation != null ? a.IdtipoactividadNavigation.Nombretipo : "Otro",
-                    CodigoRequerimiento = a.Codigorequerimiento ?? "",
-                    Horas = a.Cantidadhoras,
-                    Descripcion = a.Descripcionactividad ?? "",
-                    LiderProyecto = a.IdproyectoNavigation != null
-                        ? (a.IdproyectoNavigation.TblTimeReportAsignacionProyectos.Where(ep => ep.Activo && ep.Idlider != null && ep.IdliderNavigation != null && ep.IdliderNavigation.IdpersonaNavigation != null)
-                            .Select(ep => ep.IdliderNavigation.IdpersonaNavigation.Nombres + " " + ep.IdliderNavigation.IdpersonaNavigation.Apellidos).FirstOrDefault() ?? "Sin Líder")
-                        : "Sin Líder",
-                    ClienteProyecto = a.IdproyectoNavigation != null && a.IdproyectoNavigation.IdclienteNavigation != null
-                        ? (a.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial ?? a.IdproyectoNavigation.IdclienteNavigation.Razonsocial ?? "Sin Cliente")
-                        : "Sin Cliente",
-                    EsRecurrente = false
-                })
-                .ToListAsync();
-            var feriados = (await db.TblTimeReportFeriados
-                .Where(f => f.Activo && f.Fechaferiado >= request.FechaDesde && f.Fechaferiado <= request.FechaHasta)
-                .Select(f => f.Fechaferiado.ToString("yyyy-MM-dd"))
-                .ToListAsync()).ToHashSet();
-
-            var archivos = new List<(string Nombre, byte[] Contenido)>();
-            foreach (var empleado in empleados)
-            {
-                var nombre = $"{empleado.IdpersonaNavigation.Nombres} {empleado.IdpersonaNavigation.Apellidos}".Trim();
-                var actividadesEmpleado = actividades.Where(a => a.Idempleado == empleado.Id)
-                    .Select(a => new SeguimientoActividad(a.Fecha, a.TipoActividad, a.CodigoRequerimiento, a.Horas, a.Descripcion, a.LiderProyecto, a.ClienteProyecto, a.EsRecurrente))
-                    .ToList();
-                var reporte = formato == "pdf"
-                    ? SeguimientoReportService.CrearReportePdf(nombre, request.FechaDesde, request.FechaHasta, actividadesEmpleado)
-                    : SeguimientoReportService.CrearReporte(
-                    nombre,
-                    request.FechaDesde,
-                    request.FechaHasta,
-                    actividadesEmpleado,
-                    feriados);
-                var extension = formato == "pdf" ? "pdf" : "xlsx";
-                if (formato == "pdf" && !SeguimientoReportService.EsPdf(reporte))
-                    return Results.Problem("No se pudo generar el reporte PDF solicitado.", statusCode: 500);
-                var nombreArchivo = $"Reporte_{SeguimientoReportService.SanitizarNombreArchivo(nombre)}.{extension}";
-                var baseNombre = nombreArchivo;
-                var sufijo = 1;
-                while (archivos.Any(a => a.Nombre.Equals(nombreArchivo, StringComparison.OrdinalIgnoreCase)))
-                    nombreArchivo = $"{Path.GetFileNameWithoutExtension(baseNombre)}_{sufijo++}.{extension}";
-                archivos.Add((nombreArchivo, reporte));
-            }
-
-            var zip = SeguimientoReportService.CrearZip(archivos);
-            var nombreZip = $"Seguimiento_{formato.ToUpperInvariant()}_{request.FechaDesde:yyyy-MM-dd}_a_{request.FechaHasta:yyyy-MM-dd}.zip";
-            return Results.File(zip, "application/zip", nombreZip);
-        });
+        // La ruta histórica mantiene Excel. PDF tiene una ruta propia para fijar
+        // el formato en el servidor y evitar que el DTO caiga a su valor default.
+        groupSeguimiento.MapPost("/descarga-multiple", async (DescargarSeguimientoMultipleRequest request, ApplicationDbContext db) =>
+            await DescargarReportesMultiples(request, db, request.Formato));
+        groupSeguimiento.MapPost("/descarga-multiple-pdf", async (DescargarSeguimientoMultipleRequest request, ApplicationDbContext db) =>
+            await DescargarReportesMultiples(request, db, "pdf"));
 
         groupSeguimiento.MapGet("/colaborador/{id:int}/actividades", async (int id, DateOnly fechaDesde, DateOnly fechaHasta, ApplicationDbContext db) =>
         {
@@ -587,5 +520,74 @@ public static class TimeReportEndpoints
 
             return Results.Ok(new { Actividades = actividades, Feriados = feriadosList });
         });
+    }
+
+    private static async Task<IResult> DescargarReportesMultiples(
+        DescargarSeguimientoMultipleRequest request,
+        ApplicationDbContext db,
+        string formatoSolicitado)
+    {
+        var formato = formatoSolicitado.Trim().ToLowerInvariant();
+        if (request.Ids is null || request.Ids.Count < 1 || request.FechaDesde > request.FechaHasta || formato is not ("xlsx" or "pdf"))
+            return Results.BadRequest(new { message = "Selecciona colaboradores, un rango válido y un formato PDF o Excel." });
+
+        var ids = request.Ids.Distinct().ToList();
+        var empleados = await db.TblAdministracionEmpleados
+            .Where(e => e.Activo && ids.Contains(e.Id))
+            .Include(e => e.IdpersonaNavigation)
+            .ToListAsync();
+        if (empleados.Count != ids.Count)
+            return Results.BadRequest(new { message = "Uno o más colaboradores seleccionados no son válidos." });
+
+        var actividades = await db.TblTimeReportActividadDiaria
+            .Where(a => a.Activo && ids.Contains(a.Idempleado) && a.Fechaactividad >= request.FechaDesde && a.Fechaactividad <= request.FechaHasta)
+            .Select(a => new
+            {
+                a.Idempleado,
+                Fecha = a.Fechaactividad.ToString("yyyy-MM-dd"),
+                TipoActividad = a.IdtipoactividadNavigation != null ? a.IdtipoactividadNavigation.Nombretipo : "Otro",
+                CodigoRequerimiento = a.Codigorequerimiento ?? "",
+                Horas = a.Cantidadhoras,
+                Descripcion = a.Descripcionactividad ?? "",
+                LiderProyecto = a.IdproyectoNavigation != null
+                    ? (a.IdproyectoNavigation.TblTimeReportAsignacionProyectos.Where(ep => ep.Activo && ep.Idlider != null && ep.IdliderNavigation != null && ep.IdliderNavigation.IdpersonaNavigation != null)
+                        .Select(ep => ep.IdliderNavigation.IdpersonaNavigation.Nombres + " " + ep.IdliderNavigation.IdpersonaNavigation.Apellidos).FirstOrDefault() ?? "Sin Líder")
+                    : "Sin Líder",
+                ClienteProyecto = a.IdproyectoNavigation != null && a.IdproyectoNavigation.IdclienteNavigation != null
+                    ? (a.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial ?? a.IdproyectoNavigation.IdclienteNavigation.Razonsocial ?? "Sin Cliente")
+                    : "Sin Cliente",
+                EsRecurrente = false
+            })
+            .ToListAsync();
+        var feriados = (await db.TblTimeReportFeriados
+            .Where(f => f.Activo && f.Fechaferiado >= request.FechaDesde && f.Fechaferiado <= request.FechaHasta)
+            .Select(f => f.Fechaferiado.ToString("yyyy-MM-dd"))
+            .ToListAsync()).ToHashSet();
+
+        var archivos = new List<(string Nombre, byte[] Contenido)>();
+        foreach (var empleado in empleados)
+        {
+            var nombre = $"{empleado.IdpersonaNavigation.Nombres} {empleado.IdpersonaNavigation.Apellidos}".Trim();
+            var actividadesEmpleado = actividades.Where(a => a.Idempleado == empleado.Id)
+                .Select(a => new SeguimientoActividad(a.Fecha, a.TipoActividad, a.CodigoRequerimiento, a.Horas, a.Descripcion, a.LiderProyecto, a.ClienteProyecto, a.EsRecurrente))
+                .ToList();
+            var reporte = formato == "pdf"
+                ? SeguimientoReportService.CrearReportePdf(nombre, request.FechaDesde, request.FechaHasta, actividadesEmpleado)
+                : SeguimientoReportService.CrearReporte(nombre, request.FechaDesde, request.FechaHasta, actividadesEmpleado, feriados);
+            var extension = formato == "pdf" ? "pdf" : "xlsx";
+            if (formato == "pdf" && !SeguimientoReportService.EsPdf(reporte))
+                return Results.Problem("No se pudo generar el reporte PDF solicitado.", statusCode: 500);
+
+            var nombreArchivo = $"Reporte_{SeguimientoReportService.SanitizarNombreArchivo(nombre)}.{extension}";
+            var baseNombre = nombreArchivo;
+            var sufijo = 1;
+            while (archivos.Any(a => a.Nombre.Equals(nombreArchivo, StringComparison.OrdinalIgnoreCase)))
+                nombreArchivo = $"{Path.GetFileNameWithoutExtension(baseNombre)}_{sufijo++}.{extension}";
+            archivos.Add((nombreArchivo, reporte));
+        }
+
+        var zip = SeguimientoReportService.CrearZip(archivos);
+        var nombreZip = $"Seguimiento_{formato.ToUpperInvariant()}_{request.FechaDesde:yyyy-MM-dd}_a_{request.FechaHasta:yyyy-MM-dd}.zip";
+        return Results.File(zip, "application/zip", nombreZip);
     }
 }
