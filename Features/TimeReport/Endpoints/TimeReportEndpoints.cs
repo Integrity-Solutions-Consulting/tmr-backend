@@ -479,9 +479,11 @@ public static class TimeReportEndpoints
             return Results.NoContent();
         });
 
-        groupSeguimiento.MapPost("/descarga-multiple/{formato}", async (string formato, DescargarSeguimientoMultipleRequest request, ApplicationDbContext db) =>
+        // Se conserva la ruta anterior y se admite opcionalmente el formato en la URL.
+        // Esto permite actualizar frontend y backend de forma independiente sin romper clientes existentes.
+        groupSeguimiento.MapPost("/descarga-multiple/{formato?}", async (string? formato, DescargarSeguimientoMultipleRequest request, ApplicationDbContext db) =>
         {
-            formato = formato.Trim().ToLowerInvariant();
+            formato = (formato ?? request.Formato).Trim().ToLowerInvariant();
             if (request.Ids is null || request.Ids.Count < 1 || request.FechaDesde > request.FechaHasta || formato is not ("xlsx" or "pdf"))
                 return Results.BadRequest(new { message = "Selecciona colaboradores, un rango válido y un formato PDF o Excel." });
 
