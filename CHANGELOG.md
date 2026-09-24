@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.2.0...v1.2.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* arreglo de zip en la opcion de pdf ([f2de85e](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/f2de85ed24dcf3e381a6a4fb6ff005312e032e3d))
+* correccion de descarga zip con pdf v2 ([75ee10b](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/75ee10bc7bc2ff785f9d6733ab4d7b651badcf19))
+* in english zip con pdf v3 ([70d6209](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/70d62095ddc34ab06d5ea606bd2ed10e15b6b965))
+* in english zip con pdf v5 ([06442b6](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/06442b6a14534028407aad12f9d4b2bdb056af72))
+* in english zip con pdf v7 ([817042f](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/817042f4d8dfc3cca10bd3d2b601126efd07823d))
+
 ## [1.2.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.1.2...v1.2.0) (2026-09-24)
 
 
