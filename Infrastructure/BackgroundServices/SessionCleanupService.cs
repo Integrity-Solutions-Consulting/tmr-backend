@@ -109,10 +109,6 @@ public sealed class SessionCleanupService(
                 sesionesExpiradas.Count,
                 sesionesHuerfanas.Count(s => !s.Estaactiva));
         }
-        else
-        {
-            logger.LogDebug("SessionCleanup: no se encontraron sesiones huérfanas en este ciclo.");
-        }
     }
 
     private static void DeactivateSession(
