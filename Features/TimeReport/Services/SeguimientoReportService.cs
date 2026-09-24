@@ -1,5 +1,8 @@
 using System.IO.Compression;
 using ClosedXML.Excel;
+using QuestPDF.Fluent;
+using QuestPDF.Helpers;
+using QuestPDF.Infrastructure;
 
 namespace tmr_backend.Features.TimeReport.Services;
 
@@ -18,8 +21,10 @@ public static class SeguimientoReportService
 {
     public static string SanitizarNombreArchivo(string nombre)
     {
-        var invalidos = Path.GetInvalidFileNameChars();
-        var limpio = string.Concat(nombre.Select(c => invalidos.Contains(c) ? '_' : c)).Trim();
+        // El ZIP puede extraerse en Windows o Linux; usar solo los caracteres
+        // inválidos del SO servidor podría dejar pasar separadores en Windows.
+        var invalidos = new HashSet<char> { '<', '>', ':', '\\', '"', '/', '|', '?', '*' };
+        var limpio = string.Concat(nombre.Select(c => char.IsControl(c) || invalidos.Contains(c) ? '_' : c)).Trim().TrimEnd('.');
         return string.IsNullOrWhiteSpace(limpio) ? "colaborador" : limpio;
     }
 
@@ -134,6 +139,73 @@ public static class SeguimientoReportService
             }
         }
         return stream.ToArray();
+    }
+
+    public static byte[] CrearReportePdf(
+        string nombreColaborador,
+        DateOnly fechaDesde,
+        DateOnly fechaHasta,
+        IReadOnlyCollection<SeguimientoActividad> actividades)
+    {
+        QuestPDF.Settings.License = LicenseType.Community;
+        var filas = actividades
+            .GroupBy(a => new { a.Fecha, a.ClienteProyecto, a.TipoActividad, a.Descripcion })
+            .OrderBy(g => g.Key.Fecha)
+            .ThenBy(g => g.Key.ClienteProyecto)
+            .ToList();
+
+        return Document.Create(document => document.Page(page =>
+        {
+            page.Size(PageSizes.A4.Landscape());
+            page.Margin(24);
+            page.DefaultTextStyle(style => style.FontSize(8));
+            page.Header().Column(column =>
+            {
+                column.Item().Text($"Seguimiento de Colaborador - {nombreColaborador}")
+                    .FontSize(18).Bold().FontColor(Colors.Blue.Darken3);
+                column.Item().Text($"Periodo: del {fechaDesde:yyyy-MM-dd} al {fechaHasta:yyyy-MM-dd}")
+                    .FontSize(9).FontColor(Colors.Grey.Darken1);
+            });
+            page.Content().PaddingTop(16).Table(table =>
+            {
+                table.ColumnsDefinition(columns =>
+                {
+                    columns.RelativeColumn(1.2f);
+                    columns.RelativeColumn(2.2f);
+                    columns.RelativeColumn(1.6f);
+                    columns.RelativeColumn(3.5f);
+                    columns.RelativeColumn(1f);
+                });
+                table.Header(header =>
+                {
+                    foreach (var titulo in new[] { "Fecha", "Cliente", "Tipo", "Descripción", "Horas" })
+                        header.Cell().Background(Colors.Blue.Darken3).Padding(5).Text(titulo).Bold().FontColor(Colors.White);
+                });
+                foreach (var fila in filas)
+                {
+                    table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten2).Padding(4).Text(fila.Key.Fecha);
+                    table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten2).Padding(4).Text(fila.Key.ClienteProyecto);
+                    table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten2).Padding(4).Text(fila.Key.TipoActividad);
+                    table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten2).Padding(4).Text(fila.Key.Descripcion);
+                    table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten2).Padding(4).AlignRight().Text(fila.Sum(a => a.Horas).ToString("0.##"));
+                }
+            });
+            page.Footer().AlignCenter().Text(text =>
+            {
+                text.Span("TMR - Seguimiento | ");
+                text.CurrentPageNumber();
+            });
+        })).GeneratePdf();
+    }
+
+    public static bool EsPdf(byte[] contenido)
+    {
+        return contenido.Length >= 5
+            && contenido[0] == (byte)'%'
+            && contenido[1] == (byte)'P'
+            && contenido[2] == (byte)'D'
+            && contenido[3] == (byte)'F'
+            && contenido[4] == (byte)'-';
     }
 
     private static string LimpiarNombreHoja(string nombre, int indice, XLWorkbook workbook)
