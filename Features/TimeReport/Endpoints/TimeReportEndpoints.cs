@@ -479,9 +479,9 @@ public static class TimeReportEndpoints
             return Results.NoContent();
         });
 
-        groupSeguimiento.MapPost("/descarga-multiple", async (DescargarSeguimientoMultipleRequest request, ApplicationDbContext db) =>
+        groupSeguimiento.MapPost("/descarga-multiple/{formato}", async (string formato, DescargarSeguimientoMultipleRequest request, ApplicationDbContext db) =>
         {
-            var formato = request.Formato?.Trim().ToLowerInvariant();
+            formato = formato.Trim().ToLowerInvariant();
             if (request.Ids is null || request.Ids.Count < 1 || request.FechaDesde > request.FechaHasta || formato is not ("xlsx" or "pdf"))
                 return Results.BadRequest(new { message = "Selecciona colaboradores, un rango válido y un formato PDF o Excel." });
 
@@ -536,6 +536,8 @@ public static class TimeReportEndpoints
                     actividadesEmpleado,
                     feriados);
                 var extension = formato == "pdf" ? "pdf" : "xlsx";
+                if (formato == "pdf" && !SeguimientoReportService.EsPdf(reporte))
+                    return Results.Problem("No se pudo generar el reporte PDF solicitado.", statusCode: 500);
                 var nombreArchivo = $"Reporte_{SeguimientoReportService.SanitizarNombreArchivo(nombre)}.{extension}";
                 var baseNombre = nombreArchivo;
                 var sufijo = 1;

@@ -196,6 +196,16 @@ public static class SeguimientoReportService
         })).GeneratePdf();
     }
 
+    public static bool EsPdf(byte[] contenido)
+    {
+        return contenido.Length >= 5
+            && contenido[0] == (byte)'%'
+            && contenido[1] == (byte)'P'
+            && contenido[2] == (byte)'D'
+            && contenido[3] == (byte)'F'
+            && contenido[4] == (byte)'-';
+    }
+
     private static string LimpiarNombreHoja(string nombre, int indice, XLWorkbook workbook)
     {
         var limpio = string.Concat(nombre.Select(c => "[]:*?/\\".Contains(c) ? '_' : c));
