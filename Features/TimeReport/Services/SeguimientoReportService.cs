@@ -21,8 +21,10 @@ public static class SeguimientoReportService
 {
     public static string SanitizarNombreArchivo(string nombre)
     {
-        var invalidos = Path.GetInvalidFileNameChars();
-        var limpio = string.Concat(nombre.Select(c => invalidos.Contains(c) ? '_' : c)).Trim();
+        // El ZIP puede extraerse en Windows o Linux; usar solo los caracteres
+        // inválidos del SO servidor podría dejar pasar separadores en Windows.
+        var invalidos = new HashSet<char> { '<', '>', ':', '\\', '"', '/', '|', '?', '*' };
+        var limpio = string.Concat(nombre.Select(c => char.IsControl(c) || invalidos.Contains(c) ? '_' : c)).Trim().TrimEnd('.');
         return string.IsNullOrWhiteSpace(limpio) ? "colaborador" : limpio;
     }
 
