@@ -6,7 +6,7 @@ using tmr_backend.Features.TimeReport.Services;
 using tmr_backend.Infrastructure.Database;
 
 namespace tmr_backend.Features.TimeReport;
-
+//comentario de prueba
 public static class TimeReportEndpoints
 {
     public static void MapTimeReportEndpoints(this IEndpointRouteBuilder app)
