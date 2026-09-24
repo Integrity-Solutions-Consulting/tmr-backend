@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>tmr_backend</RootNamespace>
+    <UserSecretsId>ecaeed17-8c99-479b-b08c-3278e8e7495f</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

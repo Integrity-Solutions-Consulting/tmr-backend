@@ -275,7 +275,7 @@ app.MapDiasFestivosEndpoints();
 app.MapCatalogosConfigEndpoints();
 
 // ── Seed Template Data (Desarrollo) ──
-/*if (app.Environment.IsDevelopment())
+if (app.Environment.IsDevelopment())
 {
     try
     {
@@ -285,6 +285,6 @@ app.MapCatalogosConfigEndpoints();
     {
         Console.WriteLine($"⚠️  Seeding skipped: {ex.Message}");
     }
-}*/
+}
 
 app.Run();
