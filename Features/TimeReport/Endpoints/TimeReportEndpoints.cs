@@ -347,8 +347,17 @@ public static class TimeReportEndpoints
         groupSeguimiento.MapGet("/", async ([AsParameters] FiltroSeguimientoDto filtro, ApplicationDbContext db) =>
         {
             var query = db.TblAdministracionEmpleados
-                .Where(e => e.Activo)
+                // sm - Se comenta el filtro anterior porque solo mostraba activos y ocultaba a quien salió dentro del rango.
+                // .Where(e => e.Activo)
+                // sm - Nuevo filtro: todos los activos + los inactivos cuya fecha de terminación está dentro del rango filtrado
+                // (fechas exactas del rango). Inactivos sin fecha de terminación o que salieron fuera del rango no aparecen.
+                .Where(e => e.Activo
+                    || (e.Fechaterminacion.HasValue
+                        && e.Fechaterminacion.Value >= filtro.FechaDesde
+                        && e.Fechaterminacion.Value <= filtro.FechaHasta))
                 .Include(e => e.IdpersonaNavigation)
+                // sm - Se incluye el tipo de contrato para saber si es pasante (jornada de 6 h).
+                .Include(e => e.IdtipocontratoNavigation)
                 .Include(e => e.TblTimeReportAsignacionProyectos)
                     .ThenInclude(ep => ep.IdproyectoNavigation)
                         .ThenInclude(p => p.IdclienteNavigation)
@@ -400,28 +409,90 @@ public static class TimeReportEndpoints
 
             var colaboradores = new List<SeguimientoColaboradorDto>();
 
+            // sm - "Hoy" según la hora de Ecuador (UTC−5, sin horario de verano), sin importar la zona horaria del servidor.
+            // Se usa para no contar los días futuros del rango.
+            var hoyEcuador = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(-5));
+
             foreach (var e in employees)
             {
                 var empActividades = actividades.Where(a => a.Idempleado == e.Id).ToList();
-                var nroHoras = empActividades.Sum(a => a.Cantidadhoras);
-                var diasConReporte = empActividades.Select(a => a.Fechaactividad).Distinct().Count();
+                // sm - Se comenta el cálculo anterior de horas y días porque:
+                // - nroHoras incluía días futuros del rango (se limita hasta hoy).
+                // - diasConReporte contaba cualquier día con al menos una actividad (aunque fuera 1 h o fin de semana).
+                // - diasACompletar usaba todos los días laborables del rango, sin considerar hoy, jornada ni fecha de ingreso/salida.
+                // var nroHoras = empActividades.Sum(a => a.Cantidadhoras);
+                // var diasConReporte = empActividades.Select(a => a.Fechaactividad).Distinct().Count();
+                //
+                // // Calculate working days in the range
+                // var workingDays = 0;
+                // var current = filtro.FechaDesde;
+                // while (current <= filtro.FechaHasta)
+                // {
+                //     var dayOfWeek = current.ToDateTime(TimeOnly.MinValue).DayOfWeek;
+                //     var isWeekend = dayOfWeek == DayOfWeek.Saturday || dayOfWeek == DayOfWeek.Sunday;
+                //     var isFeriado = feriados.Contains(current);
+                //     if (!isWeekend && !isFeriado)
+                //     {
+                //         workingDays++;
+                //     }
+                //     current = current.AddDays(1);
+                // }
+                //
+                // var diasACompletar = Math.Max(0, workingDays - diasConReporte);
 
-                // Calculate working days in the range
-                var workingDays = 0;
-                var current = filtro.FechaDesde;
-                while (current <= filtro.FechaHasta)
+                // sm - Nuevo cálculo por colaborador (regla de negocio):
+                // - Periodo = rango filtrado, desde su fecha de ingreso y hasta su fecha de salida si caen dentro del rango,
+                //   y nunca después de hoy (fecha de Ecuador): los días futuros del rango no se cuentan.
+                // - Días laborables = lunes a viernes del periodo, sin feriados. Sábados, domingos y feriados no cuentan.
+                // - Jornada mínima = 8 h por día; 6 h si el tipo de contrato es Pasantía (código PAS).
+                // - Días con reporte = días laborables con horas registradas >= jornada.
+                // - Días a completar = días laborables con horas < jornada (incluye días sin registro).
+                // - Horas por registrar = max(0, días laborables × jornada − horas registradas en esos días).
+                var horasJornada = e.IdtipocontratoNavigation?.Codigovalor?.Trim().ToUpper() == "PAS" ? 6m : 8m;
+
+                var inicioPeriodo = e.Fechaingreso.HasValue && e.Fechaingreso.Value > filtro.FechaDesde
+                    ? e.Fechaingreso.Value
+                    : filtro.FechaDesde;
+                var finPeriodo = e.Fechaterminacion.HasValue && e.Fechaterminacion.Value < filtro.FechaHasta
+                    ? e.Fechaterminacion.Value
+                    : filtro.FechaHasta;
+                if (finPeriodo > hoyEcuador) finPeriodo = hoyEcuador;
+
+                // sm - Horas registradas por día dentro del periodo (para comparar cada día contra la jornada).
+                var horasPorDia = empActividades
+                    .Where(a => a.Fechaactividad >= inicioPeriodo && a.Fechaactividad <= finPeriodo)
+                    .GroupBy(a => a.Fechaactividad)
+                    .ToDictionary(g => g.Key, g => g.Sum(a => a.Cantidadhoras));
+
+                var diasLaborablesPeriodo = 0;
+                var diasConReporte = 0;
+                var horasDiasLaborables = 0m;
+                for (var dia = inicioPeriodo; dia <= finPeriodo; dia = dia.AddDays(1))
                 {
-                    var dayOfWeek = current.ToDateTime(TimeOnly.MinValue).DayOfWeek;
-                    var isWeekend = dayOfWeek == DayOfWeek.Saturday || dayOfWeek == DayOfWeek.Sunday;
-                    var isFeriado = feriados.Contains(current);
-                    if (!isWeekend && !isFeriado)
-                    {
-                        workingDays++;
-                    }
-                    current = current.AddDays(1);
+                    var diaSemana = dia.ToDateTime(TimeOnly.MinValue).DayOfWeek;
+                    if (diaSemana == DayOfWeek.Saturday || diaSemana == DayOfWeek.Sunday || feriados.Contains(dia))
+                        continue;
+
+                    diasLaborablesPeriodo++;
+                    horasPorDia.TryGetValue(dia, out var horasDia);
+                    horasDiasLaborables += horasDia;
+                    if (horasDia >= horasJornada) diasConReporte++;
                 }
 
-                var diasACompletar = Math.Max(0, workingDays - diasConReporte);
+                var diasACompletar = diasLaborablesPeriodo - diasConReporte;
+
+                // sm - "Horas registradas" de la tabla: todas las horas del rango, pero solo hasta hoy (sin días futuros).
+                var nroHoras = empActividades
+                    .Where(a => a.Fechaactividad <= hoyEcuador)
+                    .Sum(a => a.Cantidadhoras);
+
+                var horasEsperadas = diasLaborablesPeriodo * horasJornada;
+                // sm - Se comenta: ahora se descuentan solo las horas de días laborables (fines de semana y feriados no cuentan).
+                // var horasRegistradasPeriodo = empActividades
+                //     .Where(a => a.Fechaactividad >= inicioPeriodo && a.Fechaactividad <= finPeriodo)
+                //     .Sum(a => a.Cantidadhoras);
+                // var horasPorRegistrar = Math.Max(0m, horasEsperadas - horasRegistradasPeriodo);
+                var horasPorRegistrar = Math.Max(0m, horasEsperadas - horasDiasLaborables);
 
                 // Determine Estado
                 var estado = "Pendiente";
@@ -456,7 +527,14 @@ public static class TimeReportEndpoints
                     nroHoras,
                     estado,
                     diasConReporte,
-                    diasACompletar
+                    diasACompletar,
+                    // sm - Nuevos valores para la métrica "Horas por registrar" del frontend.
+                    horasJornada,
+                    horasEsperadas,
+                    horasPorRegistrar,
+                    // sm - Valores para la métrica "Promedio por día" (horas en días laborables ÷ días laborables del periodo).
+                    diasLaborablesPeriodo,
+                    horasDiasLaborables
                 ));
             }
 
@@ -533,7 +611,14 @@ public static class TimeReportEndpoints
 
         var ids = request.Ids.Distinct().ToList();
         var empleados = await db.TblAdministracionEmpleados
-            .Where(e => e.Activo && ids.Contains(e.Id))
+            // sm - Se comenta el filtro anterior porque rechazaba a los inactivos que ahora sí aparecen en Seguimiento.
+            // .Where(e => e.Activo && ids.Contains(e.Id))
+            // sm - Misma regla que el listado de Seguimiento: activos + inactivos con fecha de terminación dentro del rango.
+            .Where(e => ids.Contains(e.Id)
+                && (e.Activo
+                    || (e.Fechaterminacion.HasValue
+                        && e.Fechaterminacion.Value >= request.FechaDesde
+                        && e.Fechaterminacion.Value <= request.FechaHasta)))
             .Include(e => e.IdpersonaNavigation)
             .ToListAsync();
         if (empleados.Count != ids.Count)
