@@ -27,10 +27,6 @@ DECLARE
 BEGIN
     PERFORM set_config('search_path', 'autenticacion, administracion, public', true);
 
-    IF to_regclass('tbl_autenticacion_aplicacion') IS NULL THEN
-        RAISE EXCEPTION 'No se encontro tbl_autenticacion_aplicacion. Ejecuta primero el deploy de la base o revisa el esquema.';
-    END IF;
-
     IF to_regclass('tbl_administracion_persona') IS NULL THEN
         RAISE EXCEPTION 'No se encontro tbl_administracion_persona. Ejecuta primero el deploy de la base o revisa el esquema.';
     END IF;
@@ -49,24 +45,6 @@ BEGIN
 
     IF to_regclass('tbl_autenticacion_usuario_rol') IS NULL THEN
         RAISE EXCEPTION 'No se encontro tbl_autenticacion_usuario_rol. Ejecuta primero el deploy de la base o revisa el esquema.';
-    END IF;
-
-    IF to_regclass('tbl_autenticacion_usuario_aplicacion') IS NULL THEN
-        RAISE EXCEPTION 'No se encontro tbl_autenticacion_usuario_aplicacion. Ejecuta primero el deploy de la base o revisa el esquema.';
-    END IF;
-
-    SELECT id
-      INTO v_aplicacion_id
-      FROM tbl_autenticacion_aplicacion
-     WHERE lower(nombreaplicacion) = v_app_name
-     LIMIT 1;
-
-    IF v_aplicacion_id IS NULL THEN
-        INSERT INTO tbl_autenticacion_aplicacion
-            (nombreaplicacion, descripcion, urlbase, activo, usuariocreacion, fechacreacion, ipcreacion)
-        VALUES
-            (v_app_name, v_app_description, v_app_url, TRUE, v_usuario_sistema, v_now, v_ip)
-        RETURNING id INTO v_aplicacion_id;
     END IF;
 
     SELECT id INTO v_persona_id_email
@@ -194,18 +172,6 @@ BEGIN
                  v_usuario_sistema, v_now, v_ip);
         END IF;
     END LOOP;
-
-    IF NOT EXISTS (
-        SELECT 1
-          FROM tbl_autenticacion_usuario_aplicacion
-         WHERE idusuario = v_usuario_id
-           AND idaplicacion = v_aplicacion_id
-    ) THEN
-        INSERT INTO tbl_autenticacion_usuario_aplicacion
-            (idusuario, idaplicacion, activo, usuariocreacion, fechacreacion, ipcreacion)
-        VALUES
-            (v_usuario_id, v_aplicacion_id, TRUE, v_usuario_sistema, v_now, v_ip);
-    END IF;
 
     RAISE NOTICE 'Usuario % creado/actualizado correctamente con id=% y email=%',
         v_nombres || ' ' || v_apellidos, v_usuario_id, v_email;
