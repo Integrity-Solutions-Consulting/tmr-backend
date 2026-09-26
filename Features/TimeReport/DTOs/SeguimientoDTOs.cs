@@ -30,5 +30,6 @@ public record AprobarHorasRequest(
 public record DescargarSeguimientoMultipleRequest(
     List<int> Ids,
     DateOnly FechaDesde,
-    DateOnly FechaHasta
+    DateOnly FechaHasta,
+    string Formato = "xlsx"
 );
