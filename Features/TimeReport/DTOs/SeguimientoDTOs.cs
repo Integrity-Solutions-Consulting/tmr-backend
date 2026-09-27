@@ -8,6 +8,10 @@ public record FiltroSeguimientoDto(
     string? ClienteSeleccionado,
     DateOnly FechaDesde,
     DateOnly FechaHasta,
+    // El frontend manda "quincena"/"mes-completo" para saber qué preset de fechas mostrar,
+    // pero el filtrado real ya llega resuelto en FechaDesde/FechaHasta, así que este endpoint
+    // no lo usa. Se deja el parámetro (no se borra) por si a futuro se necesita aplicar una
+    // regla distinta según el período en vez de solo el rango de fechas.
     string? Periodo
 );
 

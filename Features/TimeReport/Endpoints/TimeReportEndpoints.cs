@@ -346,6 +346,8 @@ public static class TimeReportEndpoints
 
         groupSeguimiento.MapGet("/", async ([AsParameters] FiltroSeguimientoDto filtro, ApplicationDbContext db) =>
         {
+            // sm - filtro.Periodo (quincena/mes-completo) no se usa aquí: el frontend ya lo resuelve
+            // a FechaDesde/FechaHasta antes de llamar a este endpoint. Se recibe pero no se aplica.
             var query = db.TblAdministracionEmpleados
                 // sm - Se comenta el filtro anterior porque solo mostraba activos y ocultaba a quien salió dentro del rango.
                 // .Where(e => e.Activo)
