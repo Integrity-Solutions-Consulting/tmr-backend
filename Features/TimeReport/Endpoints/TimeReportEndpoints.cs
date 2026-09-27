@@ -466,7 +466,7 @@ public static class TimeReportEndpoints
 
                 var diasLaborablesPeriodo = 0;
                 var diasConReporte = 0;
-                var horasDiasLaborables = 0m;
+                var horasRegistradasLaborables = 0m;
                 for (var dia = inicioPeriodo; dia <= finPeriodo; dia = dia.AddDays(1))
                 {
                     var diaSemana = dia.ToDateTime(TimeOnly.MinValue).DayOfWeek;
@@ -475,16 +475,14 @@ public static class TimeReportEndpoints
 
                     diasLaborablesPeriodo++;
                     horasPorDia.TryGetValue(dia, out var horasDia);
-                    horasDiasLaborables += horasDia;
+                    horasRegistradasLaborables += horasDia;
                     if (horasDia >= horasJornada) diasConReporte++;
                 }
 
                 var diasACompletar = diasLaborablesPeriodo - diasConReporte;
 
                 // sm - "Horas registradas" de la tabla: todas las horas del rango, pero solo hasta hoy (sin días futuros).
-                var nroHoras = empActividades
-                    .Where(a => a.Fechaactividad <= hoyEcuador)
-                    .Sum(a => a.Cantidadhoras);
+                var nroHoras = horasRegistradasLaborables;
 
                 var horasEsperadas = diasLaborablesPeriodo * horasJornada;
                 // sm - Se comenta: ahora se descuentan solo las horas de días laborables (fines de semana y feriados no cuentan).
@@ -492,7 +490,7 @@ public static class TimeReportEndpoints
                 //     .Where(a => a.Fechaactividad >= inicioPeriodo && a.Fechaactividad <= finPeriodo)
                 //     .Sum(a => a.Cantidadhoras);
                 // var horasPorRegistrar = Math.Max(0m, horasEsperadas - horasRegistradasPeriodo);
-                var horasPorRegistrar = Math.Max(0m, horasEsperadas - horasDiasLaborables);
+                var horasPorRegistrar = Math.Max(0m, horasEsperadas - horasRegistradasLaborables);
 
                 // Determine Estado
                 var estado = "Pendiente";
@@ -534,7 +532,7 @@ public static class TimeReportEndpoints
                     horasPorRegistrar,
                     // sm - Valores para la métrica "Promedio por día" (horas en días laborables ÷ días laborables del periodo).
                     diasLaborablesPeriodo,
-                    horasDiasLaborables
+                    horasRegistradasLaborables
                 ));
             }
 
