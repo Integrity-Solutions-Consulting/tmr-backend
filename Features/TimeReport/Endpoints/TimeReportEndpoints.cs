@@ -559,8 +559,6 @@ public static class TimeReportEndpoints
 
         // La ruta histórica mantiene Excel. PDF tiene una ruta propia para fijar
         // el formato en el servidor y evitar que el DTO caiga a su valor default.
-        groupSeguimiento.MapPost("/descarga-multiple", async (DescargarSeguimientoMultipleRequest request, ApplicationDbContext db) =>
-            await DescargarReportesMultiples(request, db, request.Formato));
         groupSeguimiento.MapPost("/descarga-multiple-pdf", async (DescargarSeguimientoMultipleRequest request, ApplicationDbContext db) =>
             await DescargarReportesMultiples(request, db, "pdf"));
 
@@ -656,11 +654,9 @@ public static class TimeReportEndpoints
             var actividadesEmpleado = actividades.Where(a => a.Idempleado == empleado.Id)
                 .Select(a => new SeguimientoActividad(a.Fecha, a.TipoActividad, a.CodigoRequerimiento, a.Horas, a.Descripcion, a.LiderProyecto, a.ClienteProyecto, a.EsRecurrente))
                 .ToList();
-            var reporte = formato == "pdf"
-                ? SeguimientoReportService.CrearReportePdf(nombre, request.FechaDesde, request.FechaHasta, actividadesEmpleado)
-                : SeguimientoReportService.CrearReporte(nombre, request.FechaDesde, request.FechaHasta, actividadesEmpleado, feriados);
-            var extension = formato == "pdf" ? "pdf" : "xlsx";
-            if (formato == "pdf" && !SeguimientoReportService.EsPdf(reporte))
+            var reporte = SeguimientoReportService.CrearReportePdf(nombre, request.FechaDesde, request.FechaHasta, actividadesEmpleado);
+            const string extension = "pdf";
+            if (!SeguimientoReportService.EsPdf(reporte))
                 return Results.Problem("No se pudo generar el reporte PDF solicitado.", statusCode: 500);
 
             var nombreArchivo = $"Reporte_{SeguimientoReportService.SanitizarNombreArchivo(nombre)}.{extension}";
