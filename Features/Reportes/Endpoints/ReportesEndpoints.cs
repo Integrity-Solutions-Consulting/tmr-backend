@@ -163,5 +163,86 @@ public static class ReportesEndpoints
 
             return Results.Ok(new PaginatedResponse<ReporteFechasResponse>(resultado, total));
         });
+
+        // =========================================================================
+        // INTEGRACIÓN CON TMR-DOCUMENT-SERVICE (Microservicio de Motor de Plantillas)
+        // =========================================================================
+
+        // 3. Generar Documento (Proxy)
+        group.MapPost("/documentos/generar", async (
+            HttpRequest request,
+            System.Net.Http.IHttpClientFactory clientFactory,
+            Microsoft.Extensions.Configuration.IConfiguration config) =>
+        {
+            try
+            {
+                var docServiceUrl = config["DocumentServiceUrl"] ?? "http://localhost:3001";
+                var client = clientFactory.CreateClient();
+                
+                // Lee el JSON completo que envía el frontend (templateName, data, format)
+                using var streamReader = new System.IO.StreamReader(request.Body);
+                var bodyJson = await streamReader.ReadToEndAsync();
+                
+                var content = new System.Net.Http.StringContent(bodyJson, System.Text.Encoding.UTF8, "application/json");
+                var response = await client.PostAsync($"{docServiceUrl}/api/reports/generate", content);
+                
+                var responseBody = await response.Content.ReadAsStringAsync();
+                return Results.Content(responseBody, "application/json", statusCode: (int)response.StatusCode);
+            }
+            catch (System.Exception ex)
+            {
+                return Results.Problem($"Error al conectar con el motor de plantillas: {ex.Message}");
+            }
+        });
+
+        // 4. Consultar Estado (Proxy)
+        group.MapGet("/documentos/estado/{jobId}", async (
+            string jobId,
+            System.Net.Http.IHttpClientFactory clientFactory,
+            Microsoft.Extensions.Configuration.IConfiguration config) =>
+        {
+            try
+            {
+                var docServiceUrl = config["DocumentServiceUrl"] ?? "http://localhost:3001";
+                var client = clientFactory.CreateClient();
+                
+                var response = await client.GetAsync($"{docServiceUrl}/api/reports/status/{jobId}");
+                var responseBody = await response.Content.ReadAsStringAsync();
+                
+                return Results.Content(responseBody, "application/json", statusCode: (int)response.StatusCode);
+            }
+            catch (System.Exception ex)
+            {
+                return Results.Problem($"Error al consultar el estado: {ex.Message}");
+            }
+        });
+
+        // 5. Descargar Documento (Proxy)
+        group.MapGet("/documentos/descargar/{filename}", async (
+            string filename,
+            System.Net.Http.IHttpClientFactory clientFactory,
+            Microsoft.Extensions.Configuration.IConfiguration config) =>
+        {
+            try
+            {
+                var docServiceUrl = config["DocumentServiceUrl"] ?? "http://localhost:3001";
+                var client = clientFactory.CreateClient();
+                
+                var response = await client.GetAsync($"{docServiceUrl}/api/reports/download/{filename}");
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    var stream = await response.Content.ReadAsStreamAsync();
+                    var contentType = response.Content.Headers.ContentType?.ToString() ?? "application/octet-stream";
+                    return Results.File(stream, contentType, filename);
+                }
+                
+                return Results.StatusCode((int)response.StatusCode);
+            }
+            catch (System.Exception ex)
+            {
+                return Results.Problem($"Error al descargar el documento: {ex.Message}");
+            }
+        });
     }
 }

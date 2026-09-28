@@ -160,6 +160,8 @@ builder.Services.AddScoped<ICargarActividadesExcelHandler, CargarActividadesExce
 // Feature: HealthCheck
 builder.Services.AddScoped<IHealthCheckService, HealthCheckService>();
 
+builder.Services.AddHttpClient();
+
 // ── Fluent Validation ──
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 
