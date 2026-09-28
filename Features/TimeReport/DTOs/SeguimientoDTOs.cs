@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace tmr_backend.Features.TimeReport.DTOs;
 
 public record FiltroSeguimientoDto(
-    string? Busqueda,
+    // sm - Se quita "Busqueda": la búsqueda por colaborador/proyecto se hace en el frontend sobre los datos cargados.
     string? ClienteSeleccionado,
     DateOnly FechaDesde,
     DateOnly FechaHasta,
@@ -39,13 +39,7 @@ public record SeguimientoColaboradorDto(
     decimal HorasDiasLaborables = 0m
 );
 
-public record AprobarHorasRequest(
-    List<int> Ids
-);
-
-public record DescargarSeguimientoMultipleRequest(
-    List<int> Ids,
-    DateOnly FechaDesde,
-    DateOnly FechaHasta,
-    string Formato = "xlsx"
-);
+// sm - Se comenta: la funcionalidad de aprobar horas se retira de Seguimiento (endpoint /aprobar comentado).
+// public record AprobarHorasRequest(
+//     List<int> Ids
+// );
