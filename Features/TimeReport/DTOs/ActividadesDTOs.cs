@@ -19,11 +19,18 @@ public record ActividadDiaDto(
     decimal TotalHoras
 );
 
+// sm - Se comenta el resumen anterior (horas de hoy, semana y mes): Actividades ahora muestra las mismas métricas
+// que Seguimiento, calculadas para el mes del calendario.
+// public record ResumenHorasDto(
+//     decimal HorasPorRegistrar,
+//     decimal HorasRegistradas,
+//     decimal HorasSemana,
+//     decimal HorasMes
+// );
 public record ResumenHorasDto(
     decimal HorasPorRegistrar,
     decimal HorasRegistradas,
-    decimal HorasSemana,
-    decimal HorasMes
+    decimal PromedioPorDia
 );
 
 public record ProyectoLookupDto(
