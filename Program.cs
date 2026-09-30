@@ -264,6 +264,7 @@ app.MapAuthEndpoints();
 app.MapCargaActividadesEndpoints();
 app.MapColaboradoresEndpoints();
 app.MapDashboardEndpoints();
+app.MapDashboardEjecutivoEndpoints(); // sm - Dashboard ejecutivo (requerimiento Dashboard Time Report)
 app.MapLideresEndpoints();
 app.MapProyectosEndpoints();
 app.MapCatalogosEndpoints();

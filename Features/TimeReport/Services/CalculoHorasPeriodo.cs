@@ -29,6 +29,11 @@ public static class CalculoHorasPeriodo
     // Se usa para no contar los días futuros del rango.
     public static DateOnly HoyEcuador() => DateOnly.FromDateTime(DateTime.UtcNow.AddHours(-5));
 
+    // sm - Jornada mínima diaria: 8 h; 6 h si el tipo de contrato es Pasantía (código PAS).
+    // Se expone para que el Dashboard use exactamente la misma regla.
+    public static decimal HorasJornada(TblAdministracionEmpleado empleado) =>
+        empleado.IdtipocontratoNavigation?.Codigovalor?.Trim().ToUpper() == "PAS" ? 6m : 8m;
+
     // sm - Regla de negocio por colaborador:
     // - Periodo = rango pedido, desde su fecha de ingreso y hasta su fecha de salida si caen dentro del rango,
     //   y nunca después de hoy (fecha de Ecuador): los días futuros del rango no se cuentan.
@@ -49,7 +54,7 @@ public static class CalculoHorasPeriodo
         ICollection<DateOnly> feriados,
         DateOnly hoy)
     {
-        var horasJornada = empleado.IdtipocontratoNavigation?.Codigovalor?.Trim().ToUpper() == "PAS" ? 6m : 8m;
+        var horasJornada = HorasJornada(empleado);
 
         var inicioPeriodo = empleado.Fechaingreso.HasValue && empleado.Fechaingreso.Value > desde
             ? empleado.Fechaingreso.Value
