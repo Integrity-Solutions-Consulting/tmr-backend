@@ -498,8 +498,8 @@ public static class TimeReportEndpoints
 
                 // Project details (sm - asignaciones ya filtradas a las activas del rango en el Include)
                 var empProys = e.TblTimeReportAsignacionProyectos.ToList();
-                var proyectosStr = empProys.Any() 
-                    ? string.Join(", ", empProys.Select(ep => ep.IdproyectoNavigation.Nombre).Distinct()) 
+                var proyectosStr = empProys.Any()
+                    ? string.Join(", ", empProys.Select(ep => ep.IdproyectoNavigation.Nombre).Distinct())
                     : "Sin Proyecto";
 
                 var clientesStr = empProys.Any()
@@ -511,6 +511,33 @@ public static class TimeReportEndpoints
                     ? string.Join(", ", empProys.Where(ep => ep.IdliderNavigation != null).Select(ep => ep.IdliderNavigation.IdpersonaNavigation.Nombres + " " + ep.IdliderNavigation.IdpersonaNavigation.Apellidos).Distinct())
                     : "Sin Líder";
                 if (string.IsNullOrWhiteSpace(lideresStr)) lideresStr = "Sin Líder";
+
+                // sm - Desglose por proyecto (id, nombre, cliente, líder y SUS horas registradas en el rango). No se
+                // recalcula jornada/estado por proyecto (no aplica: la jornada es del día completo del colaborador,
+                // no por proyecto). Se usa para el modal "Ver detalle" y para generar un archivo por proyecto al descargar.
+                var proyectosDto = empProys
+                    .GroupBy(ep => ep.Idproyecto)
+                    .Select(g =>
+                    {
+                        var clienteNombre = g.First().IdproyectoNavigation.IdclienteNavigation?.Nombrecomercial
+                            ?? g.First().IdproyectoNavigation.IdclienteNavigation?.Razonsocial;
+                        if (string.IsNullOrWhiteSpace(clienteNombre)) clienteNombre = "Sin Cliente";
+
+                        var liderNombre = string.Join(", ", g
+                            .Where(ep => ep.IdliderNavigation != null)
+                            .Select(ep => ep.IdliderNavigation.IdpersonaNavigation.Nombres + " " + ep.IdliderNavigation.IdpersonaNavigation.Apellidos)
+                            .Distinct());
+                        if (string.IsNullOrWhiteSpace(liderNombre)) liderNombre = "Sin Líder";
+
+                        // sm - Se limita a "hasta hoy" (igual que calculo.HorasRegistradas) para que la suma de horas
+                        // por proyecto no supere el total del colaborador cuando el rango consultado llega al futuro.
+                        var horasProyecto = empActividades
+                            .Where(a => a.Idproyecto == g.Key && a.Fechaactividad <= hoyEcuador)
+                            .Sum(a => a.Cantidadhoras);
+
+                        return new SeguimientoProyectoDto(g.Key, g.First().IdproyectoNavigation.Nombre, clienteNombre, liderNombre, horasProyecto);
+                    })
+                    .ToList();
 
                 colaboradores.Add(new SeguimientoColaboradorDto(
                     e.Id,
@@ -528,7 +555,8 @@ public static class TimeReportEndpoints
                     calculo.HorasPorRegistrar,
                     // sm - Valores para la métrica "Promedio por día" (horas en días laborables ÷ días laborables del periodo).
                     calculo.DiasLaborables,
-                    calculo.HorasRegistradas
+                    calculo.HorasRegistradas,
+                    proyectosDto
                 ));
             }
 
@@ -552,10 +580,13 @@ public static class TimeReportEndpoints
         //     return Results.NoContent();
         // });
 
-        groupSeguimiento.MapGet("/colaborador/{id:int}/actividades", async (int id, DateOnly fechaDesde, DateOnly fechaHasta, ApplicationDbContext db) =>
+        groupSeguimiento.MapGet("/colaborador/{id:int}/actividades", async (int id, DateOnly fechaDesde, DateOnly fechaHasta, int? idProyecto, ApplicationDbContext db) =>
         {
             var registros = await db.TblTimeReportActividadDiaria
-                .Where(a => a.Activo && a.Idempleado == id && a.Fechaactividad >= fechaDesde && a.Fechaactividad <= fechaHasta)
+                // sm - idProyecto filtra el reporte a un solo proyecto (una fila de Seguimiento = un proyecto);
+                // sin idProyecto se mantiene el comportamiento anterior (todas las actividades del colaborador).
+                .Where(a => a.Activo && a.Idempleado == id && a.Fechaactividad >= fechaDesde && a.Fechaactividad <= fechaHasta
+                    && (idProyecto == null || a.Idproyecto == idProyecto))
                 .Select(a => new {
                     a.Idproyecto,
                     a.Fechaactividad,
