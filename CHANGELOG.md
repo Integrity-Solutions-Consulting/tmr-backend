@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.2](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.2.1...v1.2.2) (2026-09-30)
+
+
+### Bug Fixes
+
+* Actualizaciòn de Seguimiento ([e5abbac](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/e5abbacc7ac5b4f3b18d68ea088f6b4890318069))
+* Actualizaciòn de Seguimiento ([038921c](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/038921c64954274999ed342db4ed14e886b3666d))
+* botón reporte nuevo endpoint para colaboradores ([e2e366e](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/e2e366e9a821e8f458191d342a159787308db193))
+* cambios en envio de datos ([a0171ec](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/a0171ec4be966a922df417f474299cf9f9e1ef84))
+* documentar que el filtro de periodo en seguimiento no se aplica ([cb0a76c](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/cb0a76c6854fdf45b820ba2aab51b12eba54328e))
+* zip con nuevas notificaciones remix v3 ([df35c29](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/df35c295da0f2ed3cfa43885075d3f3c2ecfdc75))
+* zip con nuevas notificaciones remix v4 ([d0a2984](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/d0a29847647b0116764c0a70c65762ebef72075a))
+* zip con nuevas notificaciones remix v4 ([bb6f524](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/bb6f524b1ee07f0929a413ca41e61a127800c6e6))
+
 ## [1.2.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.2.0...v1.2.1) (2026-09-24)
 
 
