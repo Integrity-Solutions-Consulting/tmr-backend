@@ -14,10 +14,9 @@ public static class ProyectosEndpoints
 
     public static void MapProyectosEndpoints(this IEndpointRouteBuilder app)
     {
-        var env = app.ServiceProvider.GetService(typeof(Microsoft.Extensions.Hosting.IHostEnvironment)) as Microsoft.Extensions.Hosting.IHostEnvironment;
         var group = app.MapGroup("/api/proyectos")
             .WithTags("Proyectos")
-            .RequireAuthorization();
+            .RequireAuthorization("PROYECTOS_READ");
 
         group.MapGet("/", async (ApplicationDbContext db) =>
         {
@@ -90,8 +89,7 @@ public static class ProyectosEndpoints
 
         var postEndpoint = group.MapPost("/", async (CrearProyectoRequest request, ApplicationDbContext db, HttpContext context) =>
         {
-            var usuarioId = "00000000-0000-0000-0000-000000000000";
-            // var usuarioId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var usuarioId = context.User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
 
             if (string.IsNullOrEmpty(usuarioId))
                 return Results.Json(new { isSuccess = false, message = "Token de sesión inválido o expirado." }, statusCode: 401);
@@ -146,12 +144,11 @@ public static class ProyectosEndpoints
 
             return Results.Created($"/api/proyectos/{proyecto.Id}", await MapProyecto(creado, db));
         });
-        if (!(env?.IsDevelopment() ?? false)) postEndpoint.RequireAuthorization();
+        postEndpoint.RequireAuthorization("PROYECTOS_CREATE");
 
         var putEndpoint = group.MapPut("/{id:int}", async (int id, ActualizarProyectoRequest request, ApplicationDbContext db, HttpContext context) =>
         {
-            var usuarioId = "00000000-0000-0000-0000-000000000000";
-            // var usuarioId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var usuarioId = context.User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
 
             if (string.IsNullOrEmpty(usuarioId))
                 return Results.Json(new { isSuccess = false, message = "Token de sesión inválido o expirado." }, statusCode: 401);
@@ -209,12 +206,11 @@ public static class ProyectosEndpoints
 
             return Results.Ok(await MapProyecto(actualizado, db));
         });
-        if (!(env?.IsDevelopment() ?? false)) putEndpoint.RequireAuthorization();
+        putEndpoint.RequireAuthorization("PROYECTOS_UPDATE");
 
         var deleteEndpoint = group.MapDelete("/{id:int}", async (int id, ApplicationDbContext db, HttpContext context) =>
         {
-            var usuarioId = "00000000-0000-0000-0000-000000000000";
-            // var usuarioId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var usuarioId = context.User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
 
             if (string.IsNullOrEmpty(usuarioId))
                 return Results.Json(new { isSuccess = false, message = "Token de sesión inválido o expirado." }, statusCode: 401);
@@ -231,7 +227,7 @@ public static class ProyectosEndpoints
             await db.SaveChangesAsync();
             return Results.NoContent();
         });
-        if (!(env?.IsDevelopment() ?? false)) deleteEndpoint.RequireAuthorization();
+        deleteEndpoint.RequireAuthorization("PROYECTOS_DELETE");
     }
 
     private static IQueryable<TblTimeReportProyecto> QueryProyectos(ApplicationDbContext db) =>

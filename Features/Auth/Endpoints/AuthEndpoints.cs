@@ -17,8 +17,7 @@ public static class AuthEndpoints
         // ── Endpoints públicos (sin autenticación) ─────────────────────────
 
         group.MapPost("/register", Register)
-            .AllowAnonymous()
-            .RequireRateLimiting("auth")
+            .RequireAuthorization("USUARIOS_CREATE")
             .WithName("RegistraUsuario")
             .WithSummary("Registra usuario")
             .Produces<ApiResponse<RegisterResponse>>(StatusCodes.Status201Created)
@@ -137,6 +136,9 @@ public static class AuthEndpoints
         IAuthService authService,
         CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(request.RefreshToken))
+            return Results.Unauthorized();
+
         var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         var result   = await authService.RefreshTokenAsync(request, clientIp, ct);
 

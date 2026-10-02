@@ -15,7 +15,7 @@ public static class ClientesEndpoints
     {
         var group = app.MapGroup("/api/clientes")
                        .WithTags("Clientes")
-                       .RequireAuthorization();  // JWT: protege TODOS los endpoints del grupo
+                       .RequireAuthorization("CLIENTES_READ");
 
         // =====================================================================
         // GET /api/clientes  - lista 
@@ -73,7 +73,7 @@ public static class ClientesEndpoints
                     Status = StatusCodes.Status409Conflict
                 });
             }
-        });
+        }).RequireAuthorization("CLIENTES_CREATE");
 
         // =====================================================================
         // PUT /api/clientes/{id}  - actualizar
@@ -107,7 +107,7 @@ public static class ClientesEndpoints
                     Status = StatusCodes.Status409Conflict
                 });
             }
-        });
+        }).RequireAuthorization("CLIENTES_UPDATE");
 
         // =====================================================================
         // DELETE /api/clientes/{id}  - eliminación lógica
@@ -131,7 +131,7 @@ public static class ClientesEndpoints
                     Status = StatusCodes.Status404NotFound
                 });
             }
-        });
+        }).RequireAuthorization("CLIENTES_DELETE");
 
         // =====================================================================
         // GET /api/clientes/tipos-identificacion

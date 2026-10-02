@@ -45,7 +45,8 @@ public sealed class AuthService(
             throw new ValidationException(validation.Errors);
 
         var normalizedEmail = request.Email.ToLowerInvariant();
-        var contraseniaDefecto = "Int3gr1ty123!"; // Contraseña por defecto (debe cambiar en el primer login)
+        // Nunca usar una contraseña inicial compartida o predecible.
+        var contraseniaDefecto = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
 
         var existe = await db.TblAutenticacionUsuarios
             .AnyAsync(u => u.Email == normalizedEmail, ct);
@@ -496,6 +497,14 @@ public sealed class AuthService(
         if (user is null)
             throw new UnauthorizedException("Usuario no encontrado.");
 
+        if (request.NewPassword != request.ConfirmPassword ||
+            request.NewPassword.Length < 12 ||
+            !request.NewPassword.Any(char.IsUpper) ||
+            !request.NewPassword.Any(char.IsLower) ||
+            !request.NewPassword.Any(char.IsDigit) ||
+            request.NewPassword.All(char.IsLetterOrDigit))
+            throw new ArgumentException("La nueva contraseña no cumple la política de seguridad.");
+
         if (!passwordHasher.Verify(request.OldPassword, user.Hashpassword))
             throw new ArgumentException("La contraseña actual es incorrecta.");
 
@@ -824,14 +833,11 @@ public sealed class AuthService(
     private string GenerateRandomToken()
     {
         const string validChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-        var random = new Random();
-        var token = new StringBuilder();
-        
-        for (int i = 0; i < 32; i++)
-        {
-            token.Append(validChars[random.Next(validChars.Length)]);
-        }
-        
+        var randomBytes = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+        var token = new StringBuilder(32);
+        foreach (var value in randomBytes)
+            token.Append(validChars[value % validChars.Length]);
+
         return token.ToString();
     }
 

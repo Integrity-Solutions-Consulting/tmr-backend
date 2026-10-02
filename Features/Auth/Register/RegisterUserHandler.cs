@@ -13,8 +13,6 @@ public sealed class RegisterUserHandler(
     ApplicationDbContext db,
     IPasswordHasher passwordHasher)
 {
-    private const string GenericPassword = "Int3gr1ty123!";
-
     public async Task<RegisterResponse> Handle(RegisterUserRequest request, HttpContext context, CancellationToken ct)
     {
         Validate(request);
@@ -22,7 +20,9 @@ public sealed class RegisterUserHandler(
         var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         var now = DateTime.UtcNow;
         var normalizedEmail = request.Email.Trim().ToLowerInvariant();
-        var passwordHash = passwordHasher.Hash(GenericPassword);
+        // La credencial inicial no es reutilizable ni conocida por otros usuarios.
+        // El usuario debe activar su cuenta mediante recuperación de contraseña.
+        var passwordHash = passwordHasher.Hash(Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)));
 
         var exists = await db.TblAutenticacionUsuarios
             .AnyAsync(u => u.Email == normalizedEmail, ct);
