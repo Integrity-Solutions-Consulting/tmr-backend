@@ -15,6 +15,17 @@ public record FiltroSeguimientoDto(
     string? Periodo
 );
 
+// sm - Un proyecto asignado al colaborador dentro del rango consultado, con sus horas registradas en ese mismo
+// rango. Se usa para el desglose del modal "Ver detalle" y para generar un archivo de reporte por proyecto al
+// descargar (la jornada/estado es del colaborador completo, no se recalcula por proyecto: ver SeguimientoColaboradorDto).
+public record SeguimientoProyectoDto(
+    int IdProyecto,
+    string Nombre,
+    string Cliente,
+    string LiderTecnico,
+    decimal HorasRegistradas
+);
+
 public record SeguimientoColaboradorDto(
     int Id,
     string Nombre,
@@ -36,7 +47,10 @@ public record SeguimientoColaboradorDto(
     // sm - Para "Promedio por día": días laborables del periodo (hasta hoy, sin fines de semana ni feriados)
     // y horas registradas en esos días. Promedio = HorasDiasLaborables ÷ DiasLaborables.
     int DiasLaborables = 0,
-    decimal HorasDiasLaborables = 0m
+    decimal HorasDiasLaborables = 0m,
+    // sm - Proyectos del colaborador en el rango, con sus horas propias. El frontend los usa para generar un
+    // archivo de reporte por proyecto al descargar y para el desglose del modal "Ver detalle".
+    List<SeguimientoProyectoDto>? Proyectos = null
 );
 
 // sm - Se comenta: la funcionalidad de aprobar horas se retira de Seguimiento (endpoint /aprobar comentado).

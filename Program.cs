@@ -166,6 +166,7 @@ builder.Services.AddScoped<ILiderService, LiderService>();
 builder.Services.AddScoped<IUsuariosConfigService, UsuariosConfigService>();
 builder.Services.AddScoped<IRolesConfigService, RolesConfigService>();
 builder.Services.AddScoped<IDiasFestivosService, DiasFestivosService>();
+builder.Services.AddHttpClient(); // sm - IHttpClientFactory para importar feriados (DiasFestivosService)
 builder.Services.AddScoped<ICatalogosConfigService, CatalogosConfigService>();
 
 // Feature: Carga Actividades
@@ -293,6 +294,7 @@ app.MapAuthEndpoints();
 app.MapCargaActividadesEndpoints();
 app.MapColaboradoresEndpoints();
 app.MapDashboardEndpoints();
+app.MapDashboardEjecutivoEndpoints(); // sm - Dashboard ejecutivo (requerimiento Dashboard Time Report)
 app.MapLideresEndpoints();
 app.MapProyectosEndpoints();
 app.MapCatalogosEndpoints();
@@ -317,3 +319,5 @@ app.MapCatalogosConfigEndpoints();
 }*/
 
 app.Run();
+
+//coemntario xdd
