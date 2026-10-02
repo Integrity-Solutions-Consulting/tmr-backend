@@ -14,7 +14,9 @@ public static class ReportesEndpoints
 {
     public static void MapReportesEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/reportes").WithTags("Reportes"); //.RequireAuthorization();
+        var group = app.MapGroup("/api/reportes")
+            .WithTags("Reportes")
+            .RequireAuthorization();
 
         // 0. Test DB Connection
         group.MapGet("/test-db", async (ApplicationDbContext db) =>

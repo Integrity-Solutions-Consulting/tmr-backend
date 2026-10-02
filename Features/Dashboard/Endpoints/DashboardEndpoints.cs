@@ -10,7 +10,9 @@ public static class DashboardEndpoints
 {
     public static void MapDashboardEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/dashboard").WithTags("Dashboard");
+        var group = app.MapGroup("/api/dashboard")
+            .WithTags("Dashboard")
+            .RequireAuthorization();
 
         group.MapGet("/", async (string? rango, ApplicationDbContext db) =>
         {

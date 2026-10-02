@@ -13,7 +13,9 @@ public static class CatalogosConfigEndpoints
 {
     public static void MapCatalogosConfigEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/configuracion/catalogos").WithTags("Configuracion - Catalogos");
+        var group = app.MapGroup("/api/configuracion/catalogos")
+            .WithTags("Configuracion - Catalogos")
+            .RequireAuthorization();
 
         // GET /api/configuracion/catalogos
         group.MapGet("/", async ([FromServices] ICatalogosConfigService service) =>

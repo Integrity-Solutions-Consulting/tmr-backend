@@ -49,6 +49,8 @@ using tmr_backend.Shared.Middleware;
 using Microsoft.OpenApi;
 using tmr_backend.Shared;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
 using tmr_backend.Infrastructure.Extensions;
 using tmr_backend.Infrastructure.BackgroundServices;
 
@@ -107,6 +109,18 @@ builder.Services.AddCors(options =>
             .AllowAnyMethod()
             .AllowAnyHeader()
             .AllowCredentials();
+    });
+});
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddFixedWindowLimiter("auth", limiter =>
+    {
+        limiter.PermitLimit = 10;
+        limiter.Window = TimeSpan.FromMinutes(1);
+        limiter.QueueLimit = 0;
+        limiter.AutoReplenishment = true;
     });
 });
 
@@ -170,6 +184,12 @@ builder.Services.AddScoped<IValidator<RegistrarSalidaRequest>, RegistrarSalidaRe
 
 // ── Authentication & JWT Setup ──
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtSettings>()!;
+if (string.IsNullOrWhiteSpace(jwt.SecretKey) || jwt.SecretKey.Length < 32)
+    throw new InvalidOperationException("Jwt:SecretKey debe configurarse fuera del repositorio y tener al menos 32 caracteres.");
+
+if (string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection")))
+    throw new InvalidOperationException("ConnectionStrings:DefaultConnection debe configurarse fuera del repositorio.");
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(opt =>
     {
@@ -230,6 +250,14 @@ app.UseMiddleware<GlobalExceptionMiddleware>();
 
 app.UseHttpsRedirection();
 
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.TryAdd("X-Content-Type-Options", "nosniff");
+    context.Response.Headers.TryAdd("X-Frame-Options", "DENY");
+    context.Response.Headers.TryAdd("Referrer-Policy", "no-referrer");
+    await next();
+});
+
 // app.UseCors("PermitirFrontend");
 
 app.UseAuthentication();
@@ -239,6 +267,7 @@ app.UseMiddleware<JwtBlacklistMiddleware>();
 app.UseMiddleware<PermissionEnrichmentMiddleware>();
 
 app.UseCors("AllowFrontend");
+app.UseRateLimiter();
 app.UseAuthorization();
 
 // ── Scalar API Reference ──

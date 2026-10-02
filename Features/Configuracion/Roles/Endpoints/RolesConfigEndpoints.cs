@@ -13,7 +13,9 @@ public static class RolesConfigEndpoints
 {
     public static void MapRolesConfigEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/configuracion/roles").WithTags("Configuracion - Roles");
+        var group = app.MapGroup("/api/configuracion/roles")
+            .WithTags("Configuracion - Roles")
+            .RequireAuthorization();
 
         // GET /api/configuracion/roles
         group.MapGet("/", async ([FromServices] IRolesConfigService service) =>

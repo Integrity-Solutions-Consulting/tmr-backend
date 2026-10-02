@@ -15,7 +15,9 @@ public static class ProyectosEndpoints
     public static void MapProyectosEndpoints(this IEndpointRouteBuilder app)
     {
         var env = app.ServiceProvider.GetService(typeof(Microsoft.Extensions.Hosting.IHostEnvironment)) as Microsoft.Extensions.Hosting.IHostEnvironment;
-        var group = app.MapGroup("/api/proyectos").WithTags("Proyectos");
+        var group = app.MapGroup("/api/proyectos")
+            .WithTags("Proyectos")
+            .RequireAuthorization();
 
         group.MapGet("/", async (ApplicationDbContext db) =>
         {

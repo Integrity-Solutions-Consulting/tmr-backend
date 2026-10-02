@@ -13,7 +13,9 @@ public static class DiasFestivosEndpoints
 {
     public static void MapDiasFestivosEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/configuracion/dias-festivos").WithTags("Configuracion - Dias Festivos");
+        var group = app.MapGroup("/api/configuracion/dias-festivos")
+            .WithTags("Configuracion - Dias Festivos")
+            .RequireAuthorization();
 
         // GET /api/configuracion/dias-festivos
         group.MapGet("/", async ([FromServices] IDiasFestivosService service) =>
