@@ -115,13 +115,15 @@ builder.Services.AddCors(options =>
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.AddFixedWindowLimiter("auth", limiter =>
-    {
-        limiter.PermitLimit = 10;
-        limiter.Window = TimeSpan.FromMinutes(1);
-        limiter.QueueLimit = 0;
-        limiter.AutoReplenishment = true;
-    });
+    options.AddPolicy("auth", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 5,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        }));
 });
 
 
@@ -238,7 +240,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 // ── Authorization Provider ──
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    // Los endpoints públicos deben declararse explícitamente con AllowAnonymous.
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+});
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
 
 // =========================
@@ -251,15 +259,21 @@ app.UseMiddleware<GlobalExceptionMiddleware>();
 
 app.UseHttpsRedirection();
 
+if (!app.Environment.IsDevelopment())
+    app.UseHsts();
+
 app.Use(async (context, next) =>
 {
     context.Response.Headers.TryAdd("X-Content-Type-Options", "nosniff");
     context.Response.Headers.TryAdd("X-Frame-Options", "DENY");
     context.Response.Headers.TryAdd("Referrer-Policy", "no-referrer");
+    if (!app.Environment.IsDevelopment())
+        context.Response.Headers.TryAdd("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'");
+    context.Response.Headers.TryAdd("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
     await next();
 });
 
-// app.UseCors("PermitirFrontend");
+app.UseCors("AllowFrontend");
 
 app.UseAuthentication();
 
@@ -267,7 +281,6 @@ app.UseMiddleware<JwtBlacklistMiddleware>();
 
 app.UseMiddleware<PermissionEnrichmentMiddleware>();
 
-app.UseCors("AllowFrontend");
 app.UseRateLimiter();
 app.UseAuthorization();
 
@@ -305,19 +318,4 @@ app.MapRolesConfigEndpoints();
 app.MapDiasFestivosEndpoints();
 app.MapCatalogosConfigEndpoints();
 
-// ── Seed Template Data (Desarrollo) ──
-/*if (app.Environment.IsDevelopment())
-{
-    try
-    {
-        await app.SeedTemplateDataAsync();
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"⚠️  Seeding skipped: {ex.Message}");
-    }
-}*/
-
 app.Run();
-
-//coemntario xdd
