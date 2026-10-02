@@ -131,49 +131,61 @@ public static class TimeReportEndpoints
 
             if (empleado == null) return Results.NotFound("Empleado no encontrado.");
 
-            if (roles.Contains("ADMINISTRADOR") || roles.Contains("RECURSOS HUMANOS") || roles.Contains("RECURSOS_HUMANOS"))
-            {
-                var proyectos = await db.TblTimeReportProyectos
-                    .AsNoTracking()
-                    .Where(p => p.Activo)
-                    .Select(p => new ProyectoLookupDto(p.Id, p.Nombre, p.Codigo))
-                    .ToListAsync();
-                return Results.Ok(proyectos);
-            }
-            else if (roles.Contains("GERENTE"))
-            {
-                var proyectos = await db.TblTimeReportProyectos
-                    .AsNoTracking()
-                    .Where(p => p.Activo && p.TblTimeReportAsignacionProyectos.Any(ep => ep.Activo && ep.Idlider != null))
-                    .Select(p => new ProyectoLookupDto(p.Id, p.Nombre, p.Codigo))
-                    .ToListAsync();
-                return Results.Ok(proyectos);
-            }
-            else if (roles.Contains("LIDER"))
-            {
-                var lider = await db.TblAdministracionLiders
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(l => l.Idpersona == empleado.Idpersona && l.Activo);
+            // sm - Confirmado (2026-10-02): nadie debe cargar horas en un proyecto donde no está asignado. Antes Administrador,
+            // Recursos Humanos, Gerente y Líder veían todos los proyectos (o los que lideran) al registrar SUS horas.
+            // Esta lista se usa para registrar actividades y para el reporte propio: ahora es la misma para todos los roles.
+            var proyectosAsignados = await db.TblTimeReportAsignacionProyectos
+                .AsNoTracking()
+                .Where(ep => ep.Idempleado == empleado.Id && ep.Activo && ep.IdproyectoNavigation.Activo)
+                .Select(ep => new ProyectoLookupDto(ep.Idproyecto, ep.IdproyectoNavigation.Nombre, ep.IdproyectoNavigation.Codigo))
+                .Distinct()
+                .ToListAsync();
+            return Results.Ok(proyectosAsignados);
 
-                if (lider == null) return Results.Ok(new List<ProyectoLookupDto>());
-
-                var proyectos = await db.TblTimeReportProyectos
-                    .AsNoTracking()
-                    .Where(p => p.Activo && p.TblTimeReportAsignacionProyectos.Any(ep => ep.Activo && ep.Idlider == lider.Id))
-                    .Select(p => new ProyectoLookupDto(p.Id, p.Nombre, p.Codigo))
-                    .ToListAsync();
-                return Results.Ok(proyectos);
-            }
-            else
-            {
-                var proyectos = await db.TblTimeReportAsignacionProyectos
-                    .AsNoTracking()
-                    .Where(ep => ep.Idempleado == empleado.Id && ep.Activo && ep.IdproyectoNavigation.Activo)
-                    .Select(ep => new ProyectoLookupDto(ep.Idproyecto, ep.IdproyectoNavigation.Nombre, ep.IdproyectoNavigation.Codigo))
-                    .Distinct()
-                    .ToListAsync();
-                return Results.Ok(proyectos);
-            }
+            // sm - Lógica anterior por rol (comentada por el motivo de arriba):
+            // if (roles.Contains("ADMINISTRADOR") || roles.Contains("RECURSOS HUMANOS") || roles.Contains("RECURSOS_HUMANOS"))
+            // {
+            //     var proyectos = await db.TblTimeReportProyectos
+            //         .AsNoTracking()
+            //         .Where(p => p.Activo)
+            //         .Select(p => new ProyectoLookupDto(p.Id, p.Nombre, p.Codigo))
+            //         .ToListAsync();
+            //     return Results.Ok(proyectos);
+            // }
+            // else if (roles.Contains("GERENTE"))
+            // {
+            //     var proyectos = await db.TblTimeReportProyectos
+            //         .AsNoTracking()
+            //         .Where(p => p.Activo && p.TblTimeReportAsignacionProyectos.Any(ep => ep.Activo && ep.Idlider != null))
+            //         .Select(p => new ProyectoLookupDto(p.Id, p.Nombre, p.Codigo))
+            //         .ToListAsync();
+            //     return Results.Ok(proyectos);
+            // }
+            // else if (roles.Contains("LIDER"))
+            // {
+            //     var lider = await db.TblAdministracionLiders
+            //         .AsNoTracking()
+            //         .FirstOrDefaultAsync(l => l.Idpersona == empleado.Idpersona && l.Activo);
+//
+            //     if (lider == null) return Results.Ok(new List<ProyectoLookupDto>());
+//
+            //     var proyectos = await db.TblTimeReportProyectos
+            //         .AsNoTracking()
+            //         .Where(p => p.Activo && p.TblTimeReportAsignacionProyectos.Any(ep => ep.Activo && ep.Idlider == lider.Id))
+            //         .Select(p => new ProyectoLookupDto(p.Id, p.Nombre, p.Codigo))
+            //         .ToListAsync();
+            //     return Results.Ok(proyectos);
+            // }
+            // else
+            // {
+            //     var proyectos = await db.TblTimeReportAsignacionProyectos
+            //         .AsNoTracking()
+            //         .Where(ep => ep.Idempleado == empleado.Id && ep.Activo && ep.IdproyectoNavigation.Activo)
+            //         .Select(ep => new ProyectoLookupDto(ep.Idproyecto, ep.IdproyectoNavigation.Nombre, ep.IdproyectoNavigation.Codigo))
+            //         .Distinct()
+            //         .ToListAsync();
+            //     return Results.Ok(proyectos);
+            // }
         });
 
         // Reporte del colaborador autenticado. No usa SEGUIMIENTO_READ porque
@@ -244,7 +256,8 @@ public static class TimeReportEndpoints
                 .Select(f => f.Fechaferiado)
                 .ToListAsync();
 
-            var calculo = CalculoHorasPeriodo.Calcular(empleado, inicio, fin, actividadesPeriodo, feriadosPeriodo, hoyEcuador);
+            var jornadas = await CalculoHorasPeriodo.CargarJornadasAsync(db, [idEmpleado]);
+            var calculo = CalculoHorasPeriodo.Calcular(empleado, inicio, fin, actividadesPeriodo, feriadosPeriodo, hoyEcuador, jornadas[idEmpleado]);
             return Results.Ok(new ResumenHorasDto(calculo.HorasPorRegistrar, calculo.HorasRegistradas, calculo.PromedioPorDia));
 
             // sm - Se comenta el resumen anterior: usaba 8 h para todos (también pasantes), contaba el mes completo
@@ -316,6 +329,12 @@ public static class TimeReportEndpoints
                 return Results.BadRequest(new { Mensaje = "No puede registrar más de 24 horas en un mismo día." });
             }
 
+            // sm - Solo se registran horas en proyectos donde el colaborador está asignado y dentro de las fechas de la
+            // asignación (primero se asigna y luego se carga; no al revés).
+            if (request.IdProyecto.HasValue
+                && await ValidarAsignacionAsync(db, request.IdEmpleado, request.IdProyecto.Value, request.FechaActividad) is { } errorAsignacion)
+                return Results.BadRequest(new { Mensaje = errorAsignacion });
+
             var nuevaActividad = new tmr_backend.Infrastructure.Database.Entities.TblTimeReportActividadDiarium
             {
                 Idempleado = request.IdEmpleado,
@@ -356,6 +375,13 @@ public static class TimeReportEndpoints
             {
                 return Results.BadRequest(new { Mensaje = "No puede registrar más de 24 horas en un mismo día." });
             }
+
+            // sm - Si se cambia el proyecto o la fecha, deben corresponder a una asignación vigente en esa fecha. Si no cambian,
+            // se permite editar (hay actividades antiguas de asignaciones que ya no están activas y deben poder corregirse).
+            if (request.IdProyecto.HasValue
+                && (request.IdProyecto != actividad.Idproyecto || request.FechaActividad != actividad.Fechaactividad)
+                && await ValidarAsignacionAsync(db, actividad.Idempleado, request.IdProyecto.Value, request.FechaActividad) is { } errorAsignacion)
+                return Results.BadRequest(new { Mensaje = errorAsignacion });
 
             actividad.Idproyecto = request.IdProyecto;
             actividad.Idtipoactividad = request.IdTipoActividad;
@@ -454,6 +480,8 @@ public static class TimeReportEndpoints
                 .ToListAsync();
 
             var colaboradores = new List<SeguimientoColaboradorDto>();
+            // sm - Historial de contratos: la jornada de cada día es la del contrato vigente ese día (8 h / 6 h pasante).
+            var jornadas = await CalculoHorasPeriodo.CargarJornadasAsync(db, empIds);
 
             // sm - "Hoy" según la hora de Ecuador (ver CalculoHorasPeriodo): no se cuentan los días futuros del rango.
             var hoyEcuador = CalculoHorasPeriodo.HoyEcuador();
@@ -494,7 +522,7 @@ public static class TimeReportEndpoints
                 //     var allApproved = empActividades.All(a => a.Fechaaprobacion != null);
                 //     estado = allApproved ? "Completo" : "En progreso";
                 // }
-                var calculo = CalculoHorasPeriodo.Calcular(e, filtro.FechaDesde, filtro.FechaHasta, empActividades, feriados, hoyEcuador);
+                var calculo = CalculoHorasPeriodo.Calcular(e, filtro.FechaDesde, filtro.FechaHasta, empActividades, feriados, hoyEcuador, jornadas[e.Id]);
 
                 // Project details (sm - asignaciones ya filtradas a las activas del rango en el Include)
                 var empProys = e.TblTimeReportAsignacionProyectos.ToList();
@@ -660,6 +688,33 @@ public static class TimeReportEndpoints
 
     // sm - Id del empleado del usuario de la sesión (usuario → persona → empleado activo), con la misma regla que el login.
     // null si el token no trae usuario o el usuario no tiene un empleado activo.
+    private const string MensajeSinAsignacion =
+        "No está asignado a este proyecto. Pida a su líder que lo agregue como integrante antes de registrar horas.";
+
+    // sm - Valida que el colaborador tenga una asignación activa en el proyecto (la misma regla de la lista de proyectos
+    // disponibles) y que la fecha de la actividad esté dentro de su vigencia (desde la fecha de asignación hasta la fecha
+    // fin, si la tiene). Devuelve el mensaje de error o null si es válido.
+    private static async Task<string?> ValidarAsignacionAsync(ApplicationDbContext db, int idEmpleado, int idProyecto, DateOnly fecha)
+    {
+        var asignaciones = await db.TblTimeReportAsignacionProyectos
+            .AsNoTracking()
+            .Where(ep => ep.Idempleado == idEmpleado && ep.Idproyecto == idProyecto && ep.Activo && ep.IdproyectoNavigation.Activo)
+            .Select(ep => new { ep.Fechaasignacion, ep.Fechafinasignacion })
+            .ToListAsync();
+
+        if (asignaciones.Count == 0) return MensajeSinAsignacion;
+        if (asignaciones.Any(a => (a.Fechaasignacion == null || a.Fechaasignacion <= fecha)
+                                  && (a.Fechafinasignacion == null || a.Fechafinasignacion >= fecha)))
+            return null;
+
+        var vigencias = string.Join(", ", asignaciones.Select(a =>
+            a.Fechafinasignacion.HasValue
+                ? $"del {a.Fechaasignacion:dd/MM/yyyy} al {a.Fechafinasignacion:dd/MM/yyyy}"
+                : $"desde el {a.Fechaasignacion:dd/MM/yyyy}"));
+        return $"El {fecha:dd/MM/yyyy} no estaba asignado a este proyecto (su asignación rige {vigencias}). " +
+               "Si trabajó en esa fecha, pida a su líder que corrija la fecha de asignación.";
+    }
+
     private static async Task<int?> ObtenerEmpleadoSesionAsync(ClaimsPrincipal user, ApplicationDbContext db)
     {
         var sub = user.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value

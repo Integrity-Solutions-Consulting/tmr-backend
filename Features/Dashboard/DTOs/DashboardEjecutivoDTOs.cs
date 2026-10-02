@@ -183,16 +183,29 @@ public record HistoricoEstadoMesDto(
     decimal Porcentaje,
     string Estado);
 
+// sm - Corte de quincena (15 o fin de mes) de un colaborador: días hábiles incompletos a la fecha del corte.
+public record HistoricoCorteDto(
+    int Anio,
+    int Mes,
+    int Quincena,
+    DateOnly FechaCorte,
+    int DiasIncompletos,
+    bool ConAtraso);
+
+// sm - Recurrencia confirmada: se cuentan ocasiones (cortes) con atraso, ya no meses.
 public record HistoricoColaboradorDto(
     int IdEmpleado,
     string Colaborador,
     List<HistoricoEstadoMesDto> Meses,
-    int MesesConAtraso,
+    List<HistoricoCorteDto> Cortes,
+    int OcasionesConAtraso,
     bool Recurrente);
 
 public record DashboardHistoricoResponse(
     int MesesVentana,
     int UmbralRecurrencia,
+    int MaxDiasIncompletosPorCorte,
+    string ReglaRecurrencia,
     string ReglaCierre,
     List<HistoricoMesDto> Meses,
     List<HistoricoColaboradorDto> Colaboradores);

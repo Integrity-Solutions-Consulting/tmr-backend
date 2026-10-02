@@ -57,6 +57,15 @@ public static class DiasFestivosEndpoints
         .WithName("ActualizarDiaFestivo")
         .WithDescription("Actualiza un feriado existente.");
 
+        // sm - POST /api/configuracion/dias-festivos/importar/{anio}: carga los feriados de Ecuador del año (sin duplicar).
+        group.MapPost("/importar/{anio:int}", async (int anio, HttpContext context, [FromServices] IDiasFestivosService service) =>
+        {
+            var result = await service.ImportarFeriadosAsync(anio, ObtenerUsuarioActual(context), ObtenerIpActual(context));
+            return Results.Ok(result);
+        })
+        .WithName("ImportarDiasFestivos")
+        .WithDescription("Importa los feriados nacionales de Ecuador del año indicado, omitiendo los que ya existen.");
+
         // DELETE /api/configuracion/dias-festivos/{id}
         group.MapDelete("/{id:int}", async (int id, HttpContext context, [FromServices] IDiasFestivosService service) =>
         {

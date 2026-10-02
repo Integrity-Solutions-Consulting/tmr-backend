@@ -34,16 +34,42 @@ public static class DashboardEjecutivoEndpoints
         // sm - Asignaciones de personas que ya fueron retiradas de un proyecto (reconstruidas del historial).
         public required List<AsignacionCalculo> AsignacionesRetiradas { get; init; }
 
-        public List<EmpleadoCalculo> EmpleadosCalculo => Empleados
-            .Select(e => new EmpleadoCalculo(e.Id, e.Fechaingreso, e.Fechaterminacion, CalculoHorasPeriodo.HorasJornada(e)))
+        // sm - Historial de tipo de contrato por empleado, ya convertido a jornada (8 h / 6 h pasante).
+        public required ILookup<int, PeriodoJornada> JornadasPorEmpleado { get; init; }
+
+        // sm - Optimización: antes estas listas se volvían a armar cada vez que se usaban y varias búsquedas recorrían
+        // todas las asignaciones por cada fila. Ahora se arman una sola vez por petición y se indexan (mismo resultado).
+        private List<EmpleadoCalculo>? empleadosCalculo;
+        private List<AsignacionCalculo>? asignacionesCalculo;
+        private ILookup<int, AsignacionCalculo>? asignacionesCalculoPorEmpleado;
+        private ILookup<(int IdEmpleado, int IdProyecto), AsignacionCalculo>? vigenciasPorPar;
+        private ILookup<int, TblTimeReportAsignacionProyecto>? asignacionesPorEmpleado;
+        private ILookup<int, TblTimeReportAsignacionProyecto>? asignacionesPorProyecto;
+
+        public List<EmpleadoCalculo> EmpleadosCalculo => empleadosCalculo ??= Empleados
+            .Select(e => new EmpleadoCalculo(e.Id, e.Fechaingreso, e.Fechaterminacion, CalculoHorasPeriodo.HorasJornada(e),
+                JornadasPorEmpleado[e.Id].ToList()))
             .ToList();
 
         // sm - Vigencias para el cálculo de horas: asignaciones actuales + retiradas (para meses pasados).
-        public List<AsignacionCalculo> AsignacionesCalculo => Asignaciones
+        public List<AsignacionCalculo> AsignacionesCalculo => asignacionesCalculo ??= Asignaciones
             .Where(a => a.Idempleado.HasValue && ProyectosPorId.ContainsKey(a.Idproyecto))
             .Select(a => new AsignacionCalculo(a.Idempleado!.Value, a.Idproyecto, a.Fechaasignacion, a.Fechafinasignacion))
             .Concat(AsignacionesRetiradas.Where(a => ProyectosPorId.ContainsKey(a.IdProyecto)))
             .ToList();
+
+        public ILookup<int, AsignacionCalculo> AsignacionesCalculoPorEmpleado =>
+            asignacionesCalculoPorEmpleado ??= AsignacionesCalculo.ToLookup(a => a.IdEmpleado);
+
+        public ILookup<(int IdEmpleado, int IdProyecto), AsignacionCalculo> VigenciasPorPar =>
+            vigenciasPorPar ??= AsignacionesCalculo.ToLookup(a => (a.IdEmpleado, a.IdProyecto));
+
+        // sm - Asignaciones activas (entidades) por empleado y por proyecto.
+        public ILookup<int, TblTimeReportAsignacionProyecto> AsignacionesPorEmpleado =>
+            asignacionesPorEmpleado ??= Asignaciones.Where(a => a.Idempleado.HasValue).ToLookup(a => a.Idempleado!.Value);
+
+        public ILookup<int, TblTimeReportAsignacionProyecto> AsignacionesPorProyecto =>
+            asignacionesPorProyecto ??= Asignaciones.ToLookup(a => a.Idproyecto);
     }
 
     public static void MapDashboardEjecutivoEndpoints(this IEndpointRouteBuilder app)
@@ -112,8 +138,12 @@ public static class DashboardEjecutivoEndpoints
 
         var inicioMes = new DateOnly(anioSel, mesSel, 1);
         var finMes = inicioMes.AddMonths(1).AddDays(-1);
-        // sm - Fecha de corte: fin del mes elegido, o hoy si es el mes en curso (CA 01: la misma para todo el dashboard).
-        var corte = finMes < hoy ? finMes : (inicioMes > hoy ? inicioMes : hoy);
+        // sm - Fecha de corte (confirmado 2026-10-02): fin del mes elegido o, si es el mes en curso, AYER (el día de hoy
+        // aún no termina y no debe aparecer como pendiente). CA 01: la misma para todo el dashboard.
+        // El primer día del mes el corte queda en ese día, pero no se esperan horas (horasHasta < inicioMes).
+        var ayer = hoy.AddDays(-1);
+        var corte = finMes <= ayer ? finMes : (inicioMes > ayer ? inicioMes : ayer);
+        var horasHasta = corte < ayer ? corte : ayer;
 
         var datos = await CargarDatosBaseAsync(db);
         var proyectoCumpleFiltro = CrearFiltroProyecto(filtros, datos);
@@ -169,11 +199,10 @@ public static class DashboardEjecutivoEndpoints
         foreach (var e in datos.Empleados.Where(e => EstaActivoEn(e, corte)
                                                     && (!filtros.IdEmpleado.HasValue || e.Id == filtros.IdEmpleado)))
         {
-            var asignacionesEmpleado = datos.Asignaciones.Where(a => a.Idempleado == e.Id).ToList();
+            var asignacionesEmpleado = datos.AsignacionesPorEmpleado[e.Id].ToList();
             // sm - Incluye las asignaciones retiradas: en un mes pasado la persona sí pudo estar asignada.
-            var tieneVigente = asignacionesCalculo.Any(a =>
-                a.IdEmpleado == e.Id
-                && (a.Desde ?? DateOnly.MinValue) <= corte
+            var tieneVigente = datos.AsignacionesCalculoPorEmpleado[e.Id].Any(a =>
+                (a.Desde ?? DateOnly.MinValue) <= corte
                 && (a.Hasta ?? DateOnly.MaxValue) >= corte
                 && datos.ProyectosPorId.TryGetValue(a.IdProyecto, out var p)
                 && !ParametrosDashboard.EstadosCerrados.Contains(CodigoEstado(p)));
@@ -227,7 +256,7 @@ public static class DashboardEjecutivoEndpoints
         var feriados = await CargarFeriadosAsync(db, inicioMes, finMes);
         var actividades = await CargarActividadesAsync(db, inicioMes, corte);
         var filas = CalculoCumplimiento
-            .Calcular(datos.EmpleadosCalculo, asignacionesCalculo, actividades, feriados, inicioMes, corte)
+            .Calcular(datos.EmpleadosCalculo, asignacionesCalculo, actividades, feriados, inicioMes, horasHasta)
             .Where(f => proyectoCumpleFiltro(f.IdProyecto) && (!filtros.IdEmpleado.HasValue || f.IdEmpleado == filtros.IdEmpleado))
             .ToList();
 
@@ -274,7 +303,7 @@ public static class DashboardEjecutivoEndpoints
             var reportadas = Math.Min(registradas, esperadas);
             var pendientes = Math.Max(0m, esperadas - registradas);
             var porcentaje = Porcentaje(reportadas, esperadas);
-            var vigencia = asignacionesCalculo.Where(a => a.IdEmpleado == f.IdEmpleado && a.IdProyecto == f.IdProyecto).ToList();
+            var vigencia = datos.VigenciasPorPar[(f.IdEmpleado, f.IdProyecto)].ToList();
             ultimoRegistroPorFila.TryGetValue((f.IdEmpleado, f.IdProyecto), out var ultimo);
 
             return new CumplimientoDetalleDto(
@@ -369,7 +398,8 @@ public static class DashboardEjecutivoEndpoints
 
         // sm - CA 11: al menos 6 y 12 meses.
         var mesesVentana = meses == 12 ? 12 : 6;
-        var umbral = Math.Clamp(umbralRecurrencia ?? ParametrosDashboard.UmbralRecurrenciaPorDefecto, 1, mesesVentana);
+        // sm - El umbral es de ocasiones (cortes) con atraso: hay dos cortes por mes en la ventana.
+        var umbral = Math.Clamp(umbralRecurrencia ?? ParametrosDashboard.UmbralRecurrenciaPorDefecto, 1, mesesVentana * 2);
         var filtros = new Filtros(idCliente, idProyecto, idEstado, idEmpleado);
 
         var ultimoMes = new DateOnly(anioSel, mesSel, 1);
@@ -383,20 +413,36 @@ public static class DashboardEjecutivoEndpoints
         var actividades = await CargarActividadesAsync(db, primerMes, finDatos);
         var empleadosCalculo = datos.EmpleadosCalculo;
         var asignacionesCalculo = datos.AsignacionesCalculo;
-
+        var empleadoCalculoPorId = empleadosCalculo.ToDictionary(e => e.Id);
+        var asignacionesPorEmpleado = datos.AsignacionesCalculoPorEmpleado;
+        var actividadesPorEmpleado = actividades.ToLookup(a => a.IdEmpleado);
 
         var resumenMeses = new List<HistoricoMesDto>();
         var estadosPorEmpleado = new Dictionary<int, List<HistoricoEstadoMesDto>>();
+        var cortesPorEmpleado = new Dictionary<int, List<HistoricoCorteDto>>();
 
+        // sm - Las horas esperadas se cuentan hasta ayer (el día de hoy aún no termina).
+        var ayer = hoy.AddDays(-1);
         for (var inicio = primerMes; inicio <= ultimoMes; inicio = inicio.AddMonths(1))
         {
-            if (inicio > hoy) break;
+            if (inicio > ayer) break;
             var fin = inicio.AddMonths(1).AddDays(-1);
-            var hasta = fin < hoy ? fin : hoy;
+            var hasta = fin < ayer ? fin : ayer;
 
             // sm - Cierre del mes: regla fija, último día hábil del mes (confirmado por la usuaria, sin tabla de cierres).
             var fechaCierre = ParametrosDashboard.UltimoDiaHabil(inicio.Year, inicio.Month, feriados);
             var mesAbierto = hoy <= fechaCierre;
+
+            // sm - Cortes de quincena del mes: (quincena, desde, hasta, fecha de corte). Solo se evalúan los cortes ya
+            // pasados (hoy > fecha de corte); lo registrado después del corte no lo cubre.
+            var corteQuincena = ParametrosDashboard.CorteQuincena(inicio.Year, inicio.Month, feriados);
+            var cortesMes = new[]
+                {
+                    (Quincena: 1, Desde: inicio, Hasta: new DateOnly(inicio.Year, inicio.Month, 15), Fecha: corteQuincena),
+                    (Quincena: 2, Desde: new DateOnly(inicio.Year, inicio.Month, 16), Hasta: fin, Fecha: fechaCierre)
+                }
+                .Where(c => hoy > c.Fecha)
+                .ToList();
 
             bool CumpleFiltro(FilaCumplimiento f) =>
                 proyectoCumpleFiltro(f.IdProyecto) && (!filtros.IdEmpleado.HasValue || f.IdEmpleado == filtros.IdEmpleado);
@@ -440,6 +486,19 @@ public static class DashboardEjecutivoEndpoints
                 lista.Add(new HistoricoEstadoMesDto(
                     inicio.Year, inicio.Month, esperadas, pendientes, pendienteCierre,
                     Porcentaje(reportadas, esperadas), estado));
+
+                if (!empleadoCalculoPorId.TryGetValue(grupo.Key, out var empleadoCalculo)) continue;
+                if (!cortesPorEmpleado.TryGetValue(grupo.Key, out var cortes))
+                    cortesPorEmpleado[grupo.Key] = cortes = [];
+                foreach (var c in cortesMes)
+                {
+                    var diasIncompletos = CalculoCumplimiento.DiasIncompletos(
+                        empleadoCalculo, asignacionesPorEmpleado[grupo.Key], actividadesPorEmpleado[grupo.Key],
+                        feriados, c.Desde, c.Hasta, c.Fecha);
+                    cortes.Add(new HistoricoCorteDto(
+                        inicio.Year, inicio.Month, c.Quincena, c.Fecha, diasIncompletos,
+                        diasIncompletos > ParametrosDashboard.MaxDiasIncompletosPorCorte));
+                }
             }
 
             var totalEsperadas = filasActual.Sum(f => Math.Round(f.Esperadas, 2));
@@ -453,24 +512,28 @@ public static class DashboardEjecutivoEndpoints
                 cumplidos, atrasosCarga, incumplidos, regularizados));
         }
 
-        // sm - Atraso = mes cerrado con horas pendientes al cierre (Incumplido o Regularizado).
-        // El atraso de carga de un mes aún abierto no cuenta todavía para la recurrencia.
+        // sm - Recurrencia (confirmada 2026-10-02): ocasiones = cortes (15 y fin de mes) con más de
+        // MaxDiasIncompletosPorCorte días hábiles incompletos. Recurrente con umbral o más ocasiones en la ventana.
+        // sm - Regla anterior (meses Incumplido/Regularizado) reemplazada:
+        // var mesesConAtraso = kv.Value.Count(m => m.Estado is "Incumplido" or "Regularizado");
         var colaboradores = estadosPorEmpleado
             .Where(kv => datos.EmpleadosPorId.ContainsKey(kv.Key))
             .Select(kv =>
             {
-                var mesesConAtraso = kv.Value.Count(m => m.Estado is "Incumplido" or "Regularizado");
+                var cortes = cortesPorEmpleado.GetValueOrDefault(kv.Key) ?? [];
+                var ocasiones = cortes.Count(c => c.ConAtraso);
                 return new HistoricoColaboradorDto(
                     kv.Key, NombreEmpleado(datos.EmpleadosPorId[kv.Key]), kv.Value,
-                    mesesConAtraso, mesesConAtraso >= umbral);
+                    cortes, ocasiones, ocasiones >= umbral);
             })
-            .OrderByDescending(c => c.MesesConAtraso)
+            .OrderByDescending(c => c.OcasionesConAtraso)
             .ThenByDescending(c => c.Meses.LastOrDefault()?.Pendientes ?? 0)
             .ThenBy(c => c.Colaborador)
             .ToList();
 
         return Results.Ok(new DashboardHistoricoResponse(
-            mesesVentana, umbral, ParametrosDashboard.ReglaCierre, resumenMeses, colaboradores));
+            mesesVentana, umbral, ParametrosDashboard.MaxDiasIncompletosPorCorte, ParametrosDashboard.ReglaRecurrencia,
+            ParametrosDashboard.ReglaCierre, resumenMeses, colaboradores));
     }
 
     // =====================================================================
@@ -537,6 +600,8 @@ public static class DashboardEjecutivoEndpoints
 
         return new DatosBase
         {
+            // sm - Historial de contratos (script 11): la jornada de cada día sale del contrato vigente ese día.
+            JornadasPorEmpleado = await CalculoHorasPeriodo.CargarJornadasAsync(db),
             Proyectos = proyectos,
             Asignaciones = asignaciones,
             Empleados = empleados,
@@ -560,6 +625,7 @@ public static class DashboardEjecutivoEndpoints
             .Where(a => a.Activo && a.Fechaactividad >= desde && a.Fechaactividad <= hasta)
             .Select(a => new
             {
+                a.Id,
                 a.Idempleado,
                 a.Idproyecto,
                 a.Fechaactividad,
@@ -569,13 +635,63 @@ public static class DashboardEjecutivoEndpoints
             })
             .ToListAsync();
 
+        var cambios = await CargarCambiosHorasAsync(db, desde);
+
         return filas.Select(a => new ActividadCalculo(
             a.Idempleado,
             a.Idproyecto,
             a.Fechaactividad,
             a.Cantidadhoras,
             ParametrosDashboard.TiposActividadNovedad.Contains(a.TipoActividad.Trim().ToUpper()),
-            DateOnly.FromDateTime(AHoraEcuador(a.Fechacreacion)))).ToList();
+            DateOnly.FromDateTime(AHoraEcuador(a.Fechacreacion)),
+            cambios.TryGetValue(a.Id, out var c) ? c : null)).ToList();
+    }
+
+    // sm - Cambios de horas de actividades desde la auditoría (AuditInterceptor guarda los valores antes y después de
+    // cada UPDATE). Solo importan los cambios desde el inicio del periodo: los cortes nunca son anteriores a esa fecha.
+    // Las ediciones que no tocaron las horas (descripción, proyecto, etc.) se ignoran.
+    private static async Task<Dictionary<int, IReadOnlyList<CambioHoras>>> CargarCambiosHorasAsync(ApplicationDbContext db, DateOnly desde)
+    {
+        var desdeUtc = desde.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var auditoria = await db.TblAuditoriaHistoricoGenerals
+            .AsNoTracking()
+            .Where(h => h.Nombretabla == "tbl_time_report_actividad_diaria" && h.Tipooperacion == "UPDATE" && h.Fechacambio >= desdeUtc)
+            .Select(h => new { h.Idregistro, h.Fechacambio, h.Datosanteriores, h.Datosnuevos })
+            .ToListAsync();
+
+        var resultado = new Dictionary<int, List<CambioHoras>>();
+        foreach (var h in auditoria)
+        {
+            if (!int.TryParse(h.Idregistro, out var id)) continue;
+            var antes = LeerHoras(h.Datosanteriores);
+            var despues = LeerHoras(h.Datosnuevos);
+            if (antes is null || antes == despues) continue;
+            if (!resultado.TryGetValue(id, out var lista)) resultado[id] = lista = [];
+            lista.Add(new CambioHoras(DateOnly.FromDateTime(AHoraEcuador(h.Fechacambio)), antes.Value));
+        }
+        return resultado.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<CambioHoras>)kv.Value);
+    }
+
+    private static decimal? LeerHoras(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                if (!prop.Name.Equals("Cantidadhoras", StringComparison.OrdinalIgnoreCase)) continue;
+                return prop.Value.ValueKind switch
+                {
+                    System.Text.Json.JsonValueKind.Number => prop.Value.GetDecimal(),
+                    System.Text.Json.JsonValueKind.String when decimal.TryParse(prop.Value.GetString(),
+                        System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var v) => v,
+                    _ => null
+                };
+            }
+        }
+        catch (System.Text.Json.JsonException) { }
+        return null;
     }
 
     private static async Task<DashboardParametrosDto> ParametrosAsync(ApplicationDbContext db, int horizonteDias)
@@ -603,7 +719,7 @@ public static class DashboardEjecutivoEndpoints
     private static Func<int, bool> CrearFiltroProyecto(Filtros filtros, DatosBase datos)
     {
         var proyectosDelEmpleado = filtros.IdEmpleado.HasValue
-            ? datos.AsignacionesCalculo.Where(a => a.IdEmpleado == filtros.IdEmpleado).Select(a => a.IdProyecto).ToHashSet()
+            ? datos.AsignacionesCalculoPorEmpleado[filtros.IdEmpleado.Value].Select(a => a.IdProyecto).ToHashSet()
             : null;
 
         return idProyecto =>
@@ -645,14 +761,14 @@ public static class DashboardEjecutivoEndpoints
     private static MovimientoColaboradorDto Movimiento(TblAdministracionEmpleado e, DateOnly fecha, DatosBase datos) =>
         new(e.Id, NombreEmpleado(e), e.IdpersonaNavigation?.Numeroidentificacion ?? "", e.IdcargoNavigation?.Nombrecargo ?? "",
             fecha,
-            string.Join(", ", datos.Asignaciones
-                .Where(a => a.Idempleado == e.Id && datos.ProyectosPorId.ContainsKey(a.Idproyecto))
+            string.Join(", ", datos.AsignacionesPorEmpleado[e.Id]
+                .Where(a => datos.ProyectosPorId.ContainsKey(a.Idproyecto))
                 .Select(a => datos.ProyectosPorId[a.Idproyecto].Nombre)
                 .Distinct()));
 
     private static string ResponsablesProyecto(int idProyecto, DatosBase datos) =>
-        string.Join(", ", datos.Asignaciones
-            .Where(a => a.Idproyecto == idProyecto && a.IdliderNavigation != null)
+        string.Join(", ", datos.AsignacionesPorProyecto[idProyecto]
+            .Where(a => a.IdliderNavigation != null)
             .Select(a => NombreLider(a.IdliderNavigation!))
             .Distinct());
 

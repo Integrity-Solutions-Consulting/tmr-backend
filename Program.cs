@@ -152,6 +152,7 @@ builder.Services.AddScoped<ILiderService, LiderService>();
 builder.Services.AddScoped<IUsuariosConfigService, UsuariosConfigService>();
 builder.Services.AddScoped<IRolesConfigService, RolesConfigService>();
 builder.Services.AddScoped<IDiasFestivosService, DiasFestivosService>();
+builder.Services.AddHttpClient(); // sm - IHttpClientFactory para importar feriados (DiasFestivosService)
 builder.Services.AddScoped<ICatalogosConfigService, CatalogosConfigService>();
 
 // Feature: Carga Actividades
