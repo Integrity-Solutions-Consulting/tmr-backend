@@ -19,7 +19,9 @@ public static class CargaActividadesEndpoints
 {
     public static void MapCargaActividadesEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/carga-actividades").WithTags("CargaActividades");
+        var group = app.MapGroup("/api/carga-actividades")
+            .WithTags("CargaActividades")
+            .RequireAuthorization();
 
         // 1. GET: Obtener todas las actividades activas en el esquema real de time_report
         group.MapGet("/", async (ApplicationDbContext db) =>
@@ -196,7 +198,8 @@ public static class CargaActividadesEndpoints
                 }
 
                 // REGLA DE SEGURIDAD EN DESARROLLO: Forzamos ID de prueba local para usar Scalar sin Token JWT
-                var colaboradorId = "00000000-0000-0000-0000-000000000000";
+                var colaboradorId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                    ?? context.User.FindFirst("sub")?.Value;
 
                 // NOTA: Cuando vayas a pasar a producción con la seguridad de la empresa, descomenta la línea de abajo:
                 // var colaboradorId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -207,7 +210,7 @@ public static class CargaActividadesEndpoints
                 }
 
                 var command = new CargarActividadesExcelCommand(file, colaboradorId);
-                var response = await handler.HandleAsync(command);
+                var response = await handler.HandleAsync(command, context.RequestAborted);
 
                 if (response.IsSuccess)
                 {

@@ -39,6 +39,9 @@ public partial class ApplicationDbContext : DbContext
     public virtual DbSet<TblAdministracionCliente> TblAdministracionClientes { get; set; } = null!;
     public virtual DbSet<TblAdministracionClienteUsuario> TblAdministracionClienteUsuarios { get; set; } = null!;
     public virtual DbSet<TblAdministracionEmpleado> TblAdministracionEmpleados { get; set; } = null!;
+
+    // sm - Historial de tipo de contrato (script 11).
+    public virtual DbSet<TblAdministracionEmpleadoContrato> TblAdministracionEmpleadoContratos { get; set; } = null!;
     public virtual DbSet<TblAdministracionLider> TblAdministracionLiders { get; set; } = null!;
     public virtual DbSet<TblAdministracionPersona> TblAdministracionPersonas { get; set; } = null!;
     public virtual DbSet<TblAdministracionRegistroAsignacion> TblAdministracionRegistroAsignacions { get; set; } = null!;
@@ -1945,6 +1948,43 @@ public partial class ApplicationDbContext : DbContext
                 .HasForeignKey(d => d.Idproyecto)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_time_report_asignacion_proyecto_proyecto");
+        });
+
+        // sm - Historial de tipo de contrato del empleado (script 11).
+        modelBuilder.Entity<TblAdministracionEmpleadoContrato>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("pk_administracion_empleado_contrato");
+
+            entity.ToTable("tbl_administracion_empleado_contrato", "administracion");
+
+            entity.HasIndex(e => new { e.Idempleado, e.Fechadesde }, "idx_adm_empleado_contrato_empleado");
+
+            entity.Property(e => e.Id)
+                .UseIdentityAlwaysColumn()
+                .HasColumnName("id");
+            entity.Property(e => e.Idempleado).HasColumnName("idempleado");
+            entity.Property(e => e.Idtipocontrato).HasColumnName("idtipocontrato");
+            entity.Property(e => e.Fechadesde).HasColumnName("fechadesde");
+            entity.Property(e => e.Fechahasta).HasColumnName("fechahasta");
+            entity.Property(e => e.Activo)
+                .HasDefaultValue(true)
+                .HasColumnName("activo");
+            entity.Property(e => e.Usuariocreacion)
+                .HasMaxLength(50)
+                .HasColumnName("usuariocreacion");
+            entity.Property(e => e.Fechacreacion)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("fechacreacion");
+            entity.Property(e => e.Ipcreacion)
+                .HasMaxLength(45)
+                .HasColumnName("ipcreacion");
+            entity.Property(e => e.Usuariomodificacion)
+                .HasMaxLength(50)
+                .HasColumnName("usuariomodificacion");
+            entity.Property(e => e.Fechamodificacion).HasColumnName("fechamodificacion");
+            entity.Property(e => e.Ipmodificacion)
+                .HasMaxLength(45)
+                .HasColumnName("ipmodificacion");
         });
 
         modelBuilder.Entity<TblTimeReportFeriado>(entity =>

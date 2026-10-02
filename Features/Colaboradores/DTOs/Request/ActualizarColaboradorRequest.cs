@@ -31,5 +31,8 @@ public record ActualizarColaboradorRequest(
     // ================================================================
     // NUEVO: CAMPO REEMPLAZO (ID del inactivo a reemplazar)
     // ================================================================
-    int? IdEmpleadoReemplazo
+    int? IdEmpleadoReemplazo,
+
+    // sm - Fecha desde la que rige el nuevo tipo de contrato (solo si cambia). Si no se envía, rige desde hoy.
+    DateOnly? FechaCambioContrato = null
 );
