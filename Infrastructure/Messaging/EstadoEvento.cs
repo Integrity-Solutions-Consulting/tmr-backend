@@ -1,3 +1,5 @@
+namespace TmrBackend.Infrastructure.Messaging;
+
 public enum EstadoEvento
 {
     Pendiente = 1,
