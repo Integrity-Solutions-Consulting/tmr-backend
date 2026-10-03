@@ -254,6 +254,14 @@ public static class ProyectosEndpoints
             .Where(r => r.Activo)
             .ToList();
 
+        // sm - El departamento de un recurso se deriva del cargo que se le ASIGNÓ en el proyecto (Rolasignado),
+        // no del cargo actual del empleado en Administración (que puede haber cambiado desde entonces y ya no
+        // reflejar bajo qué departamento se lo asignó). Antes se usaba siempre el cargo actual del empleado,
+        // así que el departamento mostrado no era consistente con el "Rol" realmente guardado.
+        var idDepartamentoPorCargo = (await db.TblAdministracionCargos.AsNoTracking().ToListAsync())
+            .GroupBy(c => c.Nombrecargo)
+            .ToDictionary(g => g.Key, g => g.First().Iddepartamento);
+
         var lideres = asignacionesActivas
             .GroupBy(r => r.Idlider)
             .Select(r =>
@@ -267,17 +275,21 @@ public static class ProyectosEndpoints
                     {
                         var persona = x.IdempleadoNavigation?.IdpersonaNavigation;
                         var cargo = x.IdempleadoNavigation?.IdcargoNavigation;
+                        var rol = x.Rolasignado ?? cargo?.Nombrecargo ?? string.Empty;
+                        var idDepartamento = !string.IsNullOrWhiteSpace(x.Rolasignado) && idDepartamentoPorCargo.TryGetValue(x.Rolasignado, out var idDeptoDelRol)
+                            ? idDeptoDelRol
+                            : cargo?.Iddepartamento;
                         return new ProyectoRecursoResponse(
                             x.Id,
                             x.Idempleado,
                             x.Idproveedor is null ? "Interno" : "Externo",
                             persona is null ? string.Empty : $"{persona.Nombres} {persona.Apellidos}".Trim(),
-                            x.Rolasignado ?? cargo?.Nombrecargo ?? string.Empty,
+                            rol,
                             x.Fechaasignacion,
                             x.Fechafinasignacion,
                             x.Costoporhora ?? 0,
                             x.Horasasignadas ?? 0,
-                            cargo?.Iddepartamento
+                            idDepartamento
                         );
                     })
                     .ToList();

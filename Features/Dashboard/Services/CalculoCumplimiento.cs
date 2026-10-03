@@ -42,11 +42,16 @@ public static class ParametrosDashboard
     // "Permiso", se restan de las horas esperadas y no cuentan como reportadas.
     public static readonly string[] TiposActividadNovedad = ["VACACIONES", "PERMISO"];
 
-    // sm - Confirmado (2026-10-02): no se reparte en partes iguales (hay personas que registran más de 8 h al día).
+    // sm - Confirmado (2026-10-02): cada proyecto exige su propia jornada completa (8 h, o 6 h si es pasante) por
+    // cada día hábil en que estuvo vigente; no se reparte la jornada de la persona entre sus proyectos. Un
+    // colaborador con 2 proyectos activos el mismo día debe completar la jornada en CADA uno (misma regla que
+    // Seguimiento: ver CalculoHorasPeriodo). Las novedades (vacaciones/permiso) reducen la jornada del día: si están
+    // registradas contra un proyecto puntual, solo reducen la de ese proyecto; sin proyecto, se consideran día libre
+    // general y reducen la jornada de todos los proyectos vigentes ese día.
     public const string ReglaReparto =
-        "Primero se mide a la persona (todo lo registrado en sus proyectos vs. su jornada). Luego se reparte entre " +
-        "proyectos según lo registrado en cada uno; lo pendiente, en proporción a lo registrado (o a los días " +
-        "vigentes si no registró nada). Si registró más de lo esperado, todos sus proyectos quedan al 100 %";
+        "Cada proyecto exige su propia jornada completa (8 h, o 6 h si es pasante) por cada día hábil vigente; no se " +
+        "reparte la jornada de la persona entre proyectos. Las novedades (vacaciones/permiso) reducen la jornada del " +
+        "día: si tienen un proyecto asociado, solo la de ese proyecto; si no, la de todos los proyectos vigentes ese día";
 
     // sm - Confirmado: el cierre de cada mes es el último día hábil del mes (lunes a viernes, sin feriados).
     // Lo registrado después del cierre se considera regularización.
@@ -126,14 +131,14 @@ public sealed record FilaCumplimiento(int IdEmpleado, int IdProyecto, decimal Es
 }
 
 /// <summary>
-/// sm - Regla de horas esperadas del Dashboard (sección 5 del requerimiento):
-/// horas esperadas de la persona = jornada de cada día laborable vigente − horas de novedades.
+/// sm - Regla de horas esperadas del Dashboard (sección 5 del requerimiento), igual que Seguimiento
+/// (CalculoHorasPeriodo): cada proyecto exige su propia jornada completa.
 /// - Día laborable = lunes a viernes sin feriados, dentro del periodo y de la vigencia del colaborador (ingreso/salida).
-/// - Solo se esperan horas los días en que el colaborador tiene al menos una asignación vigente.
-/// - Jornada 8 h / 6 h pasante (CalculoHorasPeriodo.HorasJornada).
-/// - Novedades: horas de actividades tipo "Vacaciones" o "Permiso" de ese día; se restan de la jornada y no cuentan
+/// - Esperadas del proyecto = jornada del día (8 h / 6 h pasante) por cada día laborable en que el proyecto estuvo
+///   vigente para ese colaborador; no se reparte entre proyectos (ver ParametrosDashboard.ReglaReparto).
+/// - Novedades: horas de actividades tipo "Vacaciones" o "Permiso" de ese día; se restan de la jornada esperada
+///   (del proyecto al que están asociadas, o de todos los vigentes ese día si no tienen proyecto) y no cuentan
 ///   como reportadas.
-/// - Reparto entre proyectos: ver ParametrosDashboard.ReglaReparto (según lo registrado, no en partes iguales).
 /// - Reportadas = horas registradas en el proyecto dentro del periodo (sin novedades).
 /// </summary>
 public static class CalculoCumplimiento
@@ -168,16 +173,25 @@ public static class CalculoCumplimiento
             if (asignacionesEmpleado.Count == 0) continue;
 
             var actividadesEmpleado = actividadesPorEmpleado[empleado.Id].ToList();
-            var novedadesPorDia = actividadesEmpleado
-                .Where(a => a.EsNovedad)
+
+            // sm - Novedades con proyecto asociado solo reducen la jornada de ESE proyecto; sin proyecto, se tratan
+            // como día libre general y reducen la jornada de todos los proyectos vigentes ese día.
+            var novedadesConProyectoPorDia = actividadesEmpleado
+                .Where(a => a.EsNovedad && a.IdProyecto.HasValue)
+                .GroupBy(a => (a.Fecha, Proyecto: a.IdProyecto!.Value))
+                .ToDictionary(g => g.Key, g => g.Sum(a => a.Horas));
+            var novedadesSinProyectoPorDia = actividadesEmpleado
+                .Where(a => a.EsNovedad && !a.IdProyecto.HasValue)
                 .GroupBy(a => a.Fecha)
                 .ToDictionary(g => g.Key, g => g.Sum(a => a.Horas));
 
+            var registradas = actividadesEmpleado
+                .Where(a => !a.EsNovedad && a.IdProyecto.HasValue)
+                .GroupBy(a => a.IdProyecto!.Value)
+                .ToDictionary(g => g.Key, g => g.Sum(a => a.Horas));
+
             var proyectos = asignacionesEmpleado.Select(a => a.IdProyecto).Distinct().ToList();
-            // sm - Días laborables en que cada proyecto estuvo vigente: solo se usa para repartir lo pendiente
-            // cuando la persona no registró nada en sus proyectos.
-            var diasVigentes = proyectos.ToDictionary(id => id, _ => 0);
-            var esperadasPersona = 0m;
+            var esperadas = proyectos.ToDictionary(id => id, _ => 0m);
 
             var inicio = empleado.Ingreso.HasValue && empleado.Ingreso.Value > desde ? empleado.Ingreso.Value : desde;
             var fin = empleado.Salida.HasValue && empleado.Salida.Value < hasta ? empleado.Salida.Value : hasta;
@@ -193,48 +207,19 @@ public static class CalculoCumplimiento
                     .ToList();
                 if (proyectosVigentes.Count == 0) continue;
 
-                novedadesPorDia.TryGetValue(dia, out var horasNovedad);
-                esperadasPersona += Math.Max(0m, empleado.JornadaEn(dia) - horasNovedad);
-                foreach (var idProyecto in proyectosVigentes) diasVigentes[idProyecto]++;
+                novedadesSinProyectoPorDia.TryGetValue(dia, out var novedadGeneral);
+                var jornadaDia = empleado.JornadaEn(dia);
+
+                foreach (var idProyecto in proyectosVigentes)
+                {
+                    novedadesConProyectoPorDia.TryGetValue((dia, idProyecto), out var novedadProyecto);
+                    esperadas[idProyecto] += Math.Max(0m, jornadaDia - novedadProyecto - novedadGeneral);
+                }
             }
 
-            var registradas = actividadesEmpleado
-                .Where(a => !a.EsNovedad && a.IdProyecto.HasValue && diasVigentes.ContainsKey(a.IdProyecto.Value))
-                .GroupBy(a => a.IdProyecto!.Value)
-                .ToDictionary(g => g.Key, g => g.Sum(a => a.Horas));
-            var registradasPersona = registradas.Values.Sum();
-
-            // sm - Confirmado (2026-10-02): ya NO se reparte la jornada en partes iguales entre proyectos (generaba
-            // pendientes falsos: 6 h en A + 2 h en B = 8 h completas, pero B salía con 2 h pendientes).
-            // Primero se mide a la persona (sus horas esperadas vs. todo lo registrado en sus proyectos) y luego se
-            // reparte entre proyectos según lo registrado:
-            // - Esperadas del proyecto = lo registrado en él (válido) + su parte de lo pendiente de la persona.
-            // - Si registró más de lo esperado, lo válido se escala para que la suma sea lo esperado (todos al 100 %).
-            // - Lo pendiente se reparte en proporción a lo registrado en cada proyecto; si no registró nada,
-            //   en proporción a los días laborables en que cada proyecto estuvo vigente.
-            var validasPersona = Math.Min(registradasPersona, esperadasPersona);
-            var pendientesPersona = esperadasPersona - validasPersona;
-            var factorValidas = registradasPersona > esperadasPersona && registradasPersona > 0m
-                ? esperadasPersona / registradasPersona
-                : 1m;
-            var pesosPendiente = registradasPersona > 0m
-                ? proyectos.ToDictionary(id => id, id => registradas.GetValueOrDefault(id))
-                : proyectos.ToDictionary(id => id, id => (decimal)diasVigentes[id]);
-            var totalPesos = pesosPendiente.Values.Sum();
-
-            var esperadas = proyectos.ToDictionary(id => id, id =>
-                registradas.GetValueOrDefault(id) * factorValidas
-                + (totalPesos > 0m ? pendientesPersona * pesosPendiente[id] / totalPesos : 0m));
-
-            // sm - Se redondea cada proyecto a 2 decimales y la diferencia de redondeo se asigna al proyecto con más horas,
-            // para que la suma del colaborador sea exacta (no debe sumar 176,01 h en vez de 176 h).
-            var totalRedondeado = Math.Round(esperadasPersona, 2);
-            foreach (var idProyecto in esperadas.Keys.ToList()) esperadas[idProyecto] = Math.Round(esperadas[idProyecto], 2);
-            var diferencia = totalRedondeado - esperadas.Values.Sum();
-            if (diferencia != 0m && esperadas.Count > 0) esperadas[esperadas.MaxBy(kv => kv.Value).Key] += diferencia;
-
-            foreach (var (idProyecto, horasEsperadas) in esperadas)
+            foreach (var idProyecto in proyectos)
             {
+                var horasEsperadas = Math.Round(esperadas[idProyecto], 2);
                 registradas.TryGetValue(idProyecto, out var horasRegistradas);
                 if (horasEsperadas == 0m && horasRegistradas == 0m) continue;
                 filas.Add(new FilaCumplimiento(empleado.Id, idProyecto, horasEsperadas, horasRegistradas));
