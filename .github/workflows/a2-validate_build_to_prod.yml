@@ -31,7 +31,6 @@ jobs:
       - name: Validar secretos exclusivos de CI
         env:
           JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
-          CI_DB_CONNECTION_STRING: ${{ secrets.CI_DB_CONNECTION_STRING }}
         run: |
           if [ -z "$JWT_SECRET_KEY" ]; then
             echo "Falta el secret JWT_SECRET_KEY en GitHub."
@@ -41,20 +40,13 @@ jobs:
             echo "JWT_SECRET_KEY debe tener al menos 32 caracteres."
             exit 1
           fi
-          if [ -z "$CI_DB_CONNECTION_STRING" ]; then
-            echo "Falta el secret CI_DB_CONNECTION_STRING en GitHub."
-            exit 1
-          fi
-
       - name: Levantar contenedor de prueba
         env:
           JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
-          CI_DB_CONNECTION_STRING: ${{ secrets.CI_DB_CONNECTION_STRING }}
         run: |
           docker run -d --name build-validation-container \
             -p 8080:8080 \
             -e "Jwt__SecretKey=${JWT_SECRET_KEY}" \
-            -e "ConnectionStrings__DefaultConnection=${CI_DB_CONNECTION_STRING}" \
             build-validation:pr-${{ github.event.pull_request.number }}
 
       - name: Esperar a que el contenedor responda
