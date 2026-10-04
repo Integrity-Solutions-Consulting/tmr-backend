@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.2](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.3.1...v1.3.2) (2026-10-04)
+
+
+### Bug Fixes
+
+* ya tu sabe maluma bby v2 ([38b9024](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/38b90245f6a0d579c243d44ab96ee4c37c763742))
+* ya tu sabe maluma bby v2 ([fd2bb0d](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/fd2bb0d672ccf65ecf7d9b5a7fa0ba421d2fa6f8))
+
 ## [1.3.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.3.0...v1.3.1) (2026-10-04)
 
 
