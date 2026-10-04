@@ -30,15 +30,15 @@ jobs:
 
       - name: Validar secretos exclusivos de CI
         env:
-          CI_JWT_SECRET_KEY: ${{ secrets.CI_JWT_SECRET_KEY }}
+          JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
           CI_DB_CONNECTION_STRING: ${{ secrets.CI_DB_CONNECTION_STRING }}
         run: |
-          if [ -z "$CI_JWT_SECRET_KEY" ]; then
-            echo "Falta el secret CI_JWT_SECRET_KEY en GitHub."
+          if [ -z "$JWT_SECRET_KEY" ]; then
+            echo "Falta el secret JWT_SECRET_KEY en GitHub."
             exit 1
           fi
-          if [ "${#CI_JWT_SECRET_KEY}" -lt 32 ]; then
-            echo "CI_JWT_SECRET_KEY debe tener al menos 32 caracteres."
+          if [ "${#JWT_SECRET_KEY}" -lt 32 ]; then
+            echo "JWT_SECRET_KEY debe tener al menos 32 caracteres."
             exit 1
           fi
           if [ -z "$CI_DB_CONNECTION_STRING" ]; then
@@ -48,12 +48,12 @@ jobs:
 
       - name: Levantar contenedor de prueba
         env:
-          CI_JWT_SECRET_KEY: ${{ secrets.CI_JWT_SECRET_KEY }}
+          JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
           CI_DB_CONNECTION_STRING: ${{ secrets.CI_DB_CONNECTION_STRING }}
         run: |
           docker run -d --name build-validation-container \
             -p 8080:8080 \
-            -e "Jwt__SecretKey=${CI_JWT_SECRET_KEY}" \
+            -e "Jwt__SecretKey=${JWT_SECRET_KEY}" \
             -e "ConnectionStrings__DefaultConnection=${CI_DB_CONNECTION_STRING}" \
             build-validation:pr-${{ github.event.pull_request.number }}
 
