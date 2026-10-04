@@ -19,7 +19,7 @@ public static class UsuariosConfigEndpoints
     {
         var group = app.MapGroup("/api/configuracion/usuarios")
             .WithTags("Configuracion - Usuarios")
-            .RequireAuthorization();
+            .RequireAuthorization("USUARIOS_READ");
 
         // GET /api/configuracion/usuarios
         group.MapGet("/", async ([AsParameters] ObtenerUsuariosQuery query, [FromServices] IUsuariosConfigService service) =>
@@ -50,6 +50,7 @@ public static class UsuariosConfigEndpoints
             return Results.Created($"/api/configuracion/usuarios/{result.idusuario}", result);
         })
         .WithName("CrearUsuarioConfig")
+        .RequireAuthorization("USUARIOS_CREATE")
         .WithDescription("Crea un nuevo usuario asignandole roles y una persona opcional.");
 
         // PUT /api/configuracion/usuarios/{id}
@@ -63,6 +64,7 @@ public static class UsuariosConfigEndpoints
             return Results.Ok(result);
         })
         .WithName("ActualizarUsuarioConfig")
+        .RequireAuthorization("USUARIOS_UPDATE")
         .WithDescription("Actualiza datos de autenticacion, roles y persona opcional de un usuario.");
 
         // PATCH /api/configuracion/usuarios/{id}
@@ -75,6 +77,7 @@ public static class UsuariosConfigEndpoints
             return Results.Ok(result);
         })
         .WithName("ActualizarEstadoUsuarioConfig")
+        .RequireAuthorization("USUARIOS_UPDATE")
         .WithDescription("Activa o desactiva logicamente a un usuario.");
 
         // DELETE /api/configuracion/usuarios/{id}
@@ -87,6 +90,7 @@ public static class UsuariosConfigEndpoints
             return Results.Ok(result);
         })
         .WithName("DesactivarUsuarioConfig")
+        .RequireAuthorization("USUARIOS_DELETE")
         .WithDescription("Desactiva logicamente a un usuario.");
 
         // POST /api/configuracion/usuarios/register-user
@@ -102,6 +106,7 @@ public static class UsuariosConfigEndpoints
                 ApiResponse<RegisterResponse>.Ok(result, "Usuario administrativo registrado correctamente."));
         })
         .WithName("RegisterUserConfig")
+        .RequireAuthorization("USUARIOS_CREATE")
         .WithSummary("Registrar usuario administrativo")
         .WithDescription("Crea un usuario administrativo con contrasena temporal. Requiere autenticacion.")
         .Produces<ApiResponse<RegisterResponse>>(StatusCodes.Status201Created)

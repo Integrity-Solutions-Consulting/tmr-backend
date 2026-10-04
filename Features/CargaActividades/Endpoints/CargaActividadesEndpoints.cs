@@ -19,7 +19,9 @@ public static class CargaActividadesEndpoints
 {
     public static void MapCargaActividadesEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/carga-actividades").WithTags("CargaActividades");
+        var group = app.MapGroup("/api/carga-actividades")
+            .WithTags("CargaActividades")
+            .RequireAuthorization("ACTIVIDADES_READ");
 
         // 1. GET: Obtener todas las actividades activas en el esquema real de time_report
         group.MapGet("/", async (ApplicationDbContext db) =>
@@ -186,28 +188,37 @@ public static class CargaActividadesEndpoints
         // NUEVA FUNCIONALIDAD: Carga Masiva de Actividades desde Planilla Excel
         // RUTA FINAL: POST /api/carga-actividades/excel
         // =============================================================================
-        group.MapPost("/excel", async ([FromForm] IFormFile file, HttpContext context, [FromServices] ICargarActividadesExcelHandler handler) =>
+        group.MapPost("/excel", async ([FromForm] IFormFile file, HttpContext context, [FromServices] ICargarActividadesExcelHandler handler, ApplicationDbContext db) =>
         {
             try
             {
-                if (file == null || file.Length == 0)
+                if (file == null || file.Length == 0 || file.Length > 5 * 1024 * 1024)
                 {
                     return Results.BadRequest(CargaActividadesResponse.Failure("El archivo Excel no fue proporcionado o está vacío."));
                 }
 
                 // REGLA DE SEGURIDAD EN DESARROLLO: Forzamos ID de prueba local para usar Scalar sin Token JWT
-                var colaboradorId = "00000000-0000-0000-0000-000000000000";
+                var userIdRaw = context.User.FindFirst("sub")?.Value;
 
                 // NOTA: Cuando vayas a pasar a producción con la seguridad de la empresa, descomenta la línea de abajo:
                 // var colaboradorId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
-                if (string.IsNullOrEmpty(colaboradorId))
+                if (!int.TryParse(userIdRaw, out var userId))
                 {
                     return Results.Json(CargaActividadesResponse.Failure("Token de sesión inválido o expirado."), statusCode: 401);
                 }
 
-                var command = new CargarActividadesExcelCommand(file, colaboradorId);
-                var response = await handler.HandleAsync(command);
+                var empleadoId = await (from usuario in db.TblAutenticacionUsuarios
+                                        join empleado in db.TblAdministracionEmpleados on usuario.Idpersona equals empleado.Idpersona
+                                        where usuario.Id == userId && usuario.Activo && empleado.Activo
+                                        select (int?)empleado.Id).FirstOrDefaultAsync(context.RequestAborted);
+                if (!empleadoId.HasValue)
+                    return Results.BadRequest(CargaActividadesResponse.Failure("El usuario no tiene un colaborador activo asociado."));
+
+                var command = new CargarActividadesExcelCommand(file, empleadoId.Value,
+                    context.User.FindFirst("email")?.Value ?? userIdRaw,
+                    context.Connection.RemoteIpAddress?.ToString() ?? "unknown");
+                var response = await handler.HandleAsync(command, context.RequestAborted);
 
                 if (response.IsSuccess)
                 {
@@ -218,20 +229,20 @@ public static class CargaActividadesEndpoints
 
                 return Results.BadRequest(response);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 // Diagnóstico en tiempo de desarrollo para atrapar errores de casteo o MiniExcel
                 return Results.Json(new 
                 { 
                     isSuccess = false, 
                     message = "Error interno atrapado en el Endpoint al procesar el archivo.", 
-                    detallesError = ex.Message,
-                    origen = ex.TargetSite?.Name,
-                    pilaSeguimiento = ex.StackTrace 
+                    detallesError = "No disponible",
+                    origen = "No disponible",
+                    pilaSeguimiento = "No disponible"
                 }, statusCode: 500);
             }
         })
         .WithName("CargarActividadesExcel")
-        .DisableAntiforgery(); // Desactiva la protección automática de formularios de .NET 10
+        .RequireAuthorization("ACTIVIDADES_CREATE");
     }
 }

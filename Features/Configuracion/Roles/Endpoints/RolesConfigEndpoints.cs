@@ -13,7 +13,9 @@ public static class RolesConfigEndpoints
 {
     public static void MapRolesConfigEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/configuracion/roles").WithTags("Configuracion - Roles");
+        var group = app.MapGroup("/api/configuracion/roles")
+            .WithTags("Configuracion - Roles")
+            .RequireAuthorization("ROLES_READ");
 
         // GET /api/configuracion/roles
         group.MapGet("/", async ([FromServices] IRolesConfigService service) =>
@@ -52,6 +54,7 @@ public static class RolesConfigEndpoints
             return Results.Ok(result);
         })
         .WithName("CrearRolConfig")
+        .RequireAuthorization("ROLES_CREATE")
         .WithDescription("Crea un nuevo rol y le asigna modulos.");
 
         // PUT /api/configuracion/roles/{id}
@@ -64,6 +67,7 @@ public static class RolesConfigEndpoints
             return Results.Ok(result);
         })
         .WithName("ActualizarRolConfig")
+        .RequireAuthorization("ROLES_UPDATE")
         .WithDescription("Actualiza datos de un rol y sus modulos asignados.");
 
         // PATCH /api/configuracion/roles/{id}
@@ -76,6 +80,7 @@ public static class RolesConfigEndpoints
             return Results.Ok(result);
         })
         .WithName("ActualizarEstadoRolConfig")
+        .RequireAuthorization("ROLES_UPDATE")
         .WithDescription("Activa o desactiva logicamente un rol.");
 
         // DELETE /api/configuracion/roles/{id}
@@ -88,6 +93,7 @@ public static class RolesConfigEndpoints
             return Results.Ok(result);
         })
         .WithName("EliminarRolConfig")
+        .RequireAuthorization("ROLES_DELETE")
         .WithDescription("Elimina logicamente un rol sin crear tablas nuevas.");
     }
 

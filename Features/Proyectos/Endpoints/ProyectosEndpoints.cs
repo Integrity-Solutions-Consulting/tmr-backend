@@ -14,8 +14,9 @@ public static class ProyectosEndpoints
 
     public static void MapProyectosEndpoints(this IEndpointRouteBuilder app)
     {
-        var env = app.ServiceProvider.GetService(typeof(Microsoft.Extensions.Hosting.IHostEnvironment)) as Microsoft.Extensions.Hosting.IHostEnvironment;
-        var group = app.MapGroup("/api/proyectos").WithTags("Proyectos");
+        var group = app.MapGroup("/api/proyectos")
+            .WithTags("Proyectos")
+            .RequireAuthorization("PROYECTOS_READ");
 
         group.MapGet("/", async (ApplicationDbContext db) =>
         {
@@ -88,8 +89,7 @@ public static class ProyectosEndpoints
 
         var postEndpoint = group.MapPost("/", async (CrearProyectoRequest request, ApplicationDbContext db, HttpContext context) =>
         {
-            var usuarioId = "00000000-0000-0000-0000-000000000000";
-            // var usuarioId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var usuarioId = context.User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
 
             if (string.IsNullOrEmpty(usuarioId))
                 return Results.Json(new { isSuccess = false, message = "Token de sesión inválido o expirado." }, statusCode: 401);
@@ -144,12 +144,11 @@ public static class ProyectosEndpoints
 
             return Results.Created($"/api/proyectos/{proyecto.Id}", await MapProyecto(creado, db));
         });
-        if (!(env?.IsDevelopment() ?? false)) postEndpoint.RequireAuthorization();
+        postEndpoint.RequireAuthorization("PROYECTOS_CREATE");
 
         var putEndpoint = group.MapPut("/{id:int}", async (int id, ActualizarProyectoRequest request, ApplicationDbContext db, HttpContext context) =>
         {
-            var usuarioId = "00000000-0000-0000-0000-000000000000";
-            // var usuarioId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var usuarioId = context.User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
 
             if (string.IsNullOrEmpty(usuarioId))
                 return Results.Json(new { isSuccess = false, message = "Token de sesión inválido o expirado." }, statusCode: 401);
@@ -207,12 +206,11 @@ public static class ProyectosEndpoints
 
             return Results.Ok(await MapProyecto(actualizado, db));
         });
-        if (!(env?.IsDevelopment() ?? false)) putEndpoint.RequireAuthorization();
+        putEndpoint.RequireAuthorization("PROYECTOS_UPDATE");
 
         var deleteEndpoint = group.MapDelete("/{id:int}", async (int id, ApplicationDbContext db, HttpContext context) =>
         {
-            var usuarioId = "00000000-0000-0000-0000-000000000000";
-            // var usuarioId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var usuarioId = context.User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
 
             if (string.IsNullOrEmpty(usuarioId))
                 return Results.Json(new { isSuccess = false, message = "Token de sesión inválido o expirado." }, statusCode: 401);
@@ -229,7 +227,7 @@ public static class ProyectosEndpoints
             await db.SaveChangesAsync();
             return Results.NoContent();
         });
-        if (!(env?.IsDevelopment() ?? false)) deleteEndpoint.RequireAuthorization();
+        deleteEndpoint.RequireAuthorization("PROYECTOS_DELETE");
     }
 
     private static IQueryable<TblTimeReportProyecto> QueryProyectos(ApplicationDbContext db) =>
@@ -256,6 +254,14 @@ public static class ProyectosEndpoints
             .Where(r => r.Activo)
             .ToList();
 
+        // sm - El departamento de un recurso se deriva del cargo que se le ASIGNÓ en el proyecto (Rolasignado),
+        // no del cargo actual del empleado en Administración (que puede haber cambiado desde entonces y ya no
+        // reflejar bajo qué departamento se lo asignó). Antes se usaba siempre el cargo actual del empleado,
+        // así que el departamento mostrado no era consistente con el "Rol" realmente guardado.
+        var idDepartamentoPorCargo = (await db.TblAdministracionCargos.AsNoTracking().ToListAsync())
+            .GroupBy(c => c.Nombrecargo)
+            .ToDictionary(g => g.Key, g => g.First().Iddepartamento);
+
         var lideres = asignacionesActivas
             .GroupBy(r => r.Idlider)
             .Select(r =>
@@ -269,17 +275,21 @@ public static class ProyectosEndpoints
                     {
                         var persona = x.IdempleadoNavigation?.IdpersonaNavigation;
                         var cargo = x.IdempleadoNavigation?.IdcargoNavigation;
+                        var rol = x.Rolasignado ?? cargo?.Nombrecargo ?? string.Empty;
+                        var idDepartamento = !string.IsNullOrWhiteSpace(x.Rolasignado) && idDepartamentoPorCargo.TryGetValue(x.Rolasignado, out var idDeptoDelRol)
+                            ? idDeptoDelRol
+                            : cargo?.Iddepartamento;
                         return new ProyectoRecursoResponse(
                             x.Id,
                             x.Idempleado,
                             x.Idproveedor is null ? "Interno" : "Externo",
                             persona is null ? string.Empty : $"{persona.Nombres} {persona.Apellidos}".Trim(),
-                            x.Rolasignado ?? cargo?.Nombrecargo ?? string.Empty,
+                            rol,
                             x.Fechaasignacion,
                             x.Fechafinasignacion,
                             x.Costoporhora ?? 0,
                             x.Horasasignadas ?? 0,
-                            cargo?.Iddepartamento
+                            idDepartamento
                         );
                     })
                     .ToList();

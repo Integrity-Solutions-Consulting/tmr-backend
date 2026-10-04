@@ -49,6 +49,8 @@ using tmr_backend.Shared.Middleware;
 using Microsoft.OpenApi;
 using tmr_backend.Shared;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
 using tmr_backend.Infrastructure.Extensions;
 using tmr_backend.Infrastructure.BackgroundServices;
 
@@ -110,6 +112,20 @@ builder.Services.AddCors(options =>
     });
 });
 
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("auth", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 5,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        }));
+});
+
 
 // ── Memory Cache & HttpContext ──
 builder.Services.AddMemoryCache();
@@ -152,6 +168,7 @@ builder.Services.AddScoped<ILiderService, LiderService>();
 builder.Services.AddScoped<IUsuariosConfigService, UsuariosConfigService>();
 builder.Services.AddScoped<IRolesConfigService, RolesConfigService>();
 builder.Services.AddScoped<IDiasFestivosService, DiasFestivosService>();
+builder.Services.AddHttpClient(); // sm - IHttpClientFactory para importar feriados (DiasFestivosService)
 builder.Services.AddScoped<ICatalogosConfigService, CatalogosConfigService>();
 
 // Feature: Carga Actividades
@@ -170,6 +187,12 @@ builder.Services.AddScoped<IValidator<RegistrarSalidaRequest>, RegistrarSalidaRe
 
 // ── Authentication & JWT Setup ──
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtSettings>()!;
+if (string.IsNullOrWhiteSpace(jwt.SecretKey) || jwt.SecretKey.Length < 32)
+    throw new InvalidOperationException("Jwt:SecretKey debe configurarse fuera del repositorio y tener al menos 32 caracteres.");
+
+if (string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection")))
+    throw new InvalidOperationException("ConnectionStrings:DefaultConnection debe configurarse fuera del repositorio.");
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(opt =>
     {
@@ -217,7 +240,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 // ── Authorization Provider ──
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    // Los endpoints públicos deben declararse explícitamente con AllowAnonymous.
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+});
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
 
 // =========================
@@ -230,7 +259,21 @@ app.UseMiddleware<GlobalExceptionMiddleware>();
 
 app.UseHttpsRedirection();
 
-// app.UseCors("PermitirFrontend");
+if (!app.Environment.IsDevelopment())
+    app.UseHsts();
+
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.TryAdd("X-Content-Type-Options", "nosniff");
+    context.Response.Headers.TryAdd("X-Frame-Options", "DENY");
+    context.Response.Headers.TryAdd("Referrer-Policy", "no-referrer");
+    if (!app.Environment.IsDevelopment())
+        context.Response.Headers.TryAdd("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'");
+    context.Response.Headers.TryAdd("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    await next();
+});
+
+app.UseCors("AllowFrontend");
 
 app.UseAuthentication();
 
@@ -238,7 +281,7 @@ app.UseMiddleware<JwtBlacklistMiddleware>();
 
 app.UseMiddleware<PermissionEnrichmentMiddleware>();
 
-app.UseCors("AllowFrontend");
+app.UseRateLimiter();
 app.UseAuthorization();
 
 // ── Scalar API Reference ──
@@ -264,6 +307,7 @@ app.MapAuthEndpoints();
 app.MapCargaActividadesEndpoints();
 app.MapColaboradoresEndpoints();
 app.MapDashboardEndpoints();
+app.MapDashboardEjecutivoEndpoints(); // sm - Dashboard ejecutivo (requerimiento Dashboard Time Report)
 app.MapLideresEndpoints();
 app.MapProyectosEndpoints();
 app.MapCatalogosEndpoints();
@@ -273,18 +317,5 @@ app.MapUsuariosConfigEndpoints();
 app.MapRolesConfigEndpoints();
 app.MapDiasFestivosEndpoints();
 app.MapCatalogosConfigEndpoints();
-
-// ── Seed Template Data (Desarrollo) ──
-/*if (app.Environment.IsDevelopment())
-{
-    try
-    {
-        await app.SeedTemplateDataAsync();
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"⚠️  Seeding skipped: {ex.Message}");
-    }
-}*/
 
 app.Run();

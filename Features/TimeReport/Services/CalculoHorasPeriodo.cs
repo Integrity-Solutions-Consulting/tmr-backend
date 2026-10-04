@@ -1,6 +1,11 @@
+using Microsoft.EntityFrameworkCore;
+using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
 
 namespace tmr_backend.Features.TimeReport.Services;
+
+// sm - Jornada vigente en un rango de fechas, según el historial de tipo de contrato (script 11).
+public sealed record PeriodoJornada(DateOnly Desde, DateOnly? Hasta, decimal Jornada);
 
 /// <summary>
 /// sm - Resultado del cálculo de horas de un colaborador en un periodo (misma regla para Seguimiento y Actividades).
@@ -29,6 +34,33 @@ public static class CalculoHorasPeriodo
     // Se usa para no contar los días futuros del rango.
     public static DateOnly HoyEcuador() => DateOnly.FromDateTime(DateTime.UtcNow.AddHours(-5));
 
+    // sm - Jornada mínima diaria: 8 h; 6 h si el tipo de contrato es Pasantía (código PAS).
+    // Se expone para que el Dashboard use exactamente la misma regla.
+    public static decimal HorasJornada(TblAdministracionEmpleado empleado) =>
+        HorasJornadaPorCodigo(empleado.IdtipocontratoNavigation?.Codigovalor);
+
+    // sm - Misma regla a partir del código del tipo de contrato (lo usa el historial de contratos del dashboard).
+    public static decimal HorasJornadaPorCodigo(string? codigoTipoContrato) =>
+        codigoTipoContrato?.Trim().ToUpper() == "PAS" ? 6m : 8m;
+
+    // sm - Historial de jornadas por empleado (script 11). Sin historial, se usa el tipo de contrato actual.
+    public static async Task<ILookup<int, PeriodoJornada>> CargarJornadasAsync(ApplicationDbContext db, ICollection<int>? idsEmpleado = null)
+    {
+        var contratos = await db.TblAdministracionEmpleadoContratos
+            .AsNoTracking()
+            .Where(c => c.Activo && (idsEmpleado == null || idsEmpleado.Contains(c.Idempleado)))
+            .Join(db.TblAdministracionCatalogoDetalles, c => c.Idtipocontrato, d => d.Id,
+                (c, d) => new { c.Idempleado, c.Fechadesde, c.Fechahasta, d.Codigovalor })
+            .ToListAsync();
+        return contratos.ToLookup(
+            c => c.Idempleado,
+            c => new PeriodoJornada(c.Fechadesde, c.Fechahasta, HorasJornadaPorCodigo(c.Codigovalor)));
+    }
+
+    // sm - Jornada de un día: la del contrato vigente ese día; si no hay historial, la del tipo de contrato actual.
+    public static decimal JornadaEn(DateOnly dia, IEnumerable<PeriodoJornada>? jornadas, decimal jornadaActual) =>
+        jornadas?.FirstOrDefault(j => j.Desde <= dia && (j.Hasta is null || j.Hasta >= dia))?.Jornada ?? jornadaActual;
+
     // sm - Regla de negocio por colaborador:
     // - Periodo = rango pedido, desde su fecha de ingreso y hasta su fecha de salida si caen dentro del rango,
     //   y nunca después de hoy (fecha de Ecuador): los días futuros del rango no se cuentan.
@@ -47,9 +79,12 @@ public static class CalculoHorasPeriodo
         DateOnly hasta,
         IEnumerable<TblTimeReportActividadDiarium> actividades,
         ICollection<DateOnly> feriados,
-        DateOnly hoy)
+        DateOnly hoy,
+        IEnumerable<PeriodoJornada>? jornadas = null)
     {
-        var horasJornada = empleado.IdtipocontratoNavigation?.Codigovalor?.Trim().ToUpper() == "PAS" ? 6m : 8m;
+        var horasJornada = HorasJornada(empleado);
+        var historial = jornadas?.ToList();
+        var horasEsperadas = 0m;
 
         var inicioPeriodo = empleado.Fechaingreso.HasValue && empleado.Fechaingreso.Value > desde
             ? empleado.Fechaingreso.Value
@@ -77,11 +112,14 @@ public static class CalculoHorasPeriodo
             diasLaborables++;
             horasPorDia.TryGetValue(dia, out var horasDia);
             horasRegistradas += horasDia;
-            if (horasDia >= horasJornada) diasConReporte++;
+            // sm - Jornada del contrato vigente ese día (historial); antes era siempre la del contrato actual.
+            var jornadaDia = JornadaEn(dia, historial, horasJornada);
+            horasEsperadas += jornadaDia;
+            if (horasDia >= jornadaDia) diasConReporte++;
         }
 
         var diasACompletar = diasLaborables - diasConReporte;
-        var horasEsperadas = diasLaborables * horasJornada;
+        // var horasEsperadas = diasLaborables * horasJornada; // sm - ahora se suma la jornada de cada día
         var horasPorRegistrar = Math.Max(0m, horasEsperadas - horasRegistradas);
 
         var estado = diasLaborables == 0 ? "-"

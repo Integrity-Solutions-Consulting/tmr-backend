@@ -2,5 +2,5 @@
 
 namespace tmr_backend.Features.CargaActividades // <--- CAMBIADO AQUÍ
 {
-    public record CargarActividadesExcelCommand(IFormFile File, string ColaboradorId);
+    public record CargarActividadesExcelCommand(IFormFile File, int EmpleadoId, string Usuario, string Ip);
 }

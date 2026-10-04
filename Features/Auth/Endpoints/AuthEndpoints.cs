@@ -17,6 +17,7 @@ public static class AuthEndpoints
         // ── Endpoints públicos (sin autenticación) ─────────────────────────
 
         group.MapPost("/register", Register)
+            .RequireAuthorization("USUARIOS_CREATE")
             .WithName("RegistraUsuario")
             .WithSummary("Registra usuario")
             .Produces<ApiResponse<RegisterResponse>>(StatusCodes.Status201Created)
@@ -25,24 +26,32 @@ public static class AuthEndpoints
 
 
         group.MapPost("/login", Login)
+            .AllowAnonymous()
+            .RequireRateLimiting("auth")
             .WithName("Login")
             .WithSummary("Iniciar sesión — devuelve AT + RT + FamilyId")
             .Produces<ApiResponse<AuthResponse>>(StatusCodes.Status200OK)
             .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
 
         group.MapPost("/refresh-token", RefreshToken)
+            .AllowAnonymous()
+            .RequireRateLimiting("auth")
             .WithName("RefreshToken")
             .WithSummary("Rotar RT expirado y obtener nuevo par AT + RT")
             .Produces<ApiResponse<AuthResponse>>(StatusCodes.Status200OK)
             .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
 
         group.MapPost("/forgot-password", ForgotPassword)
+            .AllowAnonymous()
+            .RequireRateLimiting("auth")
             .WithName("ForgotPassword")
             .WithSummary("Solicitar enlace para recuperar contraseña")
             .Produces<ApiResponse<ForgotPasswordResponse>>(StatusCodes.Status200OK)
             .Produces<ProblemDetails>(StatusCodes.Status400BadRequest);
 
         group.MapPost("/reset-password", ResetPassword)
+            .AllowAnonymous()
+            .RequireRateLimiting("auth")
             .WithName("ResetPassword")
             .WithSummary("Resetear contraseña con token de recuperación")
             .Produces<ApiResponse<ResetPasswordResponse>>(StatusCodes.Status200OK)
@@ -59,6 +68,8 @@ public static class AuthEndpoints
             .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
 
         group.MapPost("/logout-rt", LogoutWithRefreshToken)
+            .AllowAnonymous()
+            .RequireRateLimiting("auth")
             .WithName("LogoutWithRefreshToken")
             .WithSummary("Cerrar sesión usando solo el Refresh Token — útil cuando el AT ya expiró")
             .Produces(StatusCodes.Status204NoContent);
@@ -125,6 +136,9 @@ public static class AuthEndpoints
         IAuthService authService,
         CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(request.RefreshToken))
+            return Results.Unauthorized();
+
         var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         var result   = await authService.RefreshTokenAsync(request, clientIp, ct);
 

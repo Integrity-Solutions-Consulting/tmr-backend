@@ -36,6 +36,11 @@ namespace tmr_backend.Features.CargaActividades
 
             try
             {
+                var empleadoAutenticado = await _context.TblAdministracionEmpleados
+                    .FirstOrDefaultAsync(e => e.Id == command.EmpleadoId && e.Activo, cancellationToken);
+                if (empleadoAutenticado is null)
+                    return CargaActividadesResponse.Failure("El colaborador autenticado no está disponible.");
+
                 using var streamArchivo = command.File.OpenReadStream();
                 var fileName = command.File.FileName?.Trim() ?? string.Empty;
                 var extension = Path.GetExtension(fileName).ToLowerInvariant();
@@ -132,8 +137,8 @@ namespace tmr_backend.Features.CargaActividades
                         continue;
                     }
 
-                    var empleado = await FindEmpleadoAsync(codigoEmpleado, emailCorporativo, cancellationToken)
-                        ?? await GetOrCreateFallbackEmpleadoAsync(codigoEmpleado, emailCorporativo, cedula, colaborador, cancellationToken);
+                    // La planilla no puede elegir el empleado destino: siempre se carga para el dueño de la sesión.
+                    var empleado = empleadoAutenticado;
 
                     var tipoActividadId = await GetOrCreateTipoActividadIdAsync(tipoActividad, cancellationToken);
                     if (tipoActividadId is null)
@@ -143,6 +148,18 @@ namespace tmr_backend.Features.CargaActividades
                     }
 
                     var proyectoId = await FindProyectoIdAsync(proyecto, cancellationToken);
+                    if (proyectoId.HasValue)
+                    {
+                        var asignado = await _context.TblTimeReportAsignacionProyectos.AnyAsync(a =>
+                            a.Activo && a.Idempleado == empleado.Id && a.Idproyecto == proyectoId.Value &&
+                            (!a.Fechaasignacion.HasValue || a.Fechaasignacion <= fechaActividad) &&
+                            (!a.Fechafinasignacion.HasValue || a.Fechafinasignacion >= fechaActividad), cancellationToken);
+                        if (!asignado)
+                        {
+                            erroresValidacion.Add($"Fila {filaIndex}: no está asignado al proyecto indicado para esa fecha.");
+                            continue;
+                        }
+                    }
                     var codigoRequerimientoNormalizado = string.IsNullOrWhiteSpace(codigoRequerimiento) ? null : codigoRequerimiento.Trim();
                     var descripcionNormalizada = descripcionActividad.Trim();
 
@@ -189,9 +206,9 @@ namespace tmr_backend.Features.CargaActividades
                         Notas                = string.IsNullOrWhiteSpace(notas) ? null : notas,
                         Esbillable           = null,
                         Activo               = true,
-                        Usuariocreacion      = string.IsNullOrWhiteSpace(command.ColaboradorId) ? "carga_excel" : command.ColaboradorId,
+                        Usuariocreacion      = command.Usuario,
                         Fechacreacion        = DateTime.UtcNow,
-                        Ipcreacion           = "127.0.0.1"
+                        Ipcreacion           = command.Ip
                     });
 
                     listaParaFrontend.Add(new
@@ -227,17 +244,9 @@ namespace tmr_backend.Features.CargaActividades
 
                 return response;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                var baseMessage = ex.GetBaseException()?.Message;
-                var inner       = ex.InnerException?.Message;
-                var detalle     = baseMessage;
-                if (!string.IsNullOrWhiteSpace(inner) && inner != baseMessage)
-                    detalle += " - " + inner;
-
-                return CargaActividadesResponse.Failure(
-                    $"Error crítico en el lote de carga: {ex.Message}" +
-                    (string.IsNullOrWhiteSpace(detalle) ? string.Empty : " - " + detalle));
+                return CargaActividadesResponse.Failure("No se pudo procesar el archivo.");
             }
         }
 
@@ -379,27 +388,7 @@ namespace tmr_backend.Features.CargaActividades
 
         private async Task<int?> GetOrCreateTipoActividadIdAsync(string tipoActividad, CancellationToken ct)
         {
-            const string fallbackTipo = "Carga Excel";
-
-            if (string.IsNullOrWhiteSpace(tipoActividad))
-            {
-                var tipoExistente = await _context.TblTimeReportTipoActividads
-                    .FirstOrDefaultAsync(t => t.Nombretipo == fallbackTipo, ct);
-                if (tipoExistente != null) return tipoExistente.Id;
-
-                var nuevoTipo = new TblTimeReportTipoActividad
-                {
-                    Nombretipo      = fallbackTipo,
-                    Descripcion     = "Tipo de actividad generado por carga de prueba",
-                    Activo          = true,
-                    Usuariocreacion = "carga_excel",
-                    Fechacreacion   = DateTime.UtcNow,
-                    Ipcreacion      = "127.0.0.1"
-                };
-                _context.TblTimeReportTipoActividads.Add(nuevoTipo);
-                await _context.SaveChangesAsync(ct);
-                return nuevoTipo.Id;
-            }
+            if (string.IsNullOrWhiteSpace(tipoActividad)) return null;
 
             var normalizedTipo = tipoActividad.Trim().ToLower();
 
@@ -411,18 +400,7 @@ namespace tmr_backend.Features.CargaActividades
                 .FirstOrDefaultAsync(t => t.Nombretipo != null && t.Nombretipo.ToLower().Contains(normalizedTipo), ct);
             if (tipoParcial != null) return tipoParcial.Id;
 
-            var nuevo = new TblTimeReportTipoActividad
-            {
-                Nombretipo      = tipoActividad.Trim(),
-                Descripcion     = $"Tipo creado desde carga: {tipoActividad.Trim()}",
-                Activo          = true,
-                Usuariocreacion = "carga_excel",
-                Fechacreacion   = DateTime.UtcNow,
-                Ipcreacion      = "127.0.0.1"
-            };
-            _context.TblTimeReportTipoActividads.Add(nuevo);
-            await _context.SaveChangesAsync(ct);
-            return nuevo.Id;
+            return null;
         }
 
         private async Task<int?> FindProyectoIdAsync(string proyecto, CancellationToken ct)

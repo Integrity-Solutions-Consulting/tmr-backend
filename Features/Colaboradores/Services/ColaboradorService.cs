@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using tmr_backend.Features.Colaboradores.DTOs.Request;
 using tmr_backend.Features.Colaboradores.DTOs.Response;
 using tmr_backend.Features.Colaboradores.Mappings;
+using tmr_backend.Features.TimeReport.Services;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
 
@@ -223,6 +224,11 @@ public sealed class ColaboradorService(
             await db.TblAdministracionEmpleados.AddAsync(empleado, ct);
             await db.SaveChangesAsync(ct);
 
+            // sm - Historial de contrato: el tipo inicial rige desde la fecha de ingreso.
+            await CambiarContratoAsync(empleado.Id, null, request.IdTipoContrato,
+                request.FechaIngreso ?? CalculoHorasPeriodo.HoyEcuador(), request.FechaIngreso, ct);
+            await db.SaveChangesAsync(ct);
+
             // ================================================================
             // NUEVO: Si se envió un reemplazo, actualizar el inactivo
             // ================================================================
@@ -319,6 +325,20 @@ public sealed class ColaboradorService(
         persona.Ipmodificacion = IpSistema;
 
         // ── Actualizar datos laborales ───────────────────────────────
+        // sm - Si cambia el tipo de contrato se guarda en el historial con su fecha de vigencia (la jornada esperada
+        // depende de él: 8 h o 6 h pasante). Sin fecha, el cambio rige desde hoy; si antes no tenía tipo, desde el ingreso.
+        if (empleado.Idtipocontrato != request.IdTipoContrato)
+        {
+            var desde = request.FechaCambioContrato
+                ?? (empleado.Idtipocontrato is null
+                    ? request.FechaIngreso ?? empleado.Fechaingreso ?? CalculoHorasPeriodo.HoyEcuador()
+                    : CalculoHorasPeriodo.HoyEcuador());
+            var ingreso = request.FechaIngreso ?? empleado.Fechaingreso;
+            if (ingreso.HasValue && desde < ingreso.Value)
+                throw new InvalidOperationException("La fecha del cambio de contrato no puede ser anterior a la fecha de ingreso.");
+            await CambiarContratoAsync(id, empleado.Idtipocontrato, request.IdTipoContrato, desde, ingreso, ct);
+        }
+
         empleado.Idcargo = request.IdCargo;
         empleado.Idmodotrabajo = request.IdModoTrabajo;
         empleado.Idcategoriaempleado = request.IdCategoriaEmpleado;
@@ -369,6 +389,54 @@ public sealed class ColaboradorService(
         await db.SaveChangesAsync(ct);
         // El trigger de auditoría de UPDATE se dispara solo.
     }
+
+
+    // =========================================================================
+    // sm - HISTORIAL DE CONTRATO — cierra el tipo vigente el día anterior a "desde" y abre el nuevo.
+    // Los registros que empezaban en "desde" o después quedan reemplazados (Activo = false).
+    // Si el colaborador tenía un tipo pero aún no tenía historial (datos anteriores al script 11), se guarda primero
+    // ese tipo anterior desde su ingreso. No hace SaveChanges: lo guarda quien llama, junto con el resto.
+    // =========================================================================
+    private async Task CambiarContratoAsync(
+        int idEmpleado, int? tipoAnterior, int tipoNuevo, DateOnly desde, DateOnly? ingreso, CancellationToken ct)
+    {
+        var historial = await db.TblAdministracionEmpleadoContratos
+            .Where(c => c.Idempleado == idEmpleado && c.Activo)
+            .ToListAsync(ct);
+
+        if (historial.Count == 0 && tipoAnterior.HasValue)
+        {
+            var desdeAnterior = ingreso ?? desde;
+            if (desdeAnterior < desde)
+                db.TblAdministracionEmpleadoContratos.Add(NuevoContrato(idEmpleado, tipoAnterior.Value, desdeAnterior, desde.AddDays(-1)));
+        }
+
+        foreach (var c in historial)
+        {
+            if (c.Fechadesde >= desde)
+                c.Activo = false;
+            else if (c.Fechahasta is null || c.Fechahasta >= desde)
+                c.Fechahasta = desde.AddDays(-1);
+            else
+                continue;
+            c.Usuariomodificacion = UsuarioSistema;
+            c.Fechamodificacion = DateTime.UtcNow;
+            c.Ipmodificacion = IpSistema;
+        }
+
+        db.TblAdministracionEmpleadoContratos.Add(NuevoContrato(idEmpleado, tipoNuevo, desde, null));
+    }
+
+    private static TblAdministracionEmpleadoContrato NuevoContrato(int idEmpleado, int idTipo, DateOnly desde, DateOnly? hasta) => new()
+    {
+        Idempleado = idEmpleado,
+        Idtipocontrato = idTipo,
+        Fechadesde = desde,
+        Fechahasta = hasta,
+        Activo = true,
+        Usuariocreacion = UsuarioSistema,
+        Ipcreacion = IpSistema
+    };
 
 
     // =========================================================================

@@ -15,6 +15,20 @@ public record FiltroSeguimientoDto(
     string? Periodo
 );
 
+// sm - El proyecto de ESTA fila (colaborador+proyecto+cliente), con sus horas registradas. Se usa para
+// generar el archivo de reporte de ese proyecto al descargar (ver SeguimientoColaboradorDto.Proyectos).
+public record SeguimientoProyectoDto(
+    int IdProyecto,
+    string Nombre,
+    string Cliente,
+    string LiderTecnico,
+    decimal HorasRegistradas
+);
+
+// sm - Una fila = un colaborador en UN proyecto (con su cliente y líder técnico) dentro del rango consultado.
+// Un colaborador con 2 proyectos activos genera 2 filas, una por proyecto, cada una con sus propias horas/días
+// calculados contra su propia jornada completa (8 h, o 6 h si el contrato es Pasantía): ver CalculoHorasPeriodo.
+// Un colaborador sin proyecto asignado en el rango genera una única fila "Sin Proyecto"/"Sin Cliente"/"Sin Líder".
 public record SeguimientoColaboradorDto(
     int Id,
     string Nombre,
@@ -36,7 +50,10 @@ public record SeguimientoColaboradorDto(
     // sm - Para "Promedio por día": días laborables del periodo (hasta hoy, sin fines de semana ni feriados)
     // y horas registradas en esos días. Promedio = HorasDiasLaborables ÷ DiasLaborables.
     int DiasLaborables = 0,
-    decimal HorasDiasLaborables = 0m
+    decimal HorasDiasLaborables = 0m,
+    // sm - El proyecto de esta fila, como lista de un solo elemento (null si es la fila "Sin Proyecto"). Se
+    // mantiene como lista por compatibilidad con el frontend (descarga de reportes por proyecto).
+    List<SeguimientoProyectoDto>? Proyectos = null
 );
 
 // sm - Se comenta: la funcionalidad de aprobar horas se retira de Seguimiento (endpoint /aprobar comentado).
