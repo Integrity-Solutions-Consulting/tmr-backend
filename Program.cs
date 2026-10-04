@@ -93,8 +93,9 @@ JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
 // ── Database Context ──
 builder.Services.AddScoped<AuditInterceptor>();
+var defaultConnection = builder.Configuration.GetConnectionString("DefaultConnection") ?? string.Empty;
 builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"))
+    options.UseNpgsql(defaultConnection)
            .AddInterceptors(sp.GetRequiredService<AuditInterceptor>()));
 
 // ── CORS ──
@@ -189,9 +190,6 @@ builder.Services.AddScoped<IValidator<RegistrarSalidaRequest>, RegistrarSalidaRe
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtSettings>()!;
 if (string.IsNullOrWhiteSpace(jwt.SecretKey) || jwt.SecretKey.Length < 32)
     throw new InvalidOperationException("Jwt:SecretKey debe configurarse fuera del repositorio y tener al menos 32 caracteres.");
-
-if (string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection")))
-    throw new InvalidOperationException("ConnectionStrings:DefaultConnection debe configurarse fuera del repositorio.");
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(opt =>

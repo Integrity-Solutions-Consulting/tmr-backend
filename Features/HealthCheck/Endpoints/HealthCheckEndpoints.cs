@@ -1,3 +1,4 @@
+using tmr_backend.Features.HealthCheck.DTOs;
 using tmr_backend.Features.HealthCheck.Services;
 
 namespace tmr_backend.Features.HealthCheck.Endpoints;
@@ -18,7 +19,13 @@ public static class HealthCheckEndpoints
         // Liveness probe endpoint for orchestrators (Kubernetes, Docker, etc.)
         app.MapGet("/health/live", GetHealthCheckLive)
             .WithName("Health Live")
-            .WithDescription("Verificación rápida de disponibilidad de la aplicación y conexión a base de datos")
+            .WithDescription("Verificación rápida de disponibilidad de la aplicación")
+            .Produces(200)
+            .WithOpenApi()
+            .AllowAnonymous();
+
+        app.MapGet("/health/ready", GetHealthCheckReady)
+            .WithName("Health Ready")
             .Produces(200)
             .Produces(503)
             .WithOpenApi()
@@ -37,9 +44,18 @@ public static class HealthCheckEndpoints
         return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
     }
 
-    private static async Task<IResult> GetHealthCheckLive(IHealthCheckService healthCheckService)
+    private static IResult GetHealthCheckLive()
     {
-        var health = await healthCheckService.CheckLiveAsync();
+        return Results.Ok(new HealthCheckLiveResponse
+        {
+            Status = "Healthy",
+            Message = "Application is running"
+        });
+    }
+
+    private static async Task<IResult> GetHealthCheckReady(IHealthCheckService healthCheckService)
+    {
+        var health = await healthCheckService.CheckReadyAsync();
 
         if (health.Status == "Healthy")
         {
