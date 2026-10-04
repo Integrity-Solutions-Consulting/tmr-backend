@@ -320,4 +320,3 @@ app.MapCatalogosConfigEndpoints();
 
 app.Run();
 
-// comentario
