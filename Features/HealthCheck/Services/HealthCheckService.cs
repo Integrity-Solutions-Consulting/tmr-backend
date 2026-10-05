@@ -69,7 +69,7 @@ public class HealthCheckService : IHealthCheckService
         }
     }
 
-    public async Task<HealthCheckLiveResponse> CheckLiveAsync()
+    public async Task<HealthCheckLiveResponse> CheckReadyAsync()
     {
         var response = new HealthCheckLiveResponse();
 
@@ -91,7 +91,7 @@ public class HealthCheckService : IHealthCheckService
         }
         catch (Exception ex)
         {
-            _logger.LogError($"Error en liveness check: {ex.Message}");
+            _logger.LogError($"Error en readiness check: {ex.Message}");
             response.Status = "Unhealthy";
             response.Message = "Aplicación no disponible - error interno";
             return response;

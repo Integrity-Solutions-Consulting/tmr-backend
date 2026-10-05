@@ -28,10 +28,25 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Validar secretos exclusivos de CI
+        env:
+          JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
+        run: |
+          if [ -z "$JWT_SECRET_KEY" ]; then
+            echo "Falta el secret JWT_SECRET_KEY en GitHub."
+            exit 1
+          fi
+          if [ "${#JWT_SECRET_KEY}" -lt 32 ]; then
+            echo "JWT_SECRET_KEY debe tener al menos 32 caracteres."
+            exit 1
+          fi
       - name: Levantar contenedor de prueba
+        env:
+          JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
         run: |
           docker run -d --name build-validation-container \
             -p 8080:8080 \
+            -e "Jwt__SecretKey=${JWT_SECRET_KEY}" \
             build-validation:pr-${{ github.event.pull_request.number }}
 
       - name: Esperar a que el contenedor responda
