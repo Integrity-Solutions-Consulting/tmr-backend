@@ -155,7 +155,10 @@ public static class ProyectosEndpoints
 
             var proyecto = await db.TblTimeReportProyectos.FirstOrDefaultAsync(p => p.Id == id);
             if (proyecto is null)
-                return Results.NotFound();
+                return Results.NotFound(new { message = "El proyecto que intentas editar ya no existe." });
+
+            if (string.IsNullOrWhiteSpace(request.Nombre))
+                return Results.BadRequest(new { message = "El nombre del proyecto es requerido." });
 
             var ids = await ResolverRelaciones(request.IdCliente, request.Cliente, request.IdTipoProyecto, request.Tipo, db);
             var lideres = NormalizarLideres(request);
@@ -164,7 +167,10 @@ public static class ProyectosEndpoints
             if (!request.IdEstadoProyecto.HasValue)
                 idEstadoProyectoActivo = await ObtenerOCrearEstadoProyectoActivoAsync(db);
 
+            proyecto.Codigo = request.Codigo?.Trim();
+            proyecto.Nombre = request.Nombre.Trim();
             proyecto.Descripcion = request.Descripcion;
+            proyecto.Idcliente = ids.IdCliente;
             proyecto.Idtipoproyecto = ids.IdTipoProyecto;
             proyecto.Idestadoproyecto = request.IdEstadoProyecto ?? idEstadoProyectoActivo ?? proyecto.Idestadoproyecto;
             proyecto.Fechainicioplaneada = request.FechaInicio;
