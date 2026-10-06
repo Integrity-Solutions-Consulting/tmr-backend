@@ -51,6 +51,8 @@ using tmr_backend.Shared;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.ResponseCompression;
+using System.IO.Compression;
 using tmr_backend.Infrastructure.Extensions;
 using tmr_backend.Infrastructure.BackgroundServices;
 
@@ -131,6 +133,16 @@ builder.Services.AddRateLimiter(options =>
 // ── Memory Cache & HttpContext ──
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.Providers.Add<GzipCompressionProvider>();
+});
+builder.Services.Configure<BrotliCompressionProviderOptions>(options =>
+    options.Level = CompressionLevel.Fastest);
+builder.Services.Configure<GzipCompressionProviderOptions>(options =>
+    options.Level = CompressionLevel.Fastest);
 
 // ── Core Security & JWT Settings ──
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
@@ -253,6 +265,7 @@ builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProv
 
 var app = builder.Build();
 
+app.UseResponseCompression();
 app.UseMiddleware<GlobalExceptionMiddleware>();
 
 app.UseHttpsRedirection();
