@@ -697,7 +697,7 @@ public static class TimeReportEndpoints
                "Si trabajó en esa fecha, pida a su líder que corrija la fecha de asignación.";
     }
 
-    private static async Task<int?> ObtenerEmpleadoSesionAsync(ClaimsPrincipal user, ApplicationDbContext db)
+    internal static async Task<int?> ObtenerEmpleadoSesionAsync(ClaimsPrincipal user, ApplicationDbContext db)
     {
         var sub = user.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value
                   ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -721,74 +721,8 @@ public static class TimeReportEndpoints
         DateOnly fechaHasta,
         ApplicationDbContext db)
     {
-        var registros = await db.TblTimeReportActividadDiaria
-            .Where(a => a.Activo && a.Idempleado == idEmpleado && a.Fechaactividad >= fechaDesde && a.Fechaactividad <= fechaHasta)
-            .Select(a => new
-            {
-                a.Idproyecto,
-                a.Fechaactividad,
-                Proyecto = a.IdproyectoNavigation != null ? a.IdproyectoNavigation.Nombre : "Sin Proyecto",
-                TipoActividad = a.IdtipoactividadNavigation != null ? a.IdtipoactividadNavigation.Nombretipo : "Otro",
-                CodigoRequerimiento = a.Codigorequerimiento ?? "",
-                Horas = a.Cantidadhoras,
-                Descripcion = a.Descripcionactividad ?? "",
-                Notas = a.Notas ?? "",
-                EsBillable = a.Esbillable == true ? "Sí" : "No",
-                ClienteProyecto = a.IdproyectoNavigation != null && a.IdproyectoNavigation.IdclienteNavigation != null
-                    ? (a.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial ?? a.IdproyectoNavigation.IdclienteNavigation.Razonsocial ?? "Sin Cliente")
-                    : "Sin Cliente"
-            })
-            .ToListAsync();
-
-        var asignaciones = await db.TblTimeReportAsignacionProyectos
-            .Where(ep => ep.Activo && ep.Idempleado == idEmpleado
-                && ep.IdliderNavigation != null && ep.IdliderNavigation.IdpersonaNavigation != null)
-            .Select(ep => new
-            {
-                ep.Idproyecto,
-                ep.Fechaasignacion,
-                ep.Fechafinasignacion,
-                Lider = ep.IdliderNavigation!.IdpersonaNavigation.Nombres + " " + ep.IdliderNavigation.IdpersonaNavigation.Apellidos
-            })
-            .ToListAsync();
-
-        string LiderDe(int? idProyecto, DateOnly fecha)
-        {
-            var delProyecto = asignaciones
-                .Where(ep => ep.Idproyecto == idProyecto)
-                .OrderByDescending(ep => ep.Fechaasignacion ?? DateOnly.MinValue)
-                .ToList();
-            var vigente = delProyecto.FirstOrDefault(ep =>
-                (ep.Fechaasignacion == null || ep.Fechaasignacion <= fecha)
-                && (ep.Fechafinasignacion == null || ep.Fechafinasignacion >= fecha));
-            return (vigente ?? delProyecto.FirstOrDefault())?.Lider ?? "Sin Líder";
-        }
-
-        var actividades = registros.Select(a => new
-        {
-            IdProyecto = a.Idproyecto,
-            Fecha = a.Fechaactividad.ToString("yyyy-MM-dd"),
-            a.Proyecto,
-            a.TipoActividad,
-            a.CodigoRequerimiento,
-            a.Horas,
-            a.Descripcion,
-            a.Notas,
-            a.EsBillable,
-            LiderProyecto = LiderDe(a.Idproyecto, a.Fechaactividad),
-            a.ClienteProyecto
-        }).ToList();
-
-        var feriados = await db.TblTimeReportFeriados
-            .Where(f => f.Activo && f.Fechaferiado >= fechaDesde && f.Fechaferiado <= fechaHasta)
-            .Select(f => f.Fechaferiado)
-            .ToListAsync();
-
-        return Results.Ok(new
-        {
-            Actividades = actividades,
-            Feriados = feriados.Select(f => f.ToString("yyyy-MM-dd")).ToList()
-        });
+        // La consulta vive en ActividadesReporteQuery para compartirla con la generación de reportes con plantillas.
+        return Results.Ok(await ActividadesReporteQuery.ObtenerAsync(db, idEmpleado, fechaDesde, fechaHasta));
     }
 
     // sm - Puede ver el calendario/métricas de un empleado: él mismo, o quien tiene el permiso de Seguimiento

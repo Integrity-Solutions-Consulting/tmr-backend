@@ -9,3 +9,5 @@ services:
       ASPNETCORE_URLS: http://+:8080
       Jwt__SecretKey: ${JWT_SECRET_KEY:?Define JWT_SECRET_KEY en .env}
       ConnectionStrings__DefaultConnection: ${DB_CONNECTION_STRING:?Define DB_CONNECTION_STRING en .env}
+      Carbone__BaseUrl: ${CARBONE_BASE_URL:-http://tmr-carbone-service:4000}
+      Carbone__ApiKey: ${CARBONE_API_KEY:-}

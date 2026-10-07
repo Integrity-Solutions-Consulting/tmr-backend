@@ -18,6 +18,8 @@ using tmr_backend.Features.Lideres;
 using tmr_backend.Features.Proyectos;
 using tmr_backend.Features.Catalogos;
 using tmr_backend.Features.Reportes;
+using tmr_backend.Features.Reportes.Carbone;
+using tmr_backend.Features.Reportes.Services;
 using tmr_backend.Features.TimeReport;
 using tmr_backend.Features.HealthCheck.Services;
 using tmr_backend.Features.Configuracion.Usuarios.Application;
@@ -190,6 +192,16 @@ builder.Services.AddScoped<ICargarActividadesExcelHandler, CargarActividadesExce
 // Feature: HealthCheck
 builder.Services.AddScoped<IHealthCheckService, HealthCheckService>();
 
+// Feature: Reportes con plantillas (Carbone). El microservicio solo lo consume el backend.
+builder.Services.Configure<CarboneSettings>(builder.Configuration.GetSection("Carbone"));
+builder.Services.AddHttpClient<ICarboneClient, CarboneClient>((sp, client) =>
+{
+    var carbone = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<CarboneSettings>>().Value;
+    client.BaseAddress = new Uri(carbone.BaseUrl.TrimEnd('/') + "/");
+    client.Timeout = TimeSpan.FromSeconds(carbone.TimeoutSeconds);
+});
+builder.Services.AddScoped<ISeguimientoReporteService, SeguimientoReporteService>();
+
 // ── Fluent Validation ──
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 
@@ -323,6 +335,7 @@ app.MapLideresEndpoints();
 app.MapProyectosEndpoints();
 app.MapCatalogosEndpoints();
 app.MapReportesEndpoints();
+app.MapReportesRenderEndpoints();
 app.MapTimeReportEndpoints();
 app.MapUsuariosConfigEndpoints();
 app.MapRolesConfigEndpoints();
