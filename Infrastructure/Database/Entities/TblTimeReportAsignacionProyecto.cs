@@ -31,6 +31,10 @@ public partial class TblTimeReportAsignacionProyecto
 
     public bool Activo { get; set; }
 
+    // sm - Estado de asignación del recurso en el proyecto (true = Activo, false = Inactivo). No confundir con
+    // Activo, que marca la versión vigente de la asignación (ver ProyectosEndpoints.GuardarAsignaciones).
+    public bool Estadoasignacion { get; set; } = true;
+
     public string Usuariocreacion { get; set; } = null!;
 
     public DateTime Fechacreacion { get; set; }

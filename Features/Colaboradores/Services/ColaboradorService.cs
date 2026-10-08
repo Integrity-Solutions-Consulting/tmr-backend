@@ -62,10 +62,15 @@ public sealed class ColaboradorService(
 
         // Contamos los proyectos activos por empleado.
         // Traemos las asignaciones a memoria y agrupamos ahí para evitar warnings de null.
+        // sm - Solo cuentan las asignaciones con estado Activo y cuya fecha de salida no ha pasado
+        // (misma regla que ProyectosEndpoints.EsAsignacionVigente).
+        var hoy = CalculoHorasPeriodo.HoyEcuador();
         var asignaciones = await db.TblTimeReportAsignacionProyectos
             .Where(ep => ep.Idempleado != null
                       && idsEmpleados.Contains(ep.Idempleado.Value)
-                      && ep.Activo)
+                      && ep.Activo
+                      && ep.Estadoasignacion
+                      && (ep.Fechafinasignacion == null || ep.Fechafinasignacion >= hoy))
             .Select(ep => ep.Idempleado ?? 0)
             .ToListAsync(ct);
 
@@ -122,12 +127,15 @@ public sealed class ColaboradorService(
         if (empleado is null) return null;
 
         // Traemos los proyectos asignados activos del colaborador.
+        // sm - Se muestran todos (Activos e Inactivos) con su estado de asignación: primero los activos.
+        var hoy = CalculoHorasPeriodo.HoyEcuador();
         var proyectos = await db.TblTimeReportAsignacionProyectos
             .Include(ep => ep.IdproyectoNavigation)
                 .ThenInclude(p => p.IdclienteNavigation)
             .Include(ep => ep.IdproyectoNavigation)
                 .ThenInclude(p => p.IdestadoproyectoNavigation)
             .Where(ep => ep.Idempleado == id && ep.Activo)
+            .OrderByDescending(ep => ep.Estadoasignacion && (ep.Fechafinasignacion == null || ep.Fechafinasignacion >= hoy))
             .Select(ep => new ProyectoAsignadoResponse(
                 ep.IdproyectoNavigation != null ? ep.IdproyectoNavigation.Id : 0,
                 ep.IdproyectoNavigation != null ? ep.IdproyectoNavigation.Nombre : "",
@@ -139,7 +147,8 @@ public sealed class ColaboradorService(
                     ? (ep.IdproyectoNavigation.Activo
                         ? ep.IdproyectoNavigation.IdestadoproyectoNavigation!.Valor
                         : "Desactivado")
-                    : ""
+                    : "",
+                ep.Estadoasignacion && (ep.Fechafinasignacion == null || ep.Fechafinasignacion >= hoy)
             ))
             .ToListAsync(ct);
 

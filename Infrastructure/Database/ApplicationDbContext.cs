@@ -1906,6 +1906,9 @@ public partial class ApplicationDbContext : DbContext
                 .HasDefaultValueSql("now()")
                 .HasColumnName("fechacreacion");
             entity.Property(e => e.Fechafinasignacion).HasColumnName("fechafinasignacion");
+            entity.Property(e => e.Estadoasignacion)
+                .HasDefaultValue(true)
+                .HasColumnName("estadoasignacion");
             entity.Property(e => e.Fechamodificacion).HasColumnName("fechamodificacion");
             entity.Property(e => e.Horasasignadas)
                 .HasPrecision(10, 2)

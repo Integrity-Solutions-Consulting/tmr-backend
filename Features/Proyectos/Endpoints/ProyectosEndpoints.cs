@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using tmr_backend.Features.Proyectos.DTOs;
+using tmr_backend.Features.TimeReport.Services;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
 using System;
@@ -106,6 +107,11 @@ public static class ProyectosEndpoints
 
             var ids = await ResolverRelaciones(request.IdCliente, request.Cliente, request.IdTipoProyecto, request.Tipo, db);
             var lideres = NormalizarLideres(request);
+
+            var errorEstadoAsignacion = ValidarEstadoAsignacion(lideres);
+            if (errorEstadoAsignacion is not null)
+                return Results.BadRequest(new { message = errorEstadoAsignacion });
+
             var idEstadoProyectoActivo = await ObtenerOCrearEstadoProyectoActivoAsync(db);
 
             var proyecto = new TblTimeReportProyecto
@@ -169,6 +175,10 @@ public static class ProyectosEndpoints
 
             var ids = await ResolverRelaciones(request.IdCliente, request.Cliente, request.IdTipoProyecto, request.Tipo, db);
             var lideres = NormalizarLideres(request);
+
+            var errorEstadoAsignacion = ValidarEstadoAsignacion(lideres);
+            if (errorEstadoAsignacion is not null)
+                return Results.BadRequest(new { message = errorEstadoAsignacion });
 
             int? idEstadoProyectoActivo = null;
             if (!request.IdEstadoProyecto.HasValue)
@@ -267,6 +277,8 @@ public static class ProyectosEndpoints
             .Where(r => r.Activo)
             .ToList();
 
+        var hoy = CalculoHorasPeriodo.HoyEcuador();
+
         // sm - El departamento de un recurso se deriva del cargo que se le ASIGNÓ en el proyecto (Rolasignado),
         // no del cargo actual del empleado en Administración (que puede haber cambiado desde entonces y ya no
         // reflejar bajo qué departamento se lo asignó). Antes se usaba siempre el cargo actual del empleado,
@@ -321,7 +333,8 @@ public static class ProyectosEndpoints
                             x.Fechafinasignacion,
                             x.Costoporhora ?? 0,
                             x.Horasasignadas ?? 0,
-                            idDepartamento
+                            idDepartamento,
+                            EsAsignacionVigente(x, hoy)
                         );
                     })
                     .ToList();
@@ -366,7 +379,8 @@ public static class ProyectosEndpoints
             FechaFin: proyecto.Fechafinplaneada,
             Presupuesto: proyecto.Presupuesto ?? 0,
             Horas: proyecto.Horasasignadas ?? 0,
-            NumeroRecursos: recursos.Count,
+            // sm - Solo cuentan los recursos con estado de asignación Activo.
+            NumeroRecursos: recursos.Count(r => r.EstadoAsignacion),
             Activo: proyecto.Activo,
             FechaCreacion: proyecto.Fechacreacion,
             Recursos: recursos,
@@ -527,6 +541,26 @@ public static class ProyectosEndpoints
         return idFinal != 0 ? idFinal : detalleEstado.Id;
     }
 
+    /// <summary>
+    /// sm - Estado de asignación efectivo del recurso: Activo solo si se marcó Activo y su fecha de salida no ha
+    /// pasado. Al llegar la salida pasa a Inactivo sin que nadie lo cambie a mano. No afecta al registro de horas
+    /// ni al historial, que siguen rigiéndose por las fechas de entrada y salida.
+    /// </summary>
+    public static bool EsAsignacionVigente(TblTimeReportAsignacionProyecto asignacion, DateOnly hoy) =>
+        asignacion.Estadoasignacion && (!asignacion.Fechafinasignacion.HasValue || asignacion.Fechafinasignacion.Value >= hoy);
+
+    // sm - Un recurso Inactivo debe tener fecha de salida: es la que delimita hasta cuándo puede registrar horas.
+    private static string? ValidarEstadoAsignacion(List<ProyectoLiderRequest> lideres)
+    {
+        var sinSalida = lideres
+            .SelectMany(l => l.Recursos ?? [])
+            .FirstOrDefault(r => r.EstadoAsignacion == false && !r.Salida.HasValue);
+
+        return sinSalida is null
+            ? null
+            : $"El recurso {sinSalida.Nombre} está Inactivo: debe registrar la fecha de salida.";
+    }
+
     private static List<ProyectoLiderRequest> NormalizarLideres(CrearProyectoRequest request)
     {
         if (request.Lideres is { Count: > 0 })
@@ -589,6 +623,7 @@ public static class ProyectosEndpoints
                     Rolasignado = recurso.Rol,
                     Costoporhora = recurso.CostoHora,
                     Horasasignadas = recurso.Horas,
+                    Estadoasignacion = recurso.EstadoAsignacion ?? true,
                     Activo = true,
                     Usuariocreacion = UsuarioSistema,
                     Fechacreacion = DateTime.UtcNow,
