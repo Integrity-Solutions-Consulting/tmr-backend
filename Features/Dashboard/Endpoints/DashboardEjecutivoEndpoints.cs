@@ -52,9 +52,17 @@ public static class DashboardEjecutivoEndpoints
             .ToList();
 
         // sm - Vigencias para el cálculo de horas: asignaciones actuales + retiradas (para meses pasados).
+        // sm - RF: prioridad de fechas de vigencia del recurso: 1) fechas propias de la asignación; 2) si no las
+        // tiene, fechas reales del proyecto; 3) si tampoco, fechas planificadas del proyecto (ver ResolverFecha).
         public List<AsignacionCalculo> AsignacionesCalculo => asignacionesCalculo ??= Asignaciones
             .Where(a => a.Idempleado.HasValue && ProyectosPorId.ContainsKey(a.Idproyecto))
-            .Select(a => new AsignacionCalculo(a.Idempleado!.Value, a.Idproyecto, a.Fechaasignacion, a.Fechafinasignacion))
+            .Select(a =>
+            {
+                var proyecto = ProyectosPorId[a.Idproyecto];
+                var desde = DashboardEjecutivoEndpoints.ResolverFechaVigencia(a.Fechaasignacion, proyecto.Fechainicioreal, proyecto.Fechainicioplaneada);
+                var hasta = DashboardEjecutivoEndpoints.ResolverFechaVigencia(a.Fechafinasignacion, proyecto.Fechafinreal, proyecto.Fechafinplaneada);
+                return new AsignacionCalculo(a.Idempleado!.Value, a.Idproyecto, desde, hasta);
+            })
             .Concat(AsignacionesRetiradas.Where(a => ProyectosPorId.ContainsKey(a.IdProyecto)))
             .ToList();
 
@@ -536,6 +544,13 @@ public static class DashboardEjecutivoEndpoints
             ParametrosDashboard.ReglaCierre, resumenMeses, colaboradores));
     }
 
+    // sm - RF: prioridad de fechas para la vigencia del recurso en un proyecto: 1) la fecha propia de la
+    // asignación; 2) si no existe, la fecha real del proyecto (inicio/fin real); 3) si tampoco existe, la fecha
+    // planificada original del proyecto. Antes, sin fecha propia la vigencia quedaba sin límite (siempre vigente),
+    // lo cual no reflejaba el periodo real de actividad del colaborador en el proyecto.
+    private static DateOnly? ResolverFechaVigencia(DateOnly? propia, DateOnly? real, DateOnly? planeada) =>
+        propia ?? real ?? planeada;
+
     // =====================================================================
     // Carga de datos y utilidades
     // =====================================================================
@@ -575,6 +590,7 @@ public static class DashboardEjecutivoEndpoints
                 Retiro = a.Fechamodificacion ?? a.Fechacreacion
             })
             .ToListAsync();
+        var proyectosPorId = proyectos.ToDictionary(p => p.Id);
         var retiradas = inactivas
             .Where(a => !paresActivos.Contains((a.Idempleado, a.Idproyecto)))
             .GroupBy(a => (a.Idempleado, a.Idproyecto))
@@ -585,7 +601,12 @@ public static class DashboardEjecutivoEndpoints
                 var hasta = ultima.Fechafinasignacion.HasValue && ultima.Fechafinasignacion.Value < fechaRetiro
                     ? ultima.Fechafinasignacion.Value
                     : fechaRetiro;
-                return new AsignacionCalculo(g.Key.Idempleado, g.Key.Idproyecto, ultima.Fechaasignacion, hasta);
+                // sm - RF: misma prioridad de fechas de vigencia (propia de la asignación → fechas reales del
+                // proyecto → fechas planificadas) para el inicio de las asignaciones ya retiradas.
+                var desde = ultima.Fechaasignacion;
+                if (!desde.HasValue && proyectosPorId.TryGetValue(g.Key.Idproyecto, out var proyectoRetirada))
+                    desde = ResolverFechaVigencia(null, proyectoRetirada.Fechainicioreal, proyectoRetirada.Fechainicioplaneada);
+                return new AsignacionCalculo(g.Key.Idempleado, g.Key.Idproyecto, desde, hasta);
             })
             .ToList();
 
