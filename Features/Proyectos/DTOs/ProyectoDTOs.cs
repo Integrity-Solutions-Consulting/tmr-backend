@@ -106,6 +106,7 @@ public record ProyectoLiderResponse(
 
 public record ProyectoRecursoRequest(
     int? IdEmpleado,
+    int? IdProveedor,
     string? Tipo,
     string Nombre,
     string? Rol,
@@ -118,6 +119,7 @@ public record ProyectoRecursoRequest(
 public record ProyectoRecursoResponse(
     int Id,
     int? IdEmpleado,
+    int? IdProveedor,
     string Tipo,
     string Nombre,
     string Rol,

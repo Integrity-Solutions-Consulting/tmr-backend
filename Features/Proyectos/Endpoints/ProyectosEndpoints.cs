@@ -84,7 +84,14 @@ public static class ProyectosEndpoints
                 .Select(c => new { id = c.Id, nombre = c.Nombrecargo, idDepartamento = c.Iddepartamento })
                 .ToListAsync();
 
-            return Results.Ok(new { clientes, lideres, empleados, estados, tipos, departamentos, cargos });
+            // sm - RF: asignación de proveedores en recursos de proyecto (antes solo se podían elegir empleados).
+            var proveedores = await db.TblInventarioProveedors
+                .Where(pr => pr.Activo)
+                .OrderBy(pr => pr.Nombreproveedor)
+                .Select(pr => new LookupDto(pr.Id, pr.Nombreproveedor))
+                .ToListAsync();
+
+            return Results.Ok(new { clientes, lideres, empleados, estados, tipos, departamentos, cargos, proveedores });
         });
 
         var postEndpoint = group.MapPost("/", async (CrearProyectoRequest request, ApplicationDbContext db, HttpContext context) =>
@@ -268,6 +275,19 @@ public static class ProyectosEndpoints
             .GroupBy(c => c.Nombrecargo)
             .ToDictionary(g => g.Key, g => g.First().Iddepartamento);
 
+        // sm - RF: asignación de proveedores. Idproveedor no tiene navegación EF (no hay FK configurada), así que
+        // se resuelve el nombre aparte, igual que idDepartamentoPorCargo arriba.
+        var idsProveedores = asignacionesActivas
+            .Where(x => x.Idproveedor.HasValue)
+            .Select(x => x.Idproveedor!.Value)
+            .Distinct()
+            .ToList();
+        var proveedoresPorId = idsProveedores.Count == 0
+            ? new Dictionary<int, string>()
+            : await db.TblInventarioProveedors.AsNoTracking()
+                .Where(pr => idsProveedores.Contains(pr.Id))
+                .ToDictionaryAsync(pr => pr.Id, pr => pr.Nombreproveedor);
+
         var lideres = asignacionesActivas
             .GroupBy(r => r.Idlider)
             .Select(r =>
@@ -276,7 +296,9 @@ public static class ProyectosEndpoints
                     ?? r.FirstOrDefault(x => x.Idlider != null);
                 var liderPersona = liderAsignacion?.IdliderNavigation?.IdpersonaNavigation;
                 var recursosGrupo = r
-                    .Where(x => x.Idempleado != null)
+                    // sm - Antes solo se incluían asignaciones con Idempleado (las de proveedor, con Idempleado
+                    // null, quedaban completamente excluidas del proyecto al leerlo de vuelta).
+                    .Where(x => x.Idempleado != null || x.Idproveedor != null)
                     .Select(x =>
                     {
                         var persona = x.IdempleadoNavigation?.IdpersonaNavigation;
@@ -285,11 +307,15 @@ public static class ProyectosEndpoints
                         var idDepartamento = !string.IsNullOrWhiteSpace(x.Rolasignado) && idDepartamentoPorCargo.TryGetValue(x.Rolasignado, out var idDeptoDelRol)
                             ? idDeptoDelRol
                             : cargo?.Iddepartamento;
+                        var nombreRecurso = x.Idproveedor.HasValue
+                            ? (proveedoresPorId.TryGetValue(x.Idproveedor.Value, out var nombreProveedor) ? nombreProveedor : string.Empty)
+                            : (persona is null ? string.Empty : $"{persona.Nombres} {persona.Apellidos}".Trim());
                         return new ProyectoRecursoResponse(
                             x.Id,
                             x.Idempleado,
+                            x.Idproveedor,
                             x.Idproveedor is null ? "Interno" : "Externo",
-                            persona is null ? string.Empty : $"{persona.Nombres} {persona.Apellidos}".Trim(),
+                            nombreRecurso,
                             rol,
                             x.Fechaasignacion,
                             x.Fechafinasignacion,
@@ -556,6 +582,7 @@ public static class ProyectosEndpoints
                 {
                     Idproyecto = idProyecto,
                     Idempleado = recurso.IdEmpleado,
+                    Idproveedor = recurso.IdProveedor,
                     Idlider = idLider,
                     Fechaasignacion = recurso.Entrada,
                     Fechafinasignacion = recurso.Salida,
