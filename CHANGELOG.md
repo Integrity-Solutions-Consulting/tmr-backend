@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.7](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.3.6...v1.3.7) (2026-10-08)
+
+
+### Bug Fixes
+
+* Corrección de bugs en Proyectos ([5ad0478](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/5ad0478fe116a8f65ff2f2e18578408fa1dbc7cb))
+* Corrección de bugs en Proyectos ([240ba40](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/240ba40dfef2dbedf460ded48f6f183702ba7c3b))
+
 ## [1.3.6](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.3.5...v1.3.6) (2026-10-06)
 
 
