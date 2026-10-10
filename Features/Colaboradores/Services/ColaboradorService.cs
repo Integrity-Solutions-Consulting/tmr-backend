@@ -5,6 +5,7 @@ using tmr_backend.Features.Colaboradores.DTOs.Response;
 using tmr_backend.Features.Colaboradores.Mappings;
 using tmr_backend.Features.TimeReport.Services;
 using tmr_backend.Infrastructure.Database;
+using tmr_backend.Shared.Extensions;
 using tmr_backend.Infrastructure.Database.Entities;
 
 namespace tmr_backend.Features.Colaboradores.Services;
@@ -39,23 +40,27 @@ public sealed class ColaboradorService(
         if (activo.HasValue)
             query = query.Where(e => e.Activo == activo.Value);
 
-        // ── Filtro por búsqueda (nombres, apellidos, identificación, código) ──
-        if (!string.IsNullOrWhiteSpace(busqueda))
-        {
-            var b = busqueda.Trim().ToLower();
-            query = query.Where(e =>
-                e.IdpersonaNavigation.Nombres.ToLower().Contains(b) ||
-                e.IdpersonaNavigation.Apellidos.ToLower().Contains(b) ||
-                e.IdpersonaNavigation.Numeroidentificacion.ToLower().Contains(b) ||
-                e.Codigoempleado.ToLower().Contains(b));
-        }
-
         // Traemos los datos a memoria para poder contar proyectos por empleado.
         // Orden: activos primero, y dentro de cada grupo los más nuevos primero.
         var empleados = await query
             .OrderByDescending(e => e.Activo)
             .ThenByDescending(e => e.Id)
             .ToListAsync(ct);
+
+        // ── Filtro por búsqueda (nombre completo, identificación, código) ──
+        // sm - Se aplica en memoria (no se puede traducir a SQL) para poder comparar contra el
+        // nombre completo (nombres + apellidos) normalizado, sin tildes ni mayúsculas/minúsculas,
+        // igual que en las demás ventanas (Seguimiento, Líderes, Usuarios). Coincide() compara
+        // palabra por palabra: "Jorge Lino" encuentra a "Jorge Augusto Lino Bermeo" aunque se
+        // salte el segundo nombre.
+        if (!string.IsNullOrWhiteSpace(busqueda))
+        {
+            empleados = empleados.Where(e =>
+                $"{e.IdpersonaNavigation.Nombres} {e.IdpersonaNavigation.Apellidos}".Coincide(busqueda) ||
+                e.IdpersonaNavigation.Numeroidentificacion.Coincide(busqueda) ||
+                e.Codigoempleado.Coincide(busqueda))
+                .ToList();
+        }
 
         // Lista de Ids de los empleados encontrados (para el conteo de proyectos).
         var idsEmpleados = empleados.Select(e => e.Id).ToList();
