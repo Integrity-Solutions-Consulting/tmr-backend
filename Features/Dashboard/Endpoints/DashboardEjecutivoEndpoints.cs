@@ -110,7 +110,9 @@ public static class DashboardEjecutivoEndpoints
 
         var estados = await db.Set<TblAdministracionCatalogoDetalle>()
             .AsNoTracking()
-            .Where(d => d.Activo && d.IdcatalogoNavigation.Codigo == CatalogoEstadosProyecto)
+            .Where(d => d.Activo
+                && d.IdcatalogoNavigation.Codigo == CatalogoEstadosProyecto
+                && ParametrosDashboard.EstadosProyecto.Contains(d.Codigovalor))
             .OrderBy(d => d.Orden)
             .Select(d => new OpcionFiltroDto(d.Id, d.Valor))
             .ToListAsync();
