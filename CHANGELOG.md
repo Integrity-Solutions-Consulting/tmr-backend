@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.3.8](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.3.7...v1.3.8) (2026-10-12)
+
+
+### Bug Fixes
+
+* mejora en modal de nuevo proyecto + validaciones ([1df1317](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/1df13177a75c0aa6984a23eeec72c9fb331bcb04))
+* Mejoras ([90cece1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/90cece1486dde8e1fbc63099a146a07dc8912482))
+* Mejoras en dashboard y en modales ([c75a7aa](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/c75a7aa9ba118cddb8ba3b206210337ad4ed11d1))
+* Mejoras en todos los filtros del sistema ([4575d95](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/4575d9576bafbe885f2728fa67130f1c6c3f8693))
+
 ## [1.3.7](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.3.6...v1.3.7) (2026-10-08)
 
 
