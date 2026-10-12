@@ -29,6 +29,7 @@ using tmr_backend.Features.Configuracion.DiasFestivos.Endpoints;
 using tmr_backend.Features.Configuracion.Catalogos.Application;
 using tmr_backend.Features.Configuracion.Catalogos.Endpoints;
 using tmr_backend.Features.HealthCheck.Endpoints;
+using tmr_backend.Features.Proveedores.Endpoints;
 using Scalar.AspNetCore;
 using tmr_backend.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -328,6 +329,7 @@ app.MapUsuariosConfigEndpoints();
 app.MapRolesConfigEndpoints();
 app.MapDiasFestivosEndpoints();
 app.MapCatalogosConfigEndpoints();
+app.MapProveedoresEndpoints();
 
 app.Run();
 
