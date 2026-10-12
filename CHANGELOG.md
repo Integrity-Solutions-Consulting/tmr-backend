@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.3.8...v1.4.0) (2026-10-12)
+
+
+### Features
+
+* nueva pestaña proveedores ([b1d4e1a](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/b1d4e1a25c8accca4b10d2bd8a01ea84c2f1b0c1))
+* nueva pestaña proveedores ([92937e3](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/92937e37953386a102726533266f27339203fd82))
+
 ## [1.3.8](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.3.7...v1.3.8) (2026-10-12)
 
 
