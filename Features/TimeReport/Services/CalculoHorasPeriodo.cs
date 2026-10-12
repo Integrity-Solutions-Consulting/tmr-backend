@@ -89,7 +89,9 @@ public static class CalculoHorasPeriodo
         var inicioPeriodo = empleado.Fechaingreso.HasValue && empleado.Fechaingreso.Value > desde
             ? empleado.Fechaingreso.Value
             : desde;
-        var finPeriodo = empleado.Fechaterminacion.HasValue && empleado.Fechaterminacion.Value < hasta
+        // sm - La fecha de salida solo recorta el periodo si el colaborador está inactivo: un activo con una salida
+        // vieja guardada (lo reactivaron sin limpiarla) quedaba con 0 días laborables en todo rango posterior a ella.
+        var finPeriodo = !empleado.Activo && empleado.Fechaterminacion.HasValue && empleado.Fechaterminacion.Value < hasta
             ? empleado.Fechaterminacion.Value
             : hasta;
         if (finPeriodo > hoy) finPeriodo = hoy;

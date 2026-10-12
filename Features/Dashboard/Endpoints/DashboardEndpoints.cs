@@ -195,7 +195,8 @@ public static class DashboardEndpoints
             }
 
             var endCheck = endDate;
-            if (empleado.Fechaterminacion.HasValue && empleado.Fechaterminacion.Value < endDate)
+            // sm - Misma regla que CalculoHorasPeriodo: la salida solo recorta si el colaborador está inactivo.
+            if (!empleado.Activo && empleado.Fechaterminacion.HasValue && empleado.Fechaterminacion.Value < endDate)
             {
                 endCheck = empleado.Fechaterminacion.Value;
             }
@@ -371,7 +372,8 @@ public static class DashboardEndpoints
                     }
 
                     var endCheck = endDate;
-                    if (empleado.Fechaterminacion.HasValue && empleado.Fechaterminacion.Value < endDate)
+                    // sm - Misma regla que CalculoHorasPeriodo: la salida solo recorta si el colaborador está inactivo.
+                    if (!empleado.Activo && empleado.Fechaterminacion.HasValue && empleado.Fechaterminacion.Value < endDate)
                     {
                         endCheck = empleado.Fechaterminacion.Value;
                     }
