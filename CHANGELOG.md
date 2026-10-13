@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.4.2](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.4.1...v1.4.2) (2026-10-13)
+
+
+### Bug Fixes
+
+* correcion de pestaña de proveedores con permisos ([f457eb6](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/f457eb6cf33d92d72669c22fb3b9670ce439068b))
+* correcion de pestaña de proveedores con permisos ([4b754fc](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/4b754fc6062c777cf2397d654415692b8e1cb161))
+
+## [1.4.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.4.0...v1.4.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* mejora en seguimiento ([e003f7d](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/e003f7d025c9c24474dc76ecb0876c879f097ba8))
+
+## [1.4.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.3.8...v1.4.0) (2026-10-12)
+
+
+### Features
+
+* nueva pestaña proveedores ([b1d4e1a](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/b1d4e1a25c8accca4b10d2bd8a01ea84c2f1b0c1))
+* nueva pestaña proveedores ([92937e3](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/92937e37953386a102726533266f27339203fd82))
+
+## [1.3.8](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.3.7...v1.3.8) (2026-10-12)
+
+
+### Bug Fixes
+
+* mejora en modal de nuevo proyecto + validaciones ([1df1317](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/1df13177a75c0aa6984a23eeec72c9fb331bcb04))
+* Mejoras ([90cece1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/90cece1486dde8e1fbc63099a146a07dc8912482))
+* Mejoras en dashboard y en modales ([c75a7aa](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/c75a7aa9ba118cddb8ba3b206210337ad4ed11d1))
+* Mejoras en todos los filtros del sistema ([4575d95](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/4575d9576bafbe885f2728fa67130f1c6c3f8693))
+
 ## [1.3.7](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.3.6...v1.3.7) (2026-10-08)
 
 

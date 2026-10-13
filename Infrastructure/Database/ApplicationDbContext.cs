@@ -78,6 +78,8 @@ public partial class ApplicationDbContext : DbContext
     public virtual DbSet<TblInventarioEquipo> TblInventarioEquipos { get; set; } = null!;
     public virtual DbSet<TblInventarioFactura> TblInventarioFacturas { get; set; } = null!;
     public virtual DbSet<TblInventarioProveedor> TblInventarioProveedors { get; set; } = null!;
+
+    public virtual DbSet<TblInventarioTipoProveedor> TblInventarioTipoProveedors { get; set; } = null!;
     public virtual DbSet<TblInventarioReparacionEquipo> TblInventarioReparacionEquipos { get; set; } = null!;
     public virtual DbSet<TblInventarioStockCategorium> TblInventarioStockCategoria { get; set; } = null!;
 
@@ -1728,6 +1730,19 @@ public partial class ApplicationDbContext : DbContext
             entity.HasOne(d => d.IdtipoproveedorNavigation).WithMany(p => p.TblInventarioProveedors)
                 .HasForeignKey(d => d.Idtipoproveedor)
                 .HasConstraintName("fk_inventario_proveedor_tipo_proveedor");
+        });
+
+        modelBuilder.Entity<TblInventarioTipoProveedor>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("pk_inventario_tipo_proveedor");
+            entity.ToTable("tbl_inventario_tipo_proveedor", "inventario");
+            entity.Property(e => e.Id).UseIdentityAlwaysColumn().HasColumnName("id");
+            entity.Property(e => e.Nombre).HasMaxLength(150).HasColumnName("nombre");
+            entity.Property(e => e.Activo).HasDefaultValue(true).HasColumnName("activo");
+            entity.Property(e => e.Usuariocreacion).HasMaxLength(50).HasColumnName("usuariocreacion");
+            entity.Property(e => e.Usuariomodificacion).HasMaxLength(50).HasColumnName("usuariomodificacion");
+            entity.Property(e => e.Fechacreacion).HasDefaultValueSql("now()").HasColumnName("fechacreacion");
+            entity.Property(e => e.Fechamodificacion).HasColumnName("fechamodificacion");
         });
 
         modelBuilder.Entity<TblInventarioReparacionEquipo>(entity =>

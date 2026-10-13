@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
+using tmr_backend.Infrastructure.Database.Seeders;
 using tmr_backend.Features.Clientes;
 using tmr_backend.Features.Clientes.DTOs.Request;
 using tmr_backend.Features.Clientes.Services;
@@ -29,6 +30,7 @@ using tmr_backend.Features.Configuracion.DiasFestivos.Endpoints;
 using tmr_backend.Features.Configuracion.Catalogos.Application;
 using tmr_backend.Features.Configuracion.Catalogos.Endpoints;
 using tmr_backend.Features.HealthCheck.Endpoints;
+using tmr_backend.Features.Proveedores.Endpoints;
 using Scalar.AspNetCore;
 using tmr_backend.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -265,6 +267,13 @@ builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProv
 
 var app = builder.Build();
 
+// Asegura la configuración RBAC idempotente de Proveedores en bases ya creadas.
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await ProveedorPermissionsSeeder.EnsureAsync(db);
+}
+
 app.UseResponseCompression();
 app.UseMiddleware<GlobalExceptionMiddleware>();
 
@@ -328,6 +337,7 @@ app.MapUsuariosConfigEndpoints();
 app.MapRolesConfigEndpoints();
 app.MapDiasFestivosEndpoints();
 app.MapCatalogosConfigEndpoints();
+app.MapProveedoresEndpoints();
 
 app.Run();
 

@@ -295,8 +295,9 @@ FROM (VALUES
     ('Colaboradores',  '/menu/employees',   5),
     ('Clientes',       '/menu/clients',     6),
     ('Lideres',        '/menu/leaders',     7),
-    ('Reportes',       NULL,                8),
-    ('Configuracion',  NULL,                9)
+    ('Proveedores',    '/menu/proveedores', 8),
+    ('Reportes',       NULL,                9),
+    ('Configuracion',  NULL,               10)
 ) AS v(NombreModulo, RutaModulo, OrdenVisualizacion)
 WHERE NOT EXISTS (
     SELECT 1 FROM autenticacion.tbl_autenticacion_modulo m
@@ -467,6 +468,23 @@ WHERE m.NombreModulo = 'Lideres'
 AND NOT EXISTS (
     SELECT 1 FROM autenticacion.tbl_autenticacion_permiso
     WHERE Codigo = 'LIDERES_' || a.Accion
+);
+
+-- PROVEEDORES
+INSERT INTO autenticacion.tbl_autenticacion_permiso
+    (IdModulo, Codigo, Accion, Descripcion, UsuarioCreacion, IpCreacion)
+SELECT m.Id, 'PROVEEDORES_' || a.Accion, a.Accion, a.Descripcion, 'SYSTEM', '127.0.0.1'
+FROM autenticacion.tbl_autenticacion_modulo m
+CROSS JOIN (VALUES
+    ('READ',   'Permite consultar proveedores'),
+    ('CREATE', 'Permite crear proveedores'),
+    ('UPDATE', 'Permite editar proveedores'),
+    ('DELETE', 'Permite desactivar proveedores')
+) AS a(Accion, Descripcion)
+WHERE m.NombreModulo = 'Proveedores'
+AND NOT EXISTS (
+    SELECT 1 FROM autenticacion.tbl_autenticacion_permiso
+    WHERE Codigo = 'PROVEEDORES_' || a.Accion
 );
 
 -- ACTIVIDADES
@@ -642,7 +660,7 @@ INSERT INTO autenticacion.tbl_autenticacion_rol_permiso
 SELECT r.Id, p.Id, 'SYSTEM', '127.0.0.1'
 FROM autenticacion.tbl_autenticacion_rol r
 CROSS JOIN autenticacion.tbl_autenticacion_permiso p
-WHERE r.Nombre = 'Administrador'
+WHERE UPPER(r.Nombre) = 'ADMINISTRADOR'
 AND NOT EXISTS (
     SELECT 1 FROM autenticacion.tbl_autenticacion_rol_permiso
     WHERE IdRol = r.Id AND IdPermiso = p.Id
@@ -677,6 +695,19 @@ AND m.NombreModulo IN (
 AND NOT EXISTS (
     SELECT 1 FROM autenticacion.tbl_autenticacion_rol_permiso
     WHERE IdRol = r.Id AND IdPermiso = p.Id
+);
+
+-- PROVEEDORES — acceso de consulta para Gerente y Lider. Administrador recibe todos los permisos arriba.
+-- Los permisos de escritura quedan sin asignación predeterminada hasta tener una decisión de negocio.
+INSERT INTO autenticacion.tbl_autenticacion_rol_permiso
+    (IdRol, IdPermiso, UsuarioCreacion, IpCreacion)
+SELECT r.Id, p.Id, 'SYSTEM', '127.0.0.1'
+FROM autenticacion.tbl_autenticacion_rol r
+JOIN autenticacion.tbl_autenticacion_permiso p ON p.Codigo = 'PROVEEDORES_READ'
+WHERE UPPER(r.Nombre) IN ('GERENTE', 'LIDER', 'LÍDER')
+AND NOT EXISTS (
+    SELECT 1 FROM autenticacion.tbl_autenticacion_rol_permiso rp
+    WHERE rp.IdRol = r.Id AND rp.IdPermiso = p.Id
 );
 
 -- COLABORADOR — solo Actividades
