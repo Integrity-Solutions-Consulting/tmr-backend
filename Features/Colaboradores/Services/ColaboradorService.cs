@@ -5,6 +5,7 @@ using tmr_backend.Features.Colaboradores.DTOs.Response;
 using tmr_backend.Features.Colaboradores.Mappings;
 using tmr_backend.Features.TimeReport.Services;
 using tmr_backend.Infrastructure.Database;
+using tmr_backend.Shared.Extensions;
 using tmr_backend.Infrastructure.Database.Entities;
 
 namespace tmr_backend.Features.Colaboradores.Services;
@@ -39,17 +40,6 @@ public sealed class ColaboradorService(
         if (activo.HasValue)
             query = query.Where(e => e.Activo == activo.Value);
 
-        // ── Filtro por búsqueda (nombres, apellidos, identificación, código) ──
-        if (!string.IsNullOrWhiteSpace(busqueda))
-        {
-            var b = busqueda.Trim().ToLower();
-            query = query.Where(e =>
-                e.IdpersonaNavigation.Nombres.ToLower().Contains(b) ||
-                e.IdpersonaNavigation.Apellidos.ToLower().Contains(b) ||
-                e.IdpersonaNavigation.Numeroidentificacion.ToLower().Contains(b) ||
-                e.Codigoempleado.ToLower().Contains(b));
-        }
-
         // Traemos los datos a memoria para poder contar proyectos por empleado.
         // Orden: activos primero, y dentro de cada grupo los más nuevos primero.
         var empleados = await query
@@ -57,15 +47,35 @@ public sealed class ColaboradorService(
             .ThenByDescending(e => e.Id)
             .ToListAsync(ct);
 
+        // ── Filtro por búsqueda (nombre completo, identificación, código) ──
+        // sm - Se aplica en memoria (no se puede traducir a SQL) para poder comparar contra el
+        // nombre completo (nombres + apellidos) normalizado, sin tildes ni mayúsculas/minúsculas,
+        // igual que en las demás ventanas (Seguimiento, Líderes, Usuarios). Coincide() compara
+        // palabra por palabra: "Jorge Lino" encuentra a "Jorge Augusto Lino Bermeo" aunque se
+        // salte el segundo nombre.
+        if (!string.IsNullOrWhiteSpace(busqueda))
+        {
+            empleados = empleados.Where(e =>
+                $"{e.IdpersonaNavigation.Nombres} {e.IdpersonaNavigation.Apellidos}".Coincide(busqueda) ||
+                e.IdpersonaNavigation.Numeroidentificacion.Coincide(busqueda) ||
+                e.Codigoempleado.Coincide(busqueda))
+                .ToList();
+        }
+
         // Lista de Ids de los empleados encontrados (para el conteo de proyectos).
         var idsEmpleados = empleados.Select(e => e.Id).ToList();
 
         // Contamos los proyectos activos por empleado.
         // Traemos las asignaciones a memoria y agrupamos ahí para evitar warnings de null.
+        // sm - Solo cuentan las asignaciones con estado Activo y cuya fecha de salida no ha pasado
+        // (misma regla que ProyectosEndpoints.EsAsignacionVigente).
+        var hoy = CalculoHorasPeriodo.HoyEcuador();
         var asignaciones = await db.TblTimeReportAsignacionProyectos
             .Where(ep => ep.Idempleado != null
                       && idsEmpleados.Contains(ep.Idempleado.Value)
-                      && ep.Activo)
+                      && ep.Activo
+                      && ep.Estadoasignacion
+                      && (ep.Fechafinasignacion == null || ep.Fechafinasignacion >= hoy))
             .Select(ep => ep.Idempleado ?? 0)
             .ToListAsync(ct);
 
@@ -122,12 +132,15 @@ public sealed class ColaboradorService(
         if (empleado is null) return null;
 
         // Traemos los proyectos asignados activos del colaborador.
+        // sm - Se muestran todos (Activos e Inactivos) con su estado de asignación: primero los activos.
+        var hoy = CalculoHorasPeriodo.HoyEcuador();
         var proyectos = await db.TblTimeReportAsignacionProyectos
             .Include(ep => ep.IdproyectoNavigation)
                 .ThenInclude(p => p.IdclienteNavigation)
             .Include(ep => ep.IdproyectoNavigation)
                 .ThenInclude(p => p.IdestadoproyectoNavigation)
             .Where(ep => ep.Idempleado == id && ep.Activo)
+            .OrderByDescending(ep => ep.Estadoasignacion && (ep.Fechafinasignacion == null || ep.Fechafinasignacion >= hoy))
             .Select(ep => new ProyectoAsignadoResponse(
                 ep.IdproyectoNavigation != null ? ep.IdproyectoNavigation.Id : 0,
                 ep.IdproyectoNavigation != null ? ep.IdproyectoNavigation.Nombre : "",
@@ -139,7 +152,8 @@ public sealed class ColaboradorService(
                     ? (ep.IdproyectoNavigation.Activo
                         ? ep.IdproyectoNavigation.IdestadoproyectoNavigation!.Valor
                         : "Desactivado")
-                    : ""
+                    : "",
+                ep.Estadoasignacion && (ep.Fechafinasignacion == null || ep.Fechafinasignacion >= hoy)
             ))
             .ToListAsync(ct);
 

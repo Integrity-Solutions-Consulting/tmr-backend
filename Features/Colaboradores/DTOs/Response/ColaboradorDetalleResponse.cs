@@ -63,5 +63,7 @@ public record ProyectoAsignadoResponse(
     int Id,
     string Nombre,
     string Cliente,
-    string Estado
+    string Estado,
+    // sm - Estado de asignación del colaborador en el proyecto (true = Activo, false = Inactivo).
+    bool EstadoAsignacion
 );

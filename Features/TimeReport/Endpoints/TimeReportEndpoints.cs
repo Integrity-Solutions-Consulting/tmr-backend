@@ -96,6 +96,20 @@ public static class TimeReportEndpoints
             return Results.Ok(tipos);
         });
 
+        // sm - Fecha más antigua con actividades reales: los filtros por rango de fechas (Seguimiento, Carga de
+        // Actividades, Reportes) la usan como mínimo seleccionable, para no dejar filtrar hacia fechas sin datos.
+        groupActividades.MapGet("/fecha-minima", async (ApplicationDbContext db) =>
+        {
+            var fechaMinima = await db.TblTimeReportActividadDiaria
+                .Where(a => a.Activo)
+                .Select(a => (DateOnly?)a.Fechaactividad)
+                .MinAsync();
+
+            // sm - Se formatea explícitamente en ISO (yyyy-MM-dd): el convertidor global de DateOnly serializa en
+            // dd-MM-yyyy (para mostrar en UI), pero el atributo "min" de <input type="date"> exige formato ISO.
+            return Results.Ok(new { FechaMinima = fechaMinima?.ToString("yyyy-MM-dd") });
+        });
+
         groupActividades.MapGet("/proyectos-disponibles", async (ClaimsPrincipal user, ApplicationDbContext db) =>
         {
             // Si no está autenticado (desarrollo local / testing sin JWT), devolvemos todos los proyectos activos

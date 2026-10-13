@@ -47,7 +47,8 @@ public static class DashboardEjecutivoEndpoints
         private ILookup<int, TblTimeReportAsignacionProyecto>? asignacionesPorProyecto;
 
         public List<EmpleadoCalculo> EmpleadosCalculo => empleadosCalculo ??= Empleados
-            .Select(e => new EmpleadoCalculo(e.Id, e.Fechaingreso, e.Fechaterminacion, CalculoHorasPeriodo.HorasJornada(e),
+            // sm - Misma regla que CalculoHorasPeriodo: la salida solo recorta el periodo si el colaborador está inactivo.
+            .Select(e => new EmpleadoCalculo(e.Id, e.Fechaingreso, e.Activo ? null : e.Fechaterminacion, CalculoHorasPeriodo.HorasJornada(e),
                 JornadasPorEmpleado[e.Id].ToList()))
             .ToList();
 
@@ -110,7 +111,9 @@ public static class DashboardEjecutivoEndpoints
 
         var estados = await db.Set<TblAdministracionCatalogoDetalle>()
             .AsNoTracking()
-            .Where(d => d.Activo && d.IdcatalogoNavigation.Codigo == CatalogoEstadosProyecto)
+            .Where(d => d.Activo
+                && d.IdcatalogoNavigation.Codigo == CatalogoEstadosProyecto
+                && ParametrosDashboard.EstadosProyecto.Contains(d.Codigovalor))
             .OrderBy(d => d.Orden)
             .Select(d => new OpcionFiltroDto(d.Id, d.Valor))
             .ToListAsync();
@@ -773,7 +776,8 @@ public static class DashboardEjecutivoEndpoints
     private static bool EstaActivoEn(TblAdministracionEmpleado e, DateOnly fecha) =>
         (e.Activo || e.Fechaterminacion.HasValue)
         && (!e.Fechaingreso.HasValue || e.Fechaingreso.Value <= fecha)
-        && (!e.Fechaterminacion.HasValue || e.Fechaterminacion.Value >= fecha);
+        // sm - Un activo con una salida vieja guardada sigue activo después de esa fecha.
+        && (e.Activo || !e.Fechaterminacion.HasValue || e.Fechaterminacion.Value >= fecha);
 
     private static DateOnly? FinEfectivoAsignacion(TblTimeReportAsignacionProyecto a, DatosBase datos) =>
         a.Fechafinasignacion

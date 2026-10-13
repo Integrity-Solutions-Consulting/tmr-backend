@@ -5,6 +5,7 @@ using tmr_backend.Features.Configuracion.Usuarios.DTOs;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
 using tmr_backend.Infrastructure.Security;
+using tmr_backend.Shared.Extensions;
 
 namespace tmr_backend.Features.Configuracion.Usuarios.Application;
 
@@ -314,27 +315,35 @@ public class UsuariosConfigService : IUsuariosConfigService
         if (query.activo.HasValue)
             dbQuery = dbQuery.Where(u => u.Activo == query.activo.Value);
 
+        var usuarios = await dbQuery
+            .OrderByDescending(u => u.Fechacreacion)
+            .ToListAsync();
+
+        // ── Filtro por búsqueda (nombre completo, correo, identificación) ──
+        // sm - Se aplica en memoria (no se puede traducir a SQL) para poder comparar contra el
+        // nombre completo (nombres + apellidos) normalizado, sin tildes ni mayúsculas/minúsculas,
+        // igual que en las demás ventanas (Seguimiento, Líderes, Colaboradores). Coincide() compara
+        // palabra por palabra: "Jorge Lino" encuentra a "Jorge Augusto Lino Bermeo" aunque se
+        // salte el segundo nombre.
         if (!string.IsNullOrWhiteSpace(query.search))
         {
-            var search = query.search.Trim().ToLower();
-            dbQuery = dbQuery.Where(u =>
-                u.Email.ToLower().Contains(search) ||
+            usuarios = usuarios.Where(u =>
+                u.Email.Coincide(query.search) ||
                 (u.IdpersonaNavigation != null &&
-                    (u.IdpersonaNavigation.Nombres.ToLower().Contains(search) ||
-                     u.IdpersonaNavigation.Apellidos.ToLower().Contains(search) ||
-                     u.IdpersonaNavigation.Numeroidentificacion.Contains(search))));
+                    ($"{u.IdpersonaNavigation.Nombres} {u.IdpersonaNavigation.Apellidos}".Coincide(query.search) ||
+                     u.IdpersonaNavigation.Numeroidentificacion.Coincide(query.search))))
+                .ToList();
         }
 
         var pageSize = query.pagesize <= 0 ? 10 : query.pagesize;
         var pageNumber = query.pagenumber <= 0 ? 1 : query.pagenumber;
-        var totalCount = await dbQuery.CountAsync();
+        var totalCount = usuarios.Count;
         var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
 
-        var items = await dbQuery
-            .OrderByDescending(u => u.Fechacreacion)
+        var items = usuarios
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
-            .ToListAsync();
+            .ToList();
 
         var resultItems = new List<UsuarioListaResponse>();
 

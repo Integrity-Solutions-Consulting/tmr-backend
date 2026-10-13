@@ -113,7 +113,9 @@ public record ProyectoRecursoRequest(
     DateOnly? Entrada,
     DateOnly? Salida,
     decimal? CostoHora,
-    decimal? Horas
+    decimal? Horas,
+    // sm - Estado de asignación del recurso (true = Activo, false = Inactivo). Null se guarda como Activo.
+    bool? EstadoAsignacion = null
 );
 
 public record ProyectoRecursoResponse(
@@ -127,7 +129,9 @@ public record ProyectoRecursoResponse(
     DateOnly? Salida,
     decimal? CostoHora,
     decimal? Horas,
-    int? IdDepartamento
+    int? IdDepartamento,
+    // sm - Estado efectivo: Inactivo si se marcó así o si su fecha de salida ya pasó.
+    bool EstadoAsignacion
 );
 
 public record LookupDto(int Id, string Nombre);

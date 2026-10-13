@@ -38,6 +38,11 @@ public static class ParametrosDashboard
     // sm - Estados (catálogo EPR) que se consideran cerrados: Completado y Cancelado.
     public static readonly string[] EstadosCerrados = ["COM", "CAN"];
 
+    // sm - Los 7 valores reales del catálogo EPR (estado de proyecto): Aplazado, Aprobado, Cancelado,
+    // Completado, En Espera, En Progreso, Planificación. El filtro "Estado" del Dashboard solo debe
+    // ofrecer estos, sin importar qué otra fila quede marcada Activa en esa tabla de catálogo.
+    public static readonly string[] EstadosProyecto = ["APL", "APR", "CAN", "COM", "ESP", "PRO", "PLN"];
+
     // sm - Confirmado: las novedades (vacaciones y permisos) se toman de las actividades de tipo "Vacaciones" y
     // "Permiso", se restan de las horas esperadas y no cuentan como reportadas.
     public static readonly string[] TiposActividadNovedad = ["VACACIONES", "PERMISO"];
