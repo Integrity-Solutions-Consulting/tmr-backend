@@ -67,8 +67,6 @@ public partial class TblAdministracionCatalogoDetalle
 
     public virtual ICollection<TblInventarioEquipo> TblInventarioEquipoIdtipogarantiaNavigations { get; set; } = new List<TblInventarioEquipo>();
 
-    public virtual ICollection<TblInventarioProveedor> TblInventarioProveedors { get; set; } = new List<TblInventarioProveedor>();
-
     public virtual ICollection<TblInventarioStockCategorium> TblInventarioStockCategoria { get; set; } = new List<TblInventarioStockCategorium>();
 
     public virtual ICollection<TblTimeReportPermiso> TblTimeReportPermisoIdestadoaprobacionNavigations { get; set; } = new List<TblTimeReportPermiso>();
