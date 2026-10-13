@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.2](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.4.1...v1.4.2) (2026-10-13)
+
+
+### Bug Fixes
+
+* correcion de pestaña de proveedores con permisos ([f457eb6](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/f457eb6cf33d92d72669c22fb3b9670ce439068b))
+* correcion de pestaña de proveedores con permisos ([4b754fc](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/4b754fc6062c777cf2397d654415692b8e1cb161))
+
 ## [1.4.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.4.0...v1.4.1) (2026-10-12)
 
 
