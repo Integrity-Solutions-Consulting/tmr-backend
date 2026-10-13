@@ -33,7 +33,7 @@ public partial class TblInventarioProveedor
 
     public string? Ipmodificacion { get; set; }
 
-    public virtual TblAdministracionCatalogoDetalle? IdtipoproveedorNavigation { get; set; }
+    public virtual TblInventarioTipoProveedor? IdtipoproveedorNavigation { get; set; }
 
     public virtual ICollection<TblInventarioFactura> TblInventarioFacturas { get; set; } = new List<TblInventarioFactura>();
 }

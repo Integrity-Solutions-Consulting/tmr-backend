@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
+using tmr_backend.Infrastructure.Database.Seeders;
 using tmr_backend.Features.Clientes;
 using tmr_backend.Features.Clientes.DTOs.Request;
 using tmr_backend.Features.Clientes.Services;
@@ -265,6 +266,13 @@ builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProv
 // =========================
 
 var app = builder.Build();
+
+// Asegura la configuración RBAC idempotente de Proveedores en bases ya creadas.
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await ProveedorPermissionsSeeder.EnsureAsync(db);
+}
 
 app.UseResponseCompression();
 app.UseMiddleware<GlobalExceptionMiddleware>();
