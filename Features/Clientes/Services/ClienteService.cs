@@ -29,6 +29,7 @@ public sealed class ClienteService(
         // .Include trae el tipo de identificación (catálogo TID) para mostrar su Valor.
         var query = db.TblAdministracionClientes
             .Include(c => c.IdtipoidentificacionNavigation)
+            .AsNoTracking()
             .AsQueryable();
 
         // ── Filtro por estado (Activo / Inactivo) ──
@@ -61,6 +62,7 @@ public sealed class ClienteService(
     {
         var cliente = await db.TblAdministracionClientes
             .Include(c => c.IdtipoidentificacionNavigation)
+            .AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == id, ct);
 
         if (cliente is null) return null;
@@ -68,6 +70,7 @@ public sealed class ClienteService(
         // Traemos los proyectos activos de este cliente.
         var proyectos = await db.TblTimeReportProyectos
             .Include(p => p.IdestadoproyectoNavigation)
+            .AsNoTracking()
             .Where(p => p.Idcliente == id && p.Activo)
             .Select(p => new ProyectoAsignadoResponse(
                 p.Id,
