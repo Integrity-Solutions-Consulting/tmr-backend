@@ -81,6 +81,21 @@ public static class ProveedoresEndpoints
             return Results.Ok(tipos);
         });
 
+        group.MapGet("/resumen", async (ApplicationDbContext db, CancellationToken ct) =>
+        {
+            var resumen = await db.TblInventarioProveedors.AsNoTracking()
+                .GroupBy(_ => 1)
+                .Select(grupo => new
+                {
+                    Total = grupo.Count(),
+                    Activos = grupo.Count(x => x.Activo),
+                    Inactivos = grupo.Count(x => !x.Activo)
+                })
+                .FirstOrDefaultAsync(ct);
+
+            return Results.Ok(resumen ?? new { Total = 0, Activos = 0, Inactivos = 0 });
+        });
+
         group.MapGet("/{id:int}", async (int id, ApplicationDbContext db, CancellationToken ct) =>
         {
             var usaTablaTipos = await UsaTablaTiposDedicadaAsync(db, ct);

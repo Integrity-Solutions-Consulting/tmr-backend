@@ -276,6 +276,7 @@ using (var scope = app.Services.CreateScope())
 
 app.UseResponseCompression();
 app.UseMiddleware<GlobalExceptionMiddleware>();
+app.UseMiddleware<RequestPerformanceMiddleware>();
 
 app.UseHttpsRedirection();
 

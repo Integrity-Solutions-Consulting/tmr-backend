@@ -34,6 +34,7 @@ public sealed class ColaboradorService(
             .Include(e => e.IdpersonaNavigation)          // datos personales
             .Include(e => e.IdcargoNavigation)            // cargo
             .Include(e => e.IdempresacatalogoNavigation)  // asociación (RPS/ISC)
+            .AsNoTracking()
             .AsQueryable();
 
         // ── Filtro por estado (Activo / Inactivo) ──
@@ -127,6 +128,7 @@ public sealed class ColaboradorService(
                 .ThenInclude(r => r.IdpersonaNavigation)
             .Include(e => e.EmpleadosReemplazados)
                 .ThenInclude(er => er.IdpersonaNavigation)
+            .AsNoTracking()
             .FirstOrDefaultAsync(e => e.Id == id, ct);
 
         if (empleado is null) return null;
