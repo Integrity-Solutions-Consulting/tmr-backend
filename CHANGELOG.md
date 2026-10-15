@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.4.3](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.4.2...v1.4.3) (2026-10-15)
+
+
+### Bug Fixes
+
+* mejora de provedores en peteciones ([bfb8505](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/bfb8505535c9c99735a99e478addb6085427be26))
+
+
+### Performance Improvements
+
+* optimiza tiempos de carga, consultas y rendimiento general de la aplicación ([70253f1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/70253f1b4b4669f5d4a8ee5e613fbea31acb357d))
+
 ## [1.4.2](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.4.1...v1.4.2) (2026-10-13)
 
 
