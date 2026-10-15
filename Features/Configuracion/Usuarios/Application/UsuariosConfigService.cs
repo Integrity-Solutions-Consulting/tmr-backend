@@ -310,14 +310,26 @@ public class UsuariosConfigService : IUsuariosConfigService
     {
         var dbQuery = _dbContext.TblAutenticacionUsuarios
             .Include(u => u.IdpersonaNavigation)
+            .AsNoTracking()
             .AsQueryable();
 
         if (query.activo.HasValue)
             dbQuery = dbQuery.Where(u => u.Activo == query.activo.Value);
 
-        var usuarios = await dbQuery
-            .OrderByDescending(u => u.Fechacreacion)
-            .ToListAsync();
+        var pageSize = Math.Clamp(query.pagesize <= 0 ? 10 : query.pagesize, 1, 100);
+        var pageNumber = query.pagenumber <= 0 ? 1 : query.pagenumber;
+        var tieneBusqueda = !string.IsNullOrWhiteSpace(query.search);
+        IQueryable<TblAutenticacionUsuario> usuariosQuery =
+            dbQuery.OrderByDescending(u => u.Fechacreacion);
+
+        // Sin búsqueda libre, PostgreSQL pagina antes de transferir datos. La búsqueda
+        // flexible conserva su semántica actual y se filtra en memoria.
+        if (!tieneBusqueda)
+            usuariosQuery = usuariosQuery
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize);
+
+        var usuarios = await usuariosQuery.ToListAsync();
 
         // ── Filtro por búsqueda (nombre completo, correo, identificación) ──
         // sm - Se aplica en memoria (no se puede traducir a SQL) para poder comparar contra el
@@ -335,26 +347,28 @@ public class UsuariosConfigService : IUsuariosConfigService
                 .ToList();
         }
 
-        var pageSize = query.pagesize <= 0 ? 10 : query.pagesize;
-        var pageNumber = query.pagenumber <= 0 ? 1 : query.pagenumber;
-        var totalCount = usuarios.Count;
+        var totalCount = tieneBusqueda ? usuarios.Count : await dbQuery.CountAsync();
         var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
 
-        var items = usuarios
-            .Skip((pageNumber - 1) * pageSize)
-            .Take(pageSize)
-            .ToList();
+        var items = tieneBusqueda
+            ? usuarios.Skip((pageNumber - 1) * pageSize).Take(pageSize).ToList()
+            : usuarios;
 
-        var resultItems = new List<UsuarioListaResponse>();
+        var itemIds = items.Select(u => u.Id).ToList();
+        var rolesPorUsuario = itemIds.Count == 0
+            ? new Dictionary<int, List<string>>()
+            : (await _dbContext.TblAutenticacionUsuarioRols
+                .AsNoTracking()
+                .Where(r => itemIds.Contains(r.Idusuario) && r.Activo)
+                .Select(r => new { r.Idusuario, r.IdrolNavigation.Nombre })
+                .ToListAsync())
+                .GroupBy(r => r.Idusuario)
+                .ToDictionary(g => g.Key, g => g.Select(r => r.Nombre).ToList());
+
+        var resultItems = new List<UsuarioListaResponse>(items.Count);
 
         foreach (var usuario in items)
         {
-            var rolesNombres = await _dbContext.TblAutenticacionUsuarioRols
-                .Where(r => r.Idusuario == usuario.Id && r.Activo == true)
-                .Include(r => r.IdrolNavigation)
-                .Select(r => r.IdrolNavigation.Nombre)
-                .ToListAsync();
-
             var persona = usuario.IdpersonaNavigation;
 
             resultItems.Add(new UsuarioListaResponse(
@@ -365,7 +379,7 @@ public class UsuariosConfigService : IUsuariosConfigService
                 nombres: persona?.Nombres,
                 apellidos: persona?.Apellidos,
                 email: usuario.Email,
-                roles: rolesNombres,
+                roles: rolesPorUsuario.GetValueOrDefault(usuario.Id) ?? [],
                 activo: usuario.Activo,
                 debecambiarpassword: usuario.Debecambiarpassword,
                 ultimologin: usuario.Ultimologin

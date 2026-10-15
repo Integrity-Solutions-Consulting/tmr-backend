@@ -270,26 +270,35 @@ public class RolesConfigService : IRolesConfigService
     public async Task<List<RolResponse>> ObtenerRolesAsync()
     {
         var roles = await _dbContext.TblAutenticacionRols
+            .AsNoTracking()
             .OrderByDescending(r => r.Fechacreacion)
             .ToListAsync();
 
-        var result = new List<RolResponse>();
+        var roleIds = roles.Select(r => r.Id).ToList();
+        var modulosPorRol = (await _dbContext.TblAutenticacionRolPermisos
+            .AsNoTracking()
+            .Where(rp => roleIds.Contains(rp.Idrol) && rp.Activo)
+            .Join(_dbContext.TblAutenticacionPermisos,
+                  rp => rp.Idpermiso,
+                  p => p.Id,
+                  (rp, p) => new { rp.Idrol, p.Idmodulo })
+            .Join(_dbContext.TblAutenticacionModulos,
+                  x => x.Idmodulo,
+                  m => m.Id,
+                  (x, m) => new { x.Idrol, ModuloId = m.Id, m.Nombremodulo })
+            .Distinct()
+            .ToListAsync())
+            .GroupBy(x => x.Idrol)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(x => new ModuloResponse(x.ModuloId, x.Nombremodulo)).ToList());
+
+        var result = new List<RolResponse>(roles.Count);
 
         foreach (var rol in roles)
         {
             // Opción 1: Obtener módulos inferidos desde permisos (rol → rol_permiso → permiso → módulo)
-            var modulos = await _dbContext.TblAutenticacionRolPermisos
-                .Where(rp => rp.Idrol == rol.Id && rp.Activo)
-                .Join(_dbContext.TblAutenticacionPermisos,
-                      rp => rp.Idpermiso,
-                      p => p.Id,
-                      (rp, p) => new { Permiso = p })
-                .Join(_dbContext.TblAutenticacionModulos,
-                      x => x.Permiso.Idmodulo,
-                      m => m.Id,
-                      (x, m) => new ModuloResponse(m.Id, m.Nombremodulo))
-                .Distinct()
-                .ToListAsync();
+            var modulos = modulosPorRol.GetValueOrDefault(rol.Id) ?? [];
 
             result.Add(new RolResponse(
                 id: rol.Id,
@@ -306,6 +315,7 @@ public class RolesConfigService : IRolesConfigService
     public async Task<List<ModuloResponse>> ObtenerModulosAsync()
     {
         return await _dbContext.TblAutenticacionModulos
+            .AsNoTracking()
             .Where(m => m.Activo)
             .Select(m => new ModuloResponse(m.Id, m.Nombremodulo))
             .ToListAsync();
