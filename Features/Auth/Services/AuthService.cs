@@ -1,0 +1,919 @@
+using FluentValidation;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+using tmr_backend.Features.Auth.DTOs.Request;
+using tmr_backend.Features.Auth.DTOs.Response;
+using tmr_backend.Features.Auth.Mappings;
+using tmr_backend.Infrastructure.Database;
+using tmr_backend.Infrastructure.Database.Entities;
+using tmr_backend.Infrastructure.Security;
+using tmr_backend.Infrastructure.Shared;
+using tmr_backend.Shared.Exceptions;
+
+namespace tmr_backend.Features.Auth.Services;
+
+public sealed class AuthService(
+    ApplicationDbContext db,
+    ITokenService tokenService,
+    IHttpContextAccessor httpContextAccessor,
+    IPasswordHasher passwordHasher,
+    IValidator<RegisterRequest> registerValidator,
+    IValidator<LoginRequest> loginValidator,
+    IOptions<JwtSettings> jwtOptions,
+    ILogger<AuthService> logger,
+    IConfiguration configuration) : IAuthService
+{
+    private const int MaxFailedAttempts = 5;
+    private const int LockoutMinutes    = 15;
+    private const int PASSWORD_HISTORY_LIMIT = 5;
+    private readonly ILogger<AuthService> _logger = logger;
+    private readonly JwtSettings _jwt   = jwtOptions.Value;
+    private readonly IConfiguration _configuration = configuration;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // REGISTER — crea persona + usuario + rol base. Sin tokens.
+    // ─────────────────────────────────────────────────────────────────────────
+    public async Task<RegisterResponse> RegisterAsync(RegisterRequest request, HttpContext context, CancellationToken ct)
+    {
+        var clientIp   = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var validation = await registerValidator.ValidateAsync(request, ct);
+        if (!validation.IsValid)
+            throw new ValidationException(validation.Errors);
+
+        var normalizedEmail = request.Email.ToLowerInvariant();
+        // Nunca usar una contraseña inicial compartida o predecible.
+        var contraseniaDefecto = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+
+        var existe = await db.TblAutenticacionUsuarios
+            .AnyAsync(u => u.Email == normalizedEmail, ct);
+        if (existe)
+            throw new ConflictException("El email ya está registrado.");
+
+        var rolExiste = await db.TblAutenticacionRols
+            .AnyAsync(r => r.Id == request.IdRol && r.Activo, ct);
+        if (!rolExiste)
+            throw new ValidationException("El rol enviado no existe o no esta activo.");
+
+        var hash = passwordHasher.Hash(contraseniaDefecto);
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            var fecha = DateTime.UtcNow;
+            var persona = new TblAdministracionPersona
+            {
+                Idgenero             = request.IdGenero,
+                Idnacionalidad       = request.IdNacionalidad,
+                Idtipoidentificacion = request.IdTipoIdentificacion,
+                Numeroidentificacion = request.Numeroidentificacion ?? "0000000000",
+                Tipopersona          = request.TipoPersona ?? "NATURAL",
+                Nombres              = request.Nombres,
+                Apellidos            = request.Apellidos,
+                Fechanacimiento      = DateOnly.Parse(request.FechaNacimiento),
+                Email                = normalizedEmail,
+                Telefono             = request.Telefono ?? "",
+                Direccion            = request.Direccion ?? "",
+                Activo               = true,
+                Usuariocreacion      = request.Usuario,
+                Fechacreacion        = fecha,
+                Ipcreacion           = clientIp
+            };
+            db.TblAdministracionPersonas.Add(persona);
+            await db.SaveChangesAsync(ct);
+
+            var usuario = new TblAutenticacionUsuario
+            {
+                Idpersona            = persona.Id,
+                Email                = normalizedEmail,
+                Hashpassword         = hash,
+                Emailverificado      = false,
+                Intentosfallidos     = 0,
+                Bloqueadohasta       = null,
+                Debecambiarpassword  = true,
+                Activo               = true,
+                Usuariocreacion      = request.Usuario,
+                Fechacreacion        = fecha,
+                Ipcreacion           = clientIp
+            };
+            db.TblAutenticacionUsuarios.Add(usuario);
+            await db.SaveChangesAsync(ct);
+
+            var usuarioRol = new TblAutenticacionUsuarioRol
+            {
+                Idusuario       = usuario.Id,
+                Idrol           = request.IdRol,
+                Asignadoen      = fecha,
+                Activo          = true,
+                Usuariocreacion = request.Usuario,
+                Fechacreacion   = fecha,
+                Ipcreacion      = clientIp
+            };
+            db.TblAutenticacionUsuarioRols.Add(usuarioRol);
+            
+            var historialEntry = new TblAutenticacionPasswordHistorial
+            {
+                Idusuario       = usuario.Id,
+                Hashpassword    = hash,
+                Fechacambio     = fecha,
+                Activo          = true,
+                Usuariocreacion = request.Usuario,
+                Fechacreacion   = fecha,
+                Ipcreacion      = clientIp 
+            };
+            db.TblAutenticacionPasswordHistorials.Add(historialEntry);
+
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+
+            return new RegisterResponse(usuario.Id, usuario.Email, usuario.Fechacreacion);
+        }
+        catch
+        {
+            await tx.RollbackAsync(ct);
+            throw;
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // LOGIN — valida credenciales, crea sesión, emite AT + RT + FamilyId
+    // ─────────────────────────────────────────────────────────────────────────
+    public async Task<AuthResponse> LoginAsync(
+        LoginRequest request,
+        string clientIp,
+        string? userAgent,
+        string? deviceInfo,
+        CancellationToken ct)
+    {
+        var validation = await loginValidator.ValidateAsync(request, ct);
+        if (!validation.IsValid)
+            throw new ValidationException(validation.Errors);
+
+        var normalizedUser = request.User.ToLowerInvariant();
+
+        var usuario = await db.TblAutenticacionUsuarios
+            .Include(u => u.IdpersonaNavigation)
+            .FirstOrDefaultAsync(u => u.Email == normalizedUser && u.Activo, ct)
+            ?? throw new UnauthorizedException("Credenciales inválidas.", "INVALID_CREDENTIALS");
+        
+        var fecha = DateTime.UtcNow;
+
+        // Cuenta bloqueada
+        if (usuario.Bloqueadohasta.HasValue && usuario.Bloqueadohasta > fecha)
+            throw new UnauthorizedException(
+                $"Cuenta bloqueada temporalmente. Intente después de las {usuario.Bloqueadohasta:HH:mm} UTC.",
+                "ACCOUNT_LOCKED");
+
+        // Verificar password
+        if (!passwordHasher.Verify(request.Password, usuario.Hashpassword))
+        {
+            usuario.Intentosfallidos++;
+            if (usuario.Intentosfallidos >= MaxFailedAttempts)
+            {
+                usuario.Bloqueadohasta   = DateTime.UtcNow.AddMinutes(LockoutMinutes);
+                usuario.Intentosfallidos = 0;
+            }
+            await db.SaveChangesAsync(ct);
+            throw new UnauthorizedException("Credenciales inválidas.", "INVALID_CREDENTIALS");
+        }
+
+        // Credenciales OK — resetear contadores
+        usuario.Intentosfallidos = 0;
+        usuario.Bloqueadohasta   = null;
+        usuario.Ultimologin      = fecha;
+
+        var roles = await LoadUserRolesAsync(usuario.Id, ct);
+
+        // Límite de sesiones activas — política FIFO: revoca la más antigua si se supera el límite
+        var sesionesActivas = await db.TblAutenticacionSesions
+            .Where(s => s.Idusuario == usuario.Id && s.Estaactiva && s.Activo)
+            .OrderBy(s => s.Fechacreacion)
+            .ToListAsync(ct);
+
+        var usuarioModificacion = usuario.Email.Contains('@') ? usuario.Email.Split('@')[0] : usuario.Email;
+
+        if (sesionesActivas.Count >= _jwt.MaxActiveSessions)
+        {
+            var masAntigua = sesionesActivas.First();
+            masAntigua.Estaactiva          = false;
+            masAntigua.Revocadofecha       = fecha;
+            masAntigua.Revocadorazon       = RevocacionRazonEnum.SESSION_LIMIT.ToString();
+            masAntigua.Usuariomodificacion = usuarioModificacion;
+            masAntigua.Fechamodificacion   = fecha;
+
+            await db.TblAutenticacionRefreshTokens
+                .Where(r => r.Idsesion == masAntigua.Id && !r.Estarevocado)
+                .ExecuteUpdateAsync(s => s.SetProperty(r => r.Estarevocado, true), ct);
+
+            await db.SaveChangesAsync(ct);
+        }
+
+        // Crear sesión
+        var sesion = new TblAutenticacionSesion
+        {
+            Idusuario        = usuario.Id,
+            Dispositivoinfo  = deviceInfo,
+            Direccionip      = clientIp,
+            Agenteusuario    = userAgent,
+            Estaactiva       = true,
+            Ultimaactividad  = fecha,
+            Fechaexpiracion  = DateTime.UtcNow.AddDays(_jwt.AbsoluteTimeoutDays),
+            Activo           = true,
+            Usuariocreacion  = usuarioModificacion,
+            Fechacreacion    = fecha,
+            Ipcreacion       = clientIp
+        };
+        db.TblAutenticacionSesions.Add(sesion);
+        await db.SaveChangesAsync(ct);
+
+        // Generar AT + RT
+        var (at, _, atExpiry)          = tokenService.GenerateAccessToken(usuario, roles);
+        var familyId                   = Guid.NewGuid();
+        var (rawRt, rtHash, rtExpiry)  = tokenService.GenerateRefreshTokenRaw();
+
+        var refreshToken = new TblAutenticacionRefreshToken
+        {
+            Idusuario       = usuario.Id,
+            Idsesion        = sesion.Id,
+            Tokenhash       = rtHash,
+            Familiatoken    = familyId,
+            Estausado       = false,
+            Estarevocado    = false,
+            Fechaexpiracion = rtExpiry,
+            Activo          = true,
+            Usuariocreacion = usuarioModificacion,
+            Fechacreacion   = fecha
+        };
+        db.TblAutenticacionRefreshTokens.Add(refreshToken);
+        await db.SaveChangesAsync(ct);
+
+        var idEmpleado = await db.TblAdministracionEmpleados
+            .Where(e => e.Idpersona == usuario.Idpersona && e.Activo)
+            .Select(e => (int?)e.Id)
+            .FirstOrDefaultAsync(ct);
+
+        return new AuthResponse(at, rawRt, atExpiry, familyId, usuario.ToUserResponse(idEmpleado));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // REFRESH TOKEN — rotation con detección de reúso (reuse attack)
+    // ─────────────────────────────────────────────────────────────────────────
+    public async Task<AuthResponse> RefreshTokenAsync(
+        RefreshTokenRequest request,
+        string clientIp,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.RefreshToken))
+            throw new UnauthorizedException("Refresh token inválido.");
+
+        var hash = tokenService.HashToken(request.RefreshToken);
+
+        var rt = await db.TblAutenticacionRefreshTokens
+            .FirstOrDefaultAsync(r => r.Tokenhash == hash, ct)
+            ?? throw new UnauthorizedException("Refresh token inválido.", "TOKEN_INVALID");
+
+        // REUSE ATTACK — si ya fue usado, revocar toda la familia
+        if (rt.Estausado)
+        {
+            await RevokeTokenFamilyInternalAsync(rt.Familiatoken, rt.Idusuario, RevocacionRazonEnum.TOKEN_REUSED, ct);
+            throw new UnauthorizedException("Refresh token reutilizado. Sesión revocada por seguridad.", "TOKEN_REUSED");
+        }
+
+        if (rt.Estarevocado)
+            throw new UnauthorizedException("Refresh token revocado.", "TOKEN_REVOKED");
+
+        if (rt.Fechaexpiracion < DateTime.UtcNow)
+        {
+            // Mecanismo 2: desactivar la sesión cuando el RT ya expiró, ya no puede extenderse
+            await DeactivateSessionAsync(rt.Idsesion, RevocacionRazonEnum.EXPIRED, ct);
+            throw new UnauthorizedException("Refresh token expirado.", "TOKEN_EXPIRED");
+        }
+
+        // Idle + Absolute timeout — verificar antes de marcar RT como usado para evitar falso reuse attack
+        var sesion = await db.TblAutenticacionSesions.FirstOrDefaultAsync(s => s.Id == rt.Idsesion, ct);
+        if (sesion is not null)
+        {
+            var currentUserIp = httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString();
+            if (!string.IsNullOrEmpty(sesion.Direccionip) && sesion.Direccionip != currentUserIp)
+            {
+                await RevokeTokenFamilyInternalAsync(rt.Familiatoken, rt.Idusuario, RevocacionRazonEnum.IP_MISMATCH, ct);
+                throw new UnauthorizedException("Acceso desde dirección IP diferente. Inicia sesión nuevamente.", "IP_MISMATCH");
+            }
+
+            var currentUserAgent = httpContextAccessor.HttpContext?.Request.Headers["User-Agent"].ToString();
+            if (!string.IsNullOrEmpty(sesion.Agenteusuario) && sesion.Agenteusuario != currentUserAgent)
+            {
+                await RevokeTokenFamilyInternalAsync(rt.Familiatoken, rt.Idusuario, RevocacionRazonEnum.USER_AGENT_MISMATCH, ct);
+                throw new UnauthorizedException("Acceso desde dispositivo diferente. Inicia sesión nuevamente.", "USER_AGENT_MISMATCH");
+            }
+
+            var recentRefreshCount = await db.TblAutenticacionSesions
+                .Where(s => s.Idusuario == sesion.Idusuario && 
+                       s.Fechamodificacion > DateTime.UtcNow.AddMinutes(-5) &&
+                       s.Estaactiva == true)
+                .CountAsync(ct);
+
+            if (recentRefreshCount > 10)
+            {
+                await RevokeTokenFamilyInternalAsync(rt.Familiatoken, rt.Idusuario, RevocacionRazonEnum.ADMIN_REVOKE_ALL, ct);
+                throw new UnauthorizedException("Demasiados intentos de refresh. Inicia sesión nuevamente.", "ADMIN_REVOKE_ALL");
+            }
+
+            var idleLimit = DateTime.UtcNow.AddDays(-_jwt.IdleTimeoutDays);
+            if (sesion.Ultimaactividad < idleLimit)
+            {
+                await RevokeTokenFamilyInternalAsync(rt.Familiatoken, rt.Idusuario, RevocacionRazonEnum.SESSION_IDLE_TIMEOUT, ct);
+                throw new UnauthorizedException("Sesión expirada por inactividad.", "SESSION_IDLE_TIMEOUT");
+            }
+
+            if (sesion.Fechaexpiracion.HasValue && sesion.Fechaexpiracion.Value < DateTime.UtcNow)
+            {
+                await RevokeTokenFamilyInternalAsync(rt.Familiatoken, rt.Idusuario, RevocacionRazonEnum.SESSION_EXPIRED, ct);
+                throw new UnauthorizedException("Sesión expirada. Inicia sesión nuevamente.", "SESSION_EXPIRED");
+            }
+        }
+
+        var fecha = DateTime.UtcNow;
+
+        // Marcar como usado ANTES de emitir el nuevo (atomicidad)
+        rt.Estausado   = true;
+        rt.Activo      = false;
+        rt.Fechausado  = fecha;
+        await db.SaveChangesAsync(ct);
+
+        var usuario = await db.TblAutenticacionUsuarios
+            .Include(u => u.IdpersonaNavigation)
+            .FirstOrDefaultAsync(u => u.Id == rt.Idusuario && u.Activo, ct)
+            ?? throw new UnauthorizedException("Usuario no encontrado o inactivo.");
+
+        var roles = await LoadUserRolesAsync(usuario.Id, ct);
+
+        var usuarioEmail = usuario.Email.Contains('@') ? usuario.Email.Split('@')[0] : usuario.Email;
+
+        // Actualizar actividad de sesión
+        if (sesion is not null)
+        {
+            sesion.Ultimaactividad     = fecha;
+            sesion.Usuariomodificacion = usuarioEmail;
+            sesion.Fechamodificacion   = fecha;
+            sesion.Ipmodificacion      = clientIp;
+        }
+
+        // Generar nuevo par AT + RT con el MISMO familyId
+        var (at, _, atExpiry)         = tokenService.GenerateAccessToken(usuario, roles);
+        var (rawRt, rtHash, rtExpiry) = tokenService.GenerateRefreshTokenRaw();
+
+        var newRt = new TblAutenticacionRefreshToken
+        {
+            Idusuario       = usuario.Id,
+            Idsesion        = rt.Idsesion,
+            Tokenhash       = rtHash,
+            Familiatoken    = rt.Familiatoken,   // misma familia
+            Estausado       = false,
+            Estarevocado    = false,
+            Fechaexpiracion = rtExpiry,
+            Activo          = true,
+            Usuariocreacion = usuarioEmail,
+            Fechacreacion   = fecha
+        };
+        db.TblAutenticacionRefreshTokens.Add(newRt);
+        await db.SaveChangesAsync(ct);
+
+        var idEmpleado = await db.TblAdministracionEmpleados
+            .Where(e => e.Idpersona == usuario.Idpersona && e.Activo)
+            .Select(e => (int?)e.Id)
+            .FirstOrDefaultAsync(ct);
+
+        return new AuthResponse(at, rawRt, atExpiry, rt.Familiatoken, usuario.ToUserResponse(idEmpleado));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // LOGOUT — blacklist JTI del AT, revoca RT actual, cierra sesión
+    // ─────────────────────────────────────────────────────────────────────────
+    public async Task LogoutAsync(
+        string jti,
+        int idUser,
+        DateTime atExpiry,
+        string? rawRefreshToken,
+        CancellationToken ct)
+    {
+        var usuario = await db.TblAutenticacionUsuarios
+            .FirstOrDefaultAsync(u => u.Id == idUser && u.Activo, ct)
+            ?? throw new UnauthorizedException("Usuario no encontrado o inactivo.");
+        
+        var usuarioEmail = usuario.Email.Contains('@') ? usuario.Email.Split('@')[0] : usuario.Email;
+        var fecha = DateTime.UtcNow;
+
+        // 1. Blacklist del JTI (siempre se ejecuta para revocar el AT usado en logout)
+        var jtiExiste = await db.TblAutenticacionTokenBlacklists
+            .AnyAsync(b => b.Jti == jti, ct);
+
+        if (!jtiExiste)
+        {
+            db.TblAutenticacionTokenBlacklists.Add(new TblAutenticacionTokenBlacklist
+            {
+                Jti             = jti,
+                Idusuario       = idUser,
+                Fecharevocado   = fecha,
+                Fechaexpiracion = atExpiry,
+                Activo          = true,
+                Usuariocreacion = usuarioEmail,
+                Fechacreacion   = fecha,
+            });
+        }
+
+        // 2. Cerrar la sesión — buscar por RT o por la sesión más reciente activa
+        TblAutenticacionSesion? sesion = null;
+
+        if (!string.IsNullOrWhiteSpace(rawRefreshToken))
+        {
+            var hash = tokenService.HashToken(rawRefreshToken);
+            var rt = await db.TblAutenticacionRefreshTokens
+                .FirstOrDefaultAsync(r => r.Tokenhash == hash, ct);
+
+            if (rt is not null)
+            {
+                rt.Estarevocado = true;
+                rt.Activo       = false;
+                sesion = await db.TblAutenticacionSesions.FirstOrDefaultAsync(s => s.Id == rt.Idsesion, ct);
+            }
+        }
+        else
+        {
+            // Si no se proporciona RT, buscar la sesión más reciente activa del usuario
+            sesion = await db.TblAutenticacionSesions
+                .Where(s => s.Idusuario == idUser && s.Estaactiva && s.Activo)
+                .OrderByDescending(s => s.Ultimaactividad)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        // Marcar la sesión como inactiva
+        if (sesion is not null)
+        {
+            sesion.Estaactiva          = false;
+            sesion.Activo              = false;
+            sesion.Revocadofecha       = fecha;
+            sesion.Revocadorazon       = RevocacionRazonEnum.LOGOUT.ToString();
+            sesion.Usuariomodificacion = usuarioEmail;
+            sesion.Fechamodificacion   = fecha;
+            sesion.Ipmodificacion      = httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // REVOKE TOKEN — revoca toda la familia (todos los dispositivos / sesiones)
+    // ─────────────────────────────────────────────────────────────────────────
+    public async Task RevokeTokenAsync(RevokeTokenRequest request, int idUsuario, CancellationToken ct)
+    {
+        var belongs = await db.TblAutenticacionRefreshTokens
+            .AnyAsync(r => r.Familiatoken == request.TokenFamilyId && r.Idusuario == idUsuario, ct);
+
+        if (!belongs)
+            throw new UnauthorizedException("No tienes permisos para revocar esta familia de tokens.");
+
+        await RevokeTokenFamilyInternalAsync(request.TokenFamilyId, idUsuario, RevocacionRazonEnum.REVOKE, ct);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CHANGE PASSWORD — cambia contraseña validando historial de últimas 5
+    // ─────────────────────────────────────────────────────────────────────────
+    public async Task ChangePasswordAsync(ChangePasswordRequest request, HttpContext context, CancellationToken ct)
+    {
+        var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var claim    = httpContextAccessor.HttpContext?.User.FindFirst(JwtRegisteredClaimNames.Sub);
+
+        var userId = claim != null && int.TryParse(claim.Value, out var idUser) 
+                ? idUser 
+                : 0;
+        
+        var user = await db.TblAutenticacionUsuarios
+            .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken: ct);
+
+        if (user is null)
+            throw new UnauthorizedException("Usuario no encontrado.");
+
+        if (request.NewPassword != request.ConfirmPassword ||
+            request.NewPassword.Length < 12 ||
+            !request.NewPassword.Any(char.IsUpper) ||
+            !request.NewPassword.Any(char.IsLower) ||
+            !request.NewPassword.Any(char.IsDigit) ||
+            request.NewPassword.All(char.IsLetterOrDigit))
+            throw new ArgumentException("La nueva contraseña no cumple la política de seguridad.");
+
+        if (!passwordHasher.Verify(request.OldPassword, user.Hashpassword))
+            throw new ArgumentException("La contraseña actual es incorrecta.");
+
+        var passwordHistory = await db.TblAutenticacionPasswordHistorials
+            .Where(ph => ph.Idusuario == userId)
+            .OrderByDescending(ph => ph.Fechacambio)
+            .Take(PASSWORD_HISTORY_LIMIT)
+            .ToListAsync(cancellationToken: ct);
+
+        foreach (var historicalHash in passwordHistory)
+        {
+            if (passwordHasher.Verify(request.NewPassword, historicalHash.Hashpassword))
+                throw new InvalidOperationException(
+                    $"No puede reutilizar una de las últimas {PASSWORD_HISTORY_LIMIT} contraseñas.");
+        }
+
+        string newHash = passwordHasher.Hash(request.NewPassword);
+        var fecha = DateTime.UtcNow;
+        var email = httpContextAccessor.HttpContext?.User.FindFirst(ClaimTypes.Email)?.Value ?? user.Email;
+        var usuario = email.Contains('@') ? email.Split('@')[0] : email;
+
+        user.Hashpassword        = newHash;
+        user.Fechamodificacion   = fecha;
+        user.Usuariomodificacion = usuario;
+        user.Debecambiarpassword = false; // Contraseña cambiada con éxito
+
+        var historialEntry = new TblAutenticacionPasswordHistorial
+        {
+            Idusuario       = userId,
+            Hashpassword    = newHash,
+            Fechacambio     = fecha,
+            Activo          = true,
+            Usuariocreacion = usuario,
+            Fechacreacion   = fecha,
+            Ipcreacion      = clientIp
+        };
+
+        db.TblAutenticacionPasswordHistorials.Add(historialEntry);
+        await db.SaveChangesAsync(cancellationToken: ct);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // LOGOUT WITH REFRESH TOKEN — cierra sesión sin necesitar AT válido (Mecanismo 1)
+    // ─────────────────────────────────────────────────────────────────────────
+    public async Task LogoutWithRefreshTokenAsync(string? rawRefreshToken, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(rawRefreshToken))
+            return; // silent — no hay RT, nada que cerrar
+
+        var hash = tokenService.HashToken(rawRefreshToken);
+
+        var rt = await db.TblAutenticacionRefreshTokens
+            .FirstOrDefaultAsync(r => r.Tokenhash == hash, ct);
+
+        if (rt is null)
+            return; // silent — RT desconocido, nada que cerrar
+
+        // Marcar el RT como revocado si aún no lo está
+        if (!rt.Estarevocado)
+        {
+            rt.Estarevocado = true;
+            rt.Activo       = false;
+        }
+
+        // Desactivar la sesión asociada (independientemente del estado del RT)
+        await DeactivateSessionAsync(rt.Idsesion, RevocacionRazonEnum.LOGOUT, ct);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Helpers privados
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Desactiva una sesión específica por su ID, marcando Estaactiva = false y Activo = false.
+    /// No lanza excepciones si la sesión no existe o ya está inactiva.
+    /// </summary>
+    private async Task DeactivateSessionAsync(long sessionId, RevocacionRazonEnum razon, CancellationToken ct)
+    {
+        var sesion = await db.TblAutenticacionSesions
+            .FirstOrDefaultAsync(s => s.Id == sessionId, ct);
+
+        if (sesion is null || (!sesion.Estaactiva && !sesion.Activo))
+        {
+            await db.SaveChangesAsync(ct); // guarda cualquier cambio pendiente (ej. RT revocado)
+            return;
+        }
+
+        var fecha = DateTime.UtcNow;
+        sesion.Estaactiva          = false;
+        sesion.Activo              = false;
+        sesion.Revocadofecha       = fecha;
+        sesion.Revocadorazon       = razon.ToString(); // Convertir enum a string
+        sesion.Usuariomodificacion = "system";
+        sesion.Fechamodificacion   = fecha;
+        sesion.Ipmodificacion      = httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? "system";
+
+        await db.SaveChangesAsync(ct);
+    }
+    private async Task RevokeTokenFamilyInternalAsync(Guid familyId, int idUser, RevocacionRazonEnum razon, CancellationToken ct)
+    {
+        var usuario = await db.TblAutenticacionUsuarios
+            .FirstOrDefaultAsync(u => u.Id == idUser && u.Activo, ct)
+            ?? throw new UnauthorizedException("Usuario no encontrado o inactivo.");
+        
+        var usuarioEmail = usuario.Email.Contains('@') ? usuario.Email.Split('@')[0] : usuario.Email;
+
+        var tokensToRevoke = await db.TblAutenticacionRefreshTokens
+            .Where(r => r.Familiatoken == familyId && !r.Estarevocado)
+            .ToListAsync(ct);
+
+        if (tokensToRevoke.Count == 0)
+            return;
+
+        var sessionIds = tokensToRevoke.Select(t => t.Idsesion).Distinct().ToList();
+        var sessionsToRevoke = await db.TblAutenticacionSesions
+            .Where(s => sessionIds.Contains(s.Id) && s.Estaactiva)
+            .ToListAsync(ct);
+
+        foreach (var token in tokensToRevoke)
+        {
+            token.Estarevocado = true;
+            token.Activo       = false;
+        }
+
+        var fecha = DateTime.UtcNow;
+        foreach (var sesion in sessionsToRevoke)
+        {
+            sesion.Estaactiva          = false;
+            sesion.Activo              = false;
+            sesion.Revocadofecha       = fecha;
+            sesion.Revocadorazon       = razon.ToString();
+            sesion.Usuariomodificacion = usuarioEmail;
+            sesion.Fechamodificacion   = fecha;
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    private async Task<List<string>> LoadUserRolesAsync(int idUsuario, CancellationToken ct) =>
+        await db.TblAutenticacionUsuarioRols
+            .Where(ur => ur.Idusuario == idUsuario && ur.Activo)
+            .Include(ur => ur.IdrolNavigation)
+            .Select(ur => ur.IdrolNavigation.Nombre)
+            .ToListAsync(ct);
+
+    public async Task<string[]> GetUserModulesAsync(int idUsuario, CancellationToken ct)
+    {
+        var roleIds = await db.TblAutenticacionUsuarioRols
+            .Where(ur => ur.Idusuario == idUsuario && ur.Activo)
+            .Select(ur => ur.Idrol)
+            .ToListAsync(ct);
+
+        var query = from rp in db.TblAutenticacionRolPermisos
+                    join p in db.TblAutenticacionPermisos on rp.Idpermiso equals p.Id
+                    join m in db.TblAutenticacionModulos on p.Idmodulo equals m.Id
+                    where roleIds.Contains(rp.Idrol)
+                       && rp.Activo
+                       && p.Activo
+                       && m.Activo
+                    select m.Nombremodulo;
+
+        return await query.Distinct().ToArrayAsync(ct);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // FORGOT PASSWORD — Genera token temporal para recuperación de contraseña
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public async Task<ForgotPasswordResponse> ForgotPasswordAsync(
+        ForgotPasswordRequest request, 
+        string clientIp, 
+        CancellationToken ct)
+    {
+        var normalizedEmail = request.Email.ToLowerInvariant();
+
+        var user = await db.TblAutenticacionUsuarios
+            .Include(u => u.IdpersonaNavigation)
+            .FirstOrDefaultAsync(u => u.Email == normalizedEmail && u.Activo, ct);
+
+        var expirationTime = DateTime.UtcNow.AddMinutes(30);
+
+        // Por seguridad, no revelar si el email existe o no
+        if (user is null)
+        {
+            return new ForgotPasswordResponse(
+                "Si el email existe en nuestro sistema, recibirás un enlace para recuperar tu contraseña.",
+                expirationTime
+            );
+        }
+
+        // Generar token único
+        var token = GenerateRandomToken();
+        var tokenHash = passwordHasher.Hash(token);
+        var fecha = DateTime.UtcNow;
+
+        // Limpiar tokens previos no utilizados
+        var oldTokens = await db.TblAutenticacionPasswordResets
+            .Where(pr => pr.IdUsuario == user.Id && !pr.Utilizado)
+            .ToListAsync(ct);
+        db.TblAutenticacionPasswordResets.RemoveRange(oldTokens);
+
+        // Crear nuevo reset token
+        var resetToken = new TblAutenticacionPasswordReset
+        {
+            IdUsuario = user.Id,
+            TokenHash = tokenHash,
+            FechaExpiracion = expirationTime,
+            Utilizado = false,
+            Activo = true,
+            UsuarioCreacion = user.Email.Contains('@') ? user.Email.Split('@')[0] : user.Email,
+            FechaCreacion = fecha,
+            IpCreacion = clientIp
+        };
+
+        db.TblAutenticacionPasswordResets.Add(resetToken);
+        await db.SaveChangesAsync(ct);
+
+        // Enviar email con enlace de recuperación
+        await SendPasswordResetEmailAsync(user, token, ct);
+
+        return new ForgotPasswordResponse(
+            "Si el email existe en nuestro sistema, recibirás un enlace para recuperar tu contraseña.",
+            expirationTime
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // RESET PASSWORD — Valida token y actualiza contraseña
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public async Task<ResetPasswordResponse> ResetPasswordAsync(
+        ResetPasswordRequest request, 
+        string clientIp, 
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Token))
+            throw new InvalidOperationException("El token es requerido.");
+
+        // Validar que el token no haya sido usado y no haya expirado
+        var resetTokens = await db.TblAutenticacionPasswordResets
+            .Include(pr => pr.IdUsuarioNavigation)
+            .ThenInclude(u => u.IdpersonaNavigation)
+            .Where(pr => !pr.Utilizado && pr.FechaExpiracion > DateTime.UtcNow && pr.Activo)
+            .ToListAsync(ct);
+
+        if (resetTokens.Count == 0)
+            throw new InvalidOperationException("El enlace de recuperación es inválido o ha expirado.");
+
+        // Buscar el token que coincide usando comparación constante en tiempo
+        TblAutenticacionPasswordReset? resetToken = null;
+        foreach (var token in resetTokens)
+        {
+            if (ConstantTimeComparison(request.Token, token.TokenHash))
+            {
+                resetToken = token;
+                break;
+            }
+        }
+
+        if (resetToken is null)
+            throw new InvalidOperationException("El enlace de recuperación es inválido o ha expirado.");
+
+        var user = resetToken.IdUsuarioNavigation;
+        if (user is null || !user.Activo)
+            throw new InvalidOperationException("El usuario no existe o está inactivo.");
+
+        // Validar que la nueva contraseña no sea una de las últimas 5
+        var passwordHistory = await db.TblAutenticacionPasswordHistorials
+            .Where(ph => ph.Idusuario == user.Id)
+            .OrderByDescending(ph => ph.Fechacambio)
+            .Take(PASSWORD_HISTORY_LIMIT)
+            .ToListAsync(ct);
+
+        foreach (var historicalHash in passwordHistory)
+        {
+            if (passwordHasher.Verify(request.NewPassword, historicalHash.Hashpassword))
+                throw new InvalidOperationException(
+                    $"No puede reutilizar una de las últimas {PASSWORD_HISTORY_LIMIT} contraseñas.");
+        }
+
+        var newHash = passwordHasher.Hash(request.NewPassword);
+        var fecha = DateTime.UtcNow;
+        var userEmail = user.Email.Contains('@') ? user.Email.Split('@')[0] : "system";
+
+        // Actualizar contraseña
+        user.Hashpassword = newHash;
+        user.Fechamodificacion = fecha;
+        user.Usuariomodificacion = userEmail;
+        user.Debecambiarpassword = false;
+        user.Intentosfallidos = 0;
+        user.Bloqueadohasta = null;
+
+        // Registrar en historial
+        var historialEntry = new TblAutenticacionPasswordHistorial
+        {
+            Idusuario = user.Id,
+            Hashpassword = newHash,
+            Fechacambio = fecha,
+            Activo = true,
+            Usuariocreacion = userEmail,
+            Fechacreacion = fecha,
+            Ipcreacion = clientIp
+        };
+
+        // Marcar token como utilizado
+        resetToken.Utilizado = true;
+        resetToken.FechaUtilizacion = fecha;
+
+        db.TblAutenticacionPasswordHistorials.Add(historialEntry);
+        db.TblAutenticacionPasswordResets.Update(resetToken);
+        await db.SaveChangesAsync(ct);
+
+        // Enviar email de confirmación
+        await SendPasswordResetConfirmationEmailAsync(user, ct);
+
+        return new ResetPasswordResponse(
+            "Tu contraseña ha sido restablecida exitosamente. Puedes iniciar sesión con tu nueva contraseña.",
+            true
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Métodos privados de utilidad
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private string GenerateRandomToken()
+    {
+        const string validChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        var randomBytes = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+        var token = new StringBuilder(32);
+        foreach (var value in randomBytes)
+            token.Append(validChars[value % validChars.Length]);
+
+        return token.ToString();
+    }
+
+    private bool ConstantTimeComparison(string input, string hash)
+    {
+        try
+        {
+            return passwordHasher.Verify(input, hash);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private async Task SendPasswordResetEmailAsync(TblAutenticacionUsuario user, string token, CancellationToken ct)
+    {
+        try
+        {
+            var emailService = httpContextAccessor.HttpContext?.RequestServices.GetService(typeof(IEmailService)) as IEmailService;
+            var templateService = httpContextAccessor.HttpContext?.RequestServices.GetService(typeof(IEmailTemplateService)) as IEmailTemplateService;
+
+            if (emailService is null || templateService is null)
+            {
+                _logger.LogWarning("No se pudo obtener los servicios de email para enviar enlace de recuperación.");
+                return;
+            }
+
+            var userFullName = $"{user.IdpersonaNavigation?.Nombres} {user.IdpersonaNavigation?.Apellidos}".Trim();
+            var resetLink = $"{GetResetLink()}/reset?token={Uri.EscapeDataString(token)}";
+            var htmlBody = templateService.GeneratePasswordResetEmailBody(userFullName, resetLink);
+
+            await emailService.SendEmailAsync(
+                user.Email,
+                "[ISC Time Report] Recuperación de Contraseña",
+                htmlBody
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al enviar email de recuperación de contraseña al usuario {UserId}", user.Id);
+        }
+    }
+
+    private async Task SendPasswordResetConfirmationEmailAsync(TblAutenticacionUsuario user, CancellationToken ct)
+    {
+        try
+        {
+            var emailService = httpContextAccessor.HttpContext?.RequestServices.GetService(typeof(IEmailService)) as IEmailService;
+            var templateService = httpContextAccessor.HttpContext?.RequestServices.GetService(typeof(IEmailTemplateService)) as IEmailTemplateService;
+
+            if (emailService is null || templateService is null)
+            {
+                _logger.LogWarning("No se pudo obtener los servicios de email para enviar confirmación de cambio.");
+                return;
+            }
+
+            var userFullName = $"{user.IdpersonaNavigation?.Nombres} {user.IdpersonaNavigation?.Apellidos}".Trim();
+            var htmlBody = templateService.GeneratePasswordResetConfirmationEmailBody(userFullName);
+
+            await emailService.SendEmailAsync(
+                user.Email,
+                "[ISC Time Report] Contraseña Restablecida",
+                htmlBody
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al enviar email de confirmación de cambio de contraseña al usuario {UserId}", user.Id);
+        }
+    }
+
+    private string GetResetLink()
+    {
+        // Use FrontendUrl from configuration (EmailSettings:FrontendUrl)
+        var frontendUrl = _configuration["EmailSettings:FrontendUrl"] ?? "https://localhost:3000";
+        return frontendUrl.TrimEnd('/');
+    }
+}
