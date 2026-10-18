@@ -268,8 +268,9 @@ builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProv
 var app = builder.Build();
 
 // Asegura la configuración RBAC idempotente de Proveedores en bases ya creadas.
-using (var scope = app.Services.CreateScope())
+if (!string.IsNullOrWhiteSpace(defaultConnection))
 {
+    using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     await ProveedorPermissionsSeeder.EnsureAsync(db);
 }
@@ -341,4 +342,3 @@ app.MapCatalogosConfigEndpoints();
 app.MapProveedoresEndpoints();
 
 app.Run();
-
