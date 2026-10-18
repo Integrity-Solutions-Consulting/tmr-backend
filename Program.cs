@@ -58,7 +58,18 @@ using System.IO.Compression;
 using tmr_backend.Infrastructure.Extensions;
 using tmr_backend.Infrastructure.BackgroundServices;
 
-var builder = WebApplication.CreateBuilder(args);
+var databaseCommands = new[] { "--prepare-database", "--initialize-data", "--verify-database" };
+var requestedCommands = args.Where(databaseCommands.Contains).ToArray();
+if (requestedCommands.Length > 1)
+    throw new InvalidOperationException("Ejecute una sola etapa de base de datos por comando.");
+var builder = WebApplication.CreateBuilder(
+    args.Where(arg => !databaseCommands.Contains(arg)).ToArray());
+if (requestedCommands.Length == 1)
+{
+    await tmr_backend.Infrastructure.Database.Scripts.DatabaseInstaller.RunAsync(
+        requestedCommands[0], builder.Configuration);
+    return;
+}
 
 // =========================
 // SERVICES CONFIGURATION
@@ -98,6 +109,11 @@ JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 // ── Database Context ──
 builder.Services.AddScoped<AuditInterceptor>();
 var defaultConnection = builder.Configuration.GetConnectionString("DefaultConnection") ?? string.Empty;
+if (string.IsNullOrWhiteSpace(defaultConnection))
+    throw new InvalidOperationException(
+        "Falta la cadena de conexión de PostgreSQL. Configure ConnectionStrings__DefaultConnection " +
+        "en el entorno del contenedor (o DB_CONNECTION_STRING para Docker Compose).");
+
 builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
     options.UseNpgsql(defaultConnection)
            .AddInterceptors(sp.GetRequiredService<AuditInterceptor>()));
@@ -266,13 +282,6 @@ builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProv
 // =========================
 
 var app = builder.Build();
-
-// Asegura la configuración RBAC idempotente de Proveedores en bases ya creadas.
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    await ProveedorPermissionsSeeder.EnsureAsync(db);
-}
 
 app.UseResponseCompression();
 app.UseMiddleware<GlobalExceptionMiddleware>();

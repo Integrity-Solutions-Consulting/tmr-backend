@@ -18,6 +18,10 @@ RUN dotnet publish "tmr-backend.csproj" -c Release -o /app/publish /p:UseAppHost
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS final
 WORKDIR /app
 
+# es-ES se usa en las notificaciones; Npgsql puede negociar GSS/Kerberos.
+RUN apk add --no-cache icu-libs icu-data-full krb5-libs
+ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
+
 # Crear un usuario de sistema (no-root) para mejorar la seguridad
 RUN adduser -u 1000 --disabled-password --gecos "" appuser && chown -R appuser /app
 USER appuser

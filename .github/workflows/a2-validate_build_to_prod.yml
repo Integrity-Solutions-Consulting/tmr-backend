@@ -9,6 +9,24 @@ jobs:
   build-check:
     if: "!startsWith(github.head_ref, 'release-please--')"
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: tmr_ci
+          POSTGRES_USER: tmr_ci
+          # Credencial exclusiva del servicio efímero de este job.
+          POSTGRES_PASSWORD: tmr-ci-ephemeral-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tmr_ci -d tmr_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      # Nunca obtiene conexiones de Dokploy ni de secrets de bases reales.
+      ConnectionStrings__DefaultConnection: Host=127.0.0.1;Port=5432;Database=tmr_ci;Username=tmr_ci;Password=tmr-ci-ephemeral-only
 
     steps:
       - name: Checkout del codigo
@@ -40,20 +58,45 @@ jobs:
             echo "JWT_SECRET_KEY debe tener al menos 32 caracteres."
             exit 1
           fi
+      - name: Preparar e inicializar PostgreSQL vacío y comprobar repetición
+        env:
+          Bootstrap__AdminEmail: admin@ci.invalid
+          Bootstrap__AdminIdentification: CI-ADMIN
+          Bootstrap__AdminName: CI Administrator
+        run: |
+          export Bootstrap__AdminPassword="$(openssl rand -hex 24)"
+          for attempt in 1 2; do
+            docker run --rm --network host \
+              -e ConnectionStrings__DefaultConnection \
+              build-validation:pr-${{ github.event.pull_request.number }} --prepare-database
+            docker run --rm --network host \
+              -e ConnectionStrings__DefaultConnection \
+              -e Bootstrap__AdminEmail -e Bootstrap__AdminIdentification \
+              -e Bootstrap__AdminName -e Bootstrap__AdminPassword \
+              build-validation:pr-${{ github.event.pull_request.number }} --initialize-data
+          done
+          docker run --rm --network host \
+            -e ConnectionStrings__DefaultConnection \
+            build-validation:pr-${{ github.event.pull_request.number }} --verify-database
+
       - name: Levantar contenedor de prueba
         env:
           JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
         run: |
-          docker run -d --name build-validation-container \
-            -p 8080:8080 \
+          docker run -d --name build-validation-container --network host \
             -e "Jwt__SecretKey=${JWT_SECRET_KEY}" \
+            -e ConnectionStrings__DefaultConnection \
             build-validation:pr-${{ github.event.pull_request.number }}
 
       - name: Esperar a que el contenedor responda
         run: |
           echo "Esperando a que el contenedor esté listo..."
           for i in $(seq 1 30); do
-            if curl -s -o /dev/null http://localhost:8080/health/live; then
+            if [ "$(docker inspect -f '{{.State.Running}}' build-validation-container)" != true ]; then
+              docker logs build-validation-container
+              exit 1
+            fi
+            if curl --fail -s -o /dev/null http://localhost:8080/health/live; then
               echo "Contenedor respondiendo en /health/live."
               break
             fi
@@ -75,6 +118,9 @@ jobs:
             exit 1
           fi
           echo "Liveness check OK ($status)"
+
+      - name: Smoke test - readiness PostgreSQL
+        run: curl --fail --silent --show-error http://localhost:8080/health/ready
 
       - name: Limpiar contenedor
         if: always()
