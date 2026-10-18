@@ -39,4 +39,9 @@
     <Folder Include="wwwroot\" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Documentacion/Scripts_DB/*.sql"
+                      Exclude="Documentacion/Scripts_DB/06-*.sql" />
+  </ItemGroup>
+
 </Project>

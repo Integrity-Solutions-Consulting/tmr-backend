@@ -5,7 +5,7 @@ namespace tmr_backend.Infrastructure.Database.Seeders;
 
 /// <summary>
 /// Mantiene la configuración RBAC mínima del módulo Proveedores en instalaciones ya existentes.
-/// Solo inserta o reactiva sus propios registros, por lo que es seguro ejecutar al inicio.
+/// Solo se ejecuta explícitamente con --initialize-data, nunca durante el arranque web.
 /// </summary>
 public static class ProveedorPermissionsSeeder
 {
@@ -23,7 +23,7 @@ public static class ProveedorPermissionsSeeder
                 Nombremodulo = "Proveedores",
                 Rutamodulo = "/menu/proveedores",
                 Ordenvisualizacion = 8,
-                Idmodulopadre = 0,
+                Idmodulopadre = null,
                 Activo = true,
                 Usuariocreacion = UsuarioSistema,
                 Fechacreacion = DateTime.UtcNow,
