@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.4](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.4.3...v1.4.4) (2026-10-18)
+
+
+### Bug Fixes
+
+* **ci:** corrige validacion y prepara instalacion reproducible de TMR ([4c59410](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/4c594102a9c51de277b4f622384e4db918b66391))
+* **ci:** corrige validacion y prepara instalacion reproducible de TMR ([0e99977](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/0e99977d210f4b042624392c1406ff822e177041))
+
 ## [1.4.3](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.4.2...v1.4.3) (2026-10-15)
 
 
