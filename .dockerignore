@@ -3,3 +3,8 @@ obj/
 .vs/
 .vscode/
 .git/
+.env
+.env.*
+!.env.example
+buildtmp/
+artifacts/
