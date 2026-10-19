@@ -36,7 +36,12 @@ public record ResumenHorasDto(
 public record ProyectoLookupDto(
     int Id,
     string Nombre,
-    string? Codigo
+    string? Codigo,
+    // sm - Vigencia del colaborador en el proyecto (para validar la fecha en Agregar actividad al elegirla):
+    // entrada y salida de su asignación (null = sin límite) y su salida de la empresa si está Inactivo.
+    DateOnly? FechaEntrada = null,
+    DateOnly? FechaSalida = null,
+    DateOnly? FechaSalidaColaborador = null
 );
 
 public record CalendarioActividadDto(

@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using tmr_backend.Features.TimeReport.Services;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
 using tmr_backend.Infrastructure.Shared;
@@ -104,6 +105,8 @@ public sealed class WeeklyNotificationService : BackgroundService
         // 2. Obtener colaboradores activos
         var empleados = await db.TblAdministracionEmpleados
             .Include(e => e.IdpersonaNavigation)
+            // sm - Se incluye el tipo de contrato para saber si es pasante (jornada de 6 h).
+            .Include(e => e.IdtipocontratoNavigation)
             .Where(e => e.Activo)
             .ToListAsync(ct);
 
@@ -127,6 +130,18 @@ public sealed class WeeklyNotificationService : BackgroundService
                 g => (g.Key.Idempleado, g.Key.Fechaactividad),
                 g => g.Sum(a => a.Cantidadhoras)
             );
+
+        // sm - Vigencias (Entrada/Salida) de las asignaciones: misma regla que Seguimiento, solo se exigen horas
+        // de los días en que el colaborador estaba asignado a algún proyecto.
+        var vigenciasPorEmpleado = (await db.TblTimeReportAsignacionProyectos
+                .AsNoTracking()
+                .Where(ep => ep.Activo && ep.Idempleado.HasValue && empIds.Contains(ep.Idempleado.Value))
+                .Select(ep => new { ep.Idempleado, ep.Fechaasignacion, ep.Fechafinasignacion })
+                .ToListAsync(ct))
+            .ToLookup(ep => ep.Idempleado!.Value, ep => new VigenciaAsignacion(ep.Fechaasignacion, ep.Fechafinasignacion));
+
+        // sm - Jornada del contrato vigente cada día (8 h, o 6 h si es Pasantía), igual que Seguimiento.
+        var jornadas = await CalculoHorasPeriodo.CargarJornadasAsync(db, empIds);
 
         int totalCorreosEnviados = 0;
 
@@ -163,6 +178,9 @@ public sealed class WeeklyNotificationService : BackgroundService
             decimal totalRegistered = 0m;
 
             var culture = new CultureInfo("es-ES");
+            var vigencias = vigenciasPorEmpleado[empleado.Id].ToList();
+            var jornadasEmpleado = jornadas[empleado.Id].ToList();
+            var jornadaActual = CalculoHorasPeriodo.HorasJornada(empleado);
 
             for (var date = startCheck; date <= endCheck; date = date.AddDays(1))
             {
@@ -170,18 +188,20 @@ public sealed class WeeklyNotificationService : BackgroundService
                 var isWeekend = dayOfWeek == DayOfWeek.Saturday || dayOfWeek == DayOfWeek.Sunday;
                 var isFeriado = feriados.Contains(date);
 
-                if (!isWeekend && !isFeriado)
+                if (!isWeekend && !isFeriado && CalculoHorasPeriodo.EstaVigente(date, vigencias))
                 {
-                    totalExpected += 8m;
+                    // sm - Antes era 8 h fijas para todos, también pasantes.
+                    var jornadaDia = CalculoHorasPeriodo.JornadaEn(date, jornadasEmpleado, jornadaActual);
+                    totalExpected += jornadaDia;
 
                     horasPorDia.TryGetValue((empleado.Id, date), out var logged);
                     totalRegistered += logged;
 
-                    if (logged < 8m)
+                    if (logged < jornadaDia)
                     {
                         var diaSemana = culture.DateTimeFormat.GetDayName(dayOfWeek);
                         diaSemana = culture.TextInfo.ToTitleCase(diaSemana);
-                        diasIncompletos.Add((date, diaSemana, 8m - logged));
+                        diasIncompletos.Add((date, diaSemana, jornadaDia - logged));
                     }
                 }
             }

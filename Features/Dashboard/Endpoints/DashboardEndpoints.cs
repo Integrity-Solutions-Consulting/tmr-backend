@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using tmr_backend.Features.Dashboard.Domain;
 using tmr_backend.Features.Dashboard.DTOs;
+using tmr_backend.Features.TimeReport.Services;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
 
@@ -145,6 +146,8 @@ public static class DashboardEndpoints
             }
 
             var empleado = await db.TblAdministracionEmpleados
+                // sm - Se incluye el tipo de contrato para saber si es pasante (jornada de 6 h).
+                .Include(e => e.IdtipocontratoNavigation)
                 .FirstOrDefaultAsync(e => e.Idpersona == idPersona && e.Activo);
 
             if (empleado == null)
@@ -204,6 +207,11 @@ public static class DashboardEndpoints
             var diasIncompletos = new List<object>();
             decimal totalExpected = 0m;
             decimal totalRegistered = 0m;
+            // sm - Misma regla que Seguimiento: solo días entre Entrada y Salida de alguna de sus asignaciones.
+            var vigencias = await CalculoHorasPeriodo.CargarVigenciasAsync(db, empId);
+            // sm - Jornada del contrato vigente cada día (8 h, o 6 h si es Pasantía), igual que Seguimiento.
+            var jornadas = (await CalculoHorasPeriodo.CargarJornadasAsync(db, [empId]))[empId].ToList();
+            var jornadaActual = CalculoHorasPeriodo.HorasJornada(empleado);
 
             if (startCheck <= endCheck)
             {
@@ -213,20 +221,22 @@ public static class DashboardEndpoints
                     var isWeekend = dayOfWeek == DayOfWeek.Saturday || dayOfWeek == DayOfWeek.Sunday;
                     var isFeriado = feriados.Contains(date);
 
-                    if (!isWeekend && !isFeriado)
+                    if (!isWeekend && !isFeriado && CalculoHorasPeriodo.EstaVigente(date, vigencias))
                     {
-                        totalExpected += 8m;
+                        // sm - Antes era 8 h fijas para todos, también pasantes.
+                        var jornadaDia = CalculoHorasPeriodo.JornadaEn(date, jornadas, jornadaActual);
+                        totalExpected += jornadaDia;
 
                         horasPorDia.TryGetValue(date, out var logged);
                         totalRegistered += logged;
 
-                        if (logged < 8m)
+                        if (logged < jornadaDia)
                         {
                             diasIncompletos.Add(new
                             {
                                 Fecha = date,
                                 HorasRegistradas = logged,
-                                HorasFaltantes = 8m - logged
+                                HorasFaltantes = jornadaDia - logged
                             });
                         }
                     }
@@ -337,6 +347,8 @@ public static class DashboardEndpoints
 
             var empleados = await db.TblAdministracionEmpleados
                 .Include(e => e.IdpersonaNavigation)
+                // sm - Se incluye el tipo de contrato para saber si es pasante (jornada de 6 h).
+                .Include(e => e.IdtipocontratoNavigation)
                 .Where(e => e.Activo && collaboratorIds.Contains(e.Id))
                 .ToListAsync();
 
@@ -351,6 +363,9 @@ public static class DashboardEndpoints
                     .Where(a => a.Activo && empIds.Contains(a.Idempleado) && a.Fechaactividad >= startDate && a.Fechaactividad <= endDate)
                     .Select(a => new { IdEmpleado = a.Idempleado, a.Fechaactividad, a.Cantidadhoras })
                     .ToListAsync();
+
+                // sm - Jornada del contrato vigente cada día (8 h, o 6 h si es Pasantía), igual que Seguimiento.
+                var jornadas = await CalculoHorasPeriodo.CargarJornadasAsync(db, empIds);
 
                 var horasPorDia = actividades
                     .GroupBy(a => new { a.IdEmpleado, a.Fechaactividad })
@@ -383,6 +398,8 @@ public static class DashboardEndpoints
                     var diasIncompletos = new List<DiaIncompletoDto>();
                     decimal totalExpected = 0m;
                     decimal totalRegistered = 0m;
+                    var jornadasEmpleado = jornadas[empId].ToList();
+                    var jornadaActual = CalculoHorasPeriodo.HorasJornada(empleado);
 
                     for (var date = startCheck; date <= endCheck; date = date.AddDays(1))
                     {
@@ -392,17 +409,19 @@ public static class DashboardEndpoints
 
                         if (!isWeekend && !isFeriado)
                         {
-                            totalExpected += 8m;
+                            // sm - Antes era 8 h fijas para todos, también pasantes.
+                            var jornadaDia = CalculoHorasPeriodo.JornadaEn(date, jornadasEmpleado, jornadaActual);
+                            totalExpected += jornadaDia;
 
                             horasPorDia.TryGetValue((empId, date), out var logged);
                             totalRegistered += logged;
 
-                            if (logged < 8m)
+                            if (logged < jornadaDia)
                             {
                                 diasIncompletos.Add(new DiaIncompletoDto(
                                     date,
                                     logged,
-                                    8m - logged
+                                    jornadaDia - logged
                                 ));
                             }
                         }
