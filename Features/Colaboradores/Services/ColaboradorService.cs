@@ -515,6 +515,36 @@ public sealed class ColaboradorService(
         if (causaSalida is null)
             throw new InvalidOperationException("La causa de salida seleccionada no es válida.");
 
+        // sm - Asignaciones actuales del colaborador en proyectos (versión vigente de cada fila).
+        var asignaciones = await db.TblTimeReportAsignacionProyectos
+            .Include(a => a.IdproyectoNavigation)
+            .Where(a => a.Activo && a.Idempleado == id)
+            .ToListAsync(ct);
+
+        // sm - No se puede registrar una salida anterior a la entrada de un proyecto: la salida del proyecto quedaría
+        // antes que su entrada. Primero se corrige la asignación en Proyectos.
+        var posterior = asignaciones
+            .Where(a => a.Fechaasignacion.HasValue && a.Fechaasignacion.Value > request.FechaSalida)
+            .OrderBy(a => a.Fechaasignacion)
+            .FirstOrDefault();
+        if (posterior is not null)
+            throw new InvalidOperationException(
+                $"Tiene asignación en el proyecto \"{posterior.IdproyectoNavigation.Nombre}\" desde el " +
+                $"{posterior.Fechaasignacion:dd/MM/yyyy}, posterior a la fecha de salida. Corrija la asignación en Proyectos primero.");
+
+        // sm - Al registrar la salida, los proyectos donde sigue vigente (sin salida, o con salida posterior) quedan con
+        // la misma fecha de salida y en estado Inactivo. Así Seguimiento y Dashboard dejan de exigirle horas desde ese día.
+        // Los proyectos que ya terminaron antes no se tocan.
+        foreach (var asignacion in asignaciones.Where(a =>
+                     !a.Fechafinasignacion.HasValue || a.Fechafinasignacion.Value > request.FechaSalida))
+        {
+            asignacion.Fechafinasignacion = request.FechaSalida;
+            asignacion.Estadoasignacion = false;
+            asignacion.Usuariomodificacion = UsuarioSistema;
+            asignacion.Fechamodificacion = DateTime.UtcNow;
+            asignacion.Ipmodificacion = IpSistema;
+        }
+
         empleado.Activo = false;
         empleado.Fechaterminacion = request.FechaSalida;
         empleado.IdTipoSalida = request.IdTipoSalida;

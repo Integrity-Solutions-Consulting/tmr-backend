@@ -139,21 +139,50 @@ public static class TimeReportEndpoints
 
             if (usuarioDb == null) return Results.NotFound("Usuario no encontrado.");
 
+            // sm - También colaboradores con salida registrada: siguen completando sus actividades hasta la salida (EmpleadoSesion).
             var empleado = await db.TblAdministracionEmpleados
                 .AsNoTracking()
-                .FirstOrDefaultAsync(e => e.Idpersona == usuarioDb.Idpersona && e.Activo);
+                // .FirstOrDefaultAsync(e => e.Idpersona == usuarioDb.Idpersona && e.Activo);
+                .DeLaPersona(usuarioDb.Idpersona)
+                .FirstOrDefaultAsync();
 
             if (empleado == null) return Results.NotFound("Empleado no encontrado.");
 
             // sm - Confirmado (2026-10-02): nadie debe cargar horas en un proyecto donde no está asignado. Antes Administrador,
             // Recursos Humanos, Gerente y Líder veían todos los proyectos (o los que lideran) al registrar SUS horas.
             // Esta lista se usa para registrar actividades y para el reporte propio: ahora es la misma para todos los roles.
-            var proyectosAsignados = await db.TblTimeReportAsignacionProyectos
+            // sm - Se agrega la vigencia (entrada/salida) de la asignación y la salida del colaborador, para que Agregar
+            // actividad avise al elegir una fecha fuera de ella. Con varias filas del mismo proyecto se toma la entrada
+            // más temprana y la salida más tardía (sin salida en alguna = sin límite); el backend valida exacto al guardar.
+            // var proyectosAsignados = await db.TblTimeReportAsignacionProyectos
+            //     .AsNoTracking()
+            //     .Where(ep => ep.Idempleado == empleado.Id && ep.Activo && ep.IdproyectoNavigation.Activo)
+            //     .Select(ep => new ProyectoLookupDto(ep.Idproyecto, ep.IdproyectoNavigation.Nombre, ep.IdproyectoNavigation.Codigo))
+            //     .Distinct()
+            //     .ToListAsync();
+            var asignacionesEmpleado = await db.TblTimeReportAsignacionProyectos
                 .AsNoTracking()
                 .Where(ep => ep.Idempleado == empleado.Id && ep.Activo && ep.IdproyectoNavigation.Activo)
-                .Select(ep => new ProyectoLookupDto(ep.Idproyecto, ep.IdproyectoNavigation.Nombre, ep.IdproyectoNavigation.Codigo))
-                .Distinct()
+                .Select(ep => new
+                {
+                    ep.Idproyecto,
+                    ep.IdproyectoNavigation.Nombre,
+                    ep.IdproyectoNavigation.Codigo,
+                    ep.Fechaasignacion,
+                    ep.Fechafinasignacion
+                })
                 .ToListAsync();
+            var salidaColaborador = empleado.Activo ? null : empleado.Fechaterminacion;
+            var proyectosAsignados = asignacionesEmpleado
+                .GroupBy(a => a.Idproyecto)
+                .Select(g => new ProyectoLookupDto(
+                    g.Key,
+                    g.First().Nombre,
+                    g.First().Codigo,
+                    g.Any(a => a.Fechaasignacion == null) ? null : g.Min(a => a.Fechaasignacion),
+                    g.Any(a => a.Fechafinasignacion == null) ? null : g.Max(a => a.Fechafinasignacion),
+                    salidaColaborador))
+                .ToList();
             return Results.Ok(proyectosAsignados);
 
             // sm - Lógica anterior por rol (comentada por el motivo de arriba):
@@ -275,7 +304,10 @@ public static class TimeReportEndpoints
                 .ToListAsync();
 
             var jornadas = await CalculoHorasPeriodo.CargarJornadasAsync(db, [idEmpleado]);
-            var calculo = CalculoHorasPeriodo.Calcular(empleado, inicio, fin, actividadesPeriodo, feriadosPeriodo, hoyEcuador, jornadas[idEmpleado]);
+            // sm - Misma regla que la fila de Seguimiento: solo días entre Entrada y Salida de la asignación (del proyecto
+            // pedido, o de cualquiera de sus proyectos si no se manda idProyecto).
+            var vigencias = await CalculoHorasPeriodo.CargarVigenciasAsync(db, idEmpleado, idProyecto);
+            var calculo = CalculoHorasPeriodo.Calcular(empleado, inicio, fin, actividadesPeriodo, feriadosPeriodo, hoyEcuador, jornadas[idEmpleado], vigencias);
             return Results.Ok(new ResumenHorasDto(calculo.HorasPorRegistrar, calculo.HorasRegistradas, calculo.PromedioPorDia));
 
             // sm - Se comenta el resumen anterior: usaba 8 h para todos (también pasantes), contaba el mes completo
@@ -347,6 +379,10 @@ public static class TimeReportEndpoints
                 return Results.BadRequest(new { Mensaje = "No puede registrar más de 24 horas en un mismo día." });
             }
 
+            // sm - Con salida registrada solo puede registrar hasta su fecha de salida (también actividades sin proyecto).
+            if (await ValidarFechaSalidaAsync(db, request.IdEmpleado, request.FechaActividad) is { } errorSalida)
+                return Results.BadRequest(new { Mensaje = errorSalida });
+
             // sm - Solo se registran horas en proyectos donde el colaborador está asignado y dentro de las fechas de la
             // asignación (primero se asigna y luego se carga; no al revés).
             if (request.IdProyecto.HasValue
@@ -393,6 +429,11 @@ public static class TimeReportEndpoints
             {
                 return Results.BadRequest(new { Mensaje = "No puede registrar más de 24 horas en un mismo día." });
             }
+
+            // sm - Con salida registrada no se puede mover una actividad a una fecha posterior a la salida.
+            if (request.FechaActividad != actividad.Fechaactividad
+                && await ValidarFechaSalidaAsync(db, actividad.Idempleado, request.FechaActividad) is { } errorSalida)
+                return Results.BadRequest(new { Mensaje = errorSalida });
 
             // sm - Si se cambia el proyecto o la fecha, deben corresponder a una asignación vigente en esa fecha. Si no cambian,
             // se permite editar (hay actividades antiguas de asignaciones que ya no están activas y deben poder corregirse).
@@ -457,13 +498,18 @@ public static class TimeReportEndpoints
                 // .Where(e => e.Activo)
                 // sm - Nuevo filtro: todos los activos + los inactivos cuya fecha de terminación está dentro del rango filtrado
                 // (fechas exactas del rango). Inactivos sin fecha de terminación o que salieron fuera del rango no aparecen.
+                // sm - Se comenta el límite superior: quien salió DESPUÉS del rango también trabajó en él (p. ej. salió
+                // el 10/10 y se filtra septiembre) y debe aparecer. Basta con que la salida sea igual o posterior al inicio.
                 .Where(e => e.Activo
                     || (e.Fechaterminacion.HasValue
                         && e.Fechaterminacion.Value >= filtro.FechaDesde
-                        && e.Fechaterminacion.Value <= filtro.FechaHasta))
+                        /* && e.Fechaterminacion.Value <= filtro.FechaHasta */))
                 .Include(e => e.IdpersonaNavigation)
                 // sm - Se incluye el tipo de contrato para saber si es pasante (jornada de 6 h).
                 .Include(e => e.IdtipocontratoNavigation)
+                // sm - Tipo y causa de salida para las descargas de Seguimiento.
+                .Include(e => e.TipoSalidaNavigation)
+                .Include(e => e.CausaSalidaNavigation)
                 .Include(e => e.TblTimeReportAsignacionProyectos.Where(ep => ep.Activo
                         && (ep.Fechaasignacion == null || ep.Fechaasignacion <= filtro.FechaHasta)
                         && (ep.Fechafinasignacion == null || ep.Fechafinasignacion >= filtro.FechaDesde)))
@@ -513,6 +559,11 @@ public static class TimeReportEndpoints
             {
                 var empActividades = actividades.Where(a => a.Idempleado == e.Id).ToList();
                 var nombreCompleto = e.IdpersonaNavigation.Nombres + " " + e.IdpersonaNavigation.Apellidos;
+                // sm - Datos de salida del colaborador (solo si está Inactivo) para las descargas.
+                var fechaSalida = e.Activo ? null : e.Fechaterminacion;
+                var tipoSalida = e.Activo ? null : e.TipoSalidaNavigation?.Valor;
+                var causaSalida = e.Activo ? null : e.CausaSalidaNavigation?.Valor;
+                var motivoSalida = e.Activo ? null : e.ComentarioSalida;
 
                 // Project details (sm - asignaciones ya filtradas a las activas del rango en el Include)
                 var empProys = e.TblTimeReportAsignacionProyectos.ToList();
@@ -537,7 +588,12 @@ public static class TimeReportEndpoints
                         calculoSinProyecto.HorasPorRegistrar,
                         calculoSinProyecto.DiasLaborables,
                         calculoSinProyecto.HorasRegistradas,
-                        null
+                        null,
+                        ColaboradorActivo: e.Activo,
+                        FechaSalida: fechaSalida,
+                        TipoSalida: tipoSalida,
+                        CausaSalida: causaSalida,
+                        MotivoSalida: motivoSalida
                     ));
                     continue;
                 }
@@ -558,7 +614,10 @@ public static class TimeReportEndpoints
                     // antes de pasarlas a CalculoHorasPeriodo), para que la jornada de 8 h (o 6 h pasante) se exija
                     // por proyecto y no se mezcle con las horas de otros proyectos del mismo colaborador.
                     var actividadesProyecto = empActividades.Where(a => a.Idproyecto == g.Key).ToList();
-                    var calculo = CalculoHorasPeriodo.Calcular(e, filtro.FechaDesde, filtro.FechaHasta, actividadesProyecto, feriados, hoyEcuador, jornadas[e.Id]);
+                    // sm - Solo se exigen horas entre la Entrada y la Salida del recurso en ESTE proyecto: si quedó
+                    // Inactivo (o entró) dentro del rango, los días fuera de su asignación no suman pendientes.
+                    var vigencias = g.Select(ep => new VigenciaAsignacion(ep.Fechaasignacion, ep.Fechafinasignacion)).ToList();
+                    var calculo = CalculoHorasPeriodo.Calcular(e, filtro.FechaDesde, filtro.FechaHasta, actividadesProyecto, feriados, hoyEcuador, jornadas[e.Id], vigencias);
 
                     var proyectoDto = new SeguimientoProyectoDto(g.Key, g.First().IdproyectoNavigation.Nombre, clienteNombre, liderNombre, calculo.HorasRegistradas);
 
@@ -579,7 +638,14 @@ public static class TimeReportEndpoints
                         // sm - Valores para la métrica "Promedio por día" (horas en días laborables ÷ días laborables del periodo).
                         calculo.DiasLaborables,
                         calculo.HorasRegistradas,
-                        new List<SeguimientoProyectoDto> { proyectoDto }
+                        new List<SeguimientoProyectoDto> { proyectoDto },
+                        ColaboradorActivo: e.Activo,
+                        FechaSalida: fechaSalida,
+                        TipoSalida: tipoSalida,
+                        CausaSalida: causaSalida,
+                        MotivoSalida: motivoSalida,
+                        // sm - Salida del proyecto: si alguna asignación del rango no tiene salida, sigue vigente (null).
+                        SalidaProyecto: g.Any(ep => ep.Fechafinasignacion == null) ? null : g.Max(ep => ep.Fechafinasignacion)
                     ));
                 }
             }
@@ -711,6 +777,12 @@ public static class TimeReportEndpoints
                "Si trabajó en esa fecha, pida a su líder que corrija la fecha de asignación.";
     }
 
+    private static async Task<string?> ValidarFechaSalidaAsync(ApplicationDbContext db, int idEmpleado, DateOnly fecha)
+    {
+        var empleado = await db.TblAdministracionEmpleados.AsNoTracking().FirstOrDefaultAsync(e => e.Id == idEmpleado);
+        return empleado is null ? null : EmpleadoSesion.ErrorFechaPosteriorSalida(empleado, fecha);
+    }
+
     private static async Task<int?> ObtenerEmpleadoSesionAsync(ClaimsPrincipal user, ApplicationDbContext db)
     {
         var sub = user.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value
@@ -723,8 +795,10 @@ public static class TimeReportEndpoints
             .FirstOrDefaultAsync();
         if (idPersona is null) return null;
 
+        // sm - También colaboradores con salida registrada: siguen completando sus actividades hasta la salida (EmpleadoSesion).
         return await db.TblAdministracionEmpleados
-            .Where(e => e.Idpersona == idPersona && e.Activo)
+            // .Where(e => e.Idpersona == idPersona && e.Activo)
+            .DeLaPersona(idPersona)
             .Select(e => (int?)e.Id)
             .FirstOrDefaultAsync();
     }

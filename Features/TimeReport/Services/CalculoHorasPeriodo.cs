@@ -7,6 +7,13 @@ namespace tmr_backend.Features.TimeReport.Services;
 // sm - Jornada vigente en un rango de fechas, según el historial de tipo de contrato (script 11).
 public sealed record PeriodoJornada(DateOnly Desde, DateOnly? Hasta, decimal Jornada);
 
+// sm - Vigencia de una asignación a proyecto (Entrada/Salida). Null = sin límite por ese lado.
+public sealed record VigenciaAsignacion(DateOnly? Desde, DateOnly? Hasta)
+{
+    public bool Incluye(DateOnly dia) =>
+        (Desde is null || Desde.Value <= dia) && (Hasta is null || Hasta.Value >= dia);
+}
+
 /// <summary>
 /// sm - Resultado del cálculo de horas de un colaborador en un periodo (misma regla para Seguimiento y Actividades).
 /// </summary>
@@ -61,9 +68,24 @@ public static class CalculoHorasPeriodo
     public static decimal JornadaEn(DateOnly dia, IEnumerable<PeriodoJornada>? jornadas, decimal jornadaActual) =>
         jornadas?.FirstOrDefault(j => j.Desde <= dia && (j.Hasta is null || j.Hasta >= dia))?.Jornada ?? jornadaActual;
 
+    // sm - Un día cuenta si cae dentro de alguna vigencia de asignación. Sin vigencias (null o vacía) no se recorta:
+    // es el caso "Sin Proyecto" de Seguimiento, que se mide contra todo el periodo.
+    public static bool EstaVigente(DateOnly dia, IReadOnlyCollection<VigenciaAsignacion>? vigencias) =>
+        vigencias is null || vigencias.Count == 0 || vigencias.Any(v => v.Incluye(dia));
+
+    // sm - Vigencias (Entrada/Salida) de las asignaciones actuales de un empleado, opcionalmente de un solo proyecto.
+    public static async Task<List<VigenciaAsignacion>> CargarVigenciasAsync(ApplicationDbContext db, int idEmpleado, int? idProyecto = null) =>
+        await db.TblTimeReportAsignacionProyectos
+            .AsNoTracking()
+            .Where(ep => ep.Activo && ep.Idempleado == idEmpleado && (idProyecto == null || ep.Idproyecto == idProyecto))
+            .Select(ep => new VigenciaAsignacion(ep.Fechaasignacion, ep.Fechafinasignacion))
+            .ToListAsync();
+
     // sm - Regla de negocio por colaborador:
     // - Periodo = rango pedido, desde su fecha de ingreso y hasta su fecha de salida si caen dentro del rango,
     //   y nunca después de hoy (fecha de Ecuador): los días futuros del rango no se cuentan.
+    // - Vigencias de asignación (opcional): solo cuentan los días entre la Entrada y la Salida del recurso en el
+    //   proyecto. Si salió (Inactivo) o entró dentro del rango, solo se le exigen horas de los días que estuvo.
     // - Días laborables = lunes a viernes del periodo, sin feriados. Sábados, domingos y feriados no cuentan.
     // - Jornada mínima = 8 h por día; 6 h si el tipo de contrato es Pasantía (código PAS).
     // - Días con reporte = días laborables con horas registradas >= jornada.
@@ -80,7 +102,8 @@ public static class CalculoHorasPeriodo
         IEnumerable<TblTimeReportActividadDiarium> actividades,
         ICollection<DateOnly> feriados,
         DateOnly hoy,
-        IEnumerable<PeriodoJornada>? jornadas = null)
+        IEnumerable<PeriodoJornada>? jornadas = null,
+        IReadOnlyCollection<VigenciaAsignacion>? vigencias = null)
     {
         var horasJornada = HorasJornada(empleado);
         var historial = jornadas?.ToList();
@@ -110,6 +133,8 @@ public static class CalculoHorasPeriodo
             var diaSemana = dia.ToDateTime(TimeOnly.MinValue).DayOfWeek;
             if (diaSemana == DayOfWeek.Saturday || diaSemana == DayOfWeek.Sunday || feriados.Contains(dia))
                 continue;
+            // sm - Días antes de la Entrada o después de la Salida del proyecto no se exigen.
+            if (!EstaVigente(dia, vigencias)) continue;
 
             diasLaborables++;
             horasPorDia.TryGetValue(dia, out var horasDia);
