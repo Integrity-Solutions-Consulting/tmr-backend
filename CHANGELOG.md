@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.5](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.4.4...v1.4.5) (2026-10-19)
+
+
+### Bug Fixes
+
+* Mejoras en exportación Excel/PDF, seguimiento y gestión de actividades y bajas de colaboradores ([2458d72](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/2458d72defeccc4887c7b0e87162e56021d6db60))
+* Mejoras en Seguimiento, reportes y registro de actividades ([4d9cc36](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/4d9cc3610f7a2251eb08079b88444df5641dc9c6))
+
 ## [1.4.4](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.4.3...v1.4.4) (2026-10-18)
 
 
