@@ -287,7 +287,7 @@ public sealed class EnviarCorreoHandler : IEventHandler<HorasFaltantesDetectadas
     {
         var configurada = _configuration["Apprise:LogoUrl"];
         var url = string.IsNullOrWhiteSpace(configurada)
-            ? $"{(_configuration["EmailSettings:FrontendUrl"] ?? "http://localhost:3000").TrimEnd('/')}/assets/img/logo-isc.png"
+            ? $"{(_configuration["EmailSettings:FrontendUrl"] ?? "http://localhost:3000").TrimEnd('/')}/assets/imagenes/logo_isc2.png"
             : configurada;
         return WebUtility.HtmlEncode(url);
     }
