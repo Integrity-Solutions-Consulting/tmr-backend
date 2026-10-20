@@ -57,6 +57,8 @@ using Microsoft.AspNetCore.ResponseCompression;
 using System.IO.Compression;
 using tmr_backend.Infrastructure.Extensions;
 using tmr_backend.Infrastructure.BackgroundServices;
+using tmr_backend.Features.Notificaciones;
+using tmr_backend.Features.Notificaciones.Presentation.Endpoint;
 
 var databaseCommands = new[] { "--prepare-database", "--initialize-data", "--verify-database" };
 var requestedCommands = args.Where(databaseCommands.Contains).ToArray();
@@ -276,6 +278,12 @@ builder.Services.AddAuthorization(options =>
         .Build();
 });
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
+// =========================
+// NOTIFICACIONES MODULE
+// =========================
+builder.Services.AddMessaging();
+builder.Services.AddNotificacionesModule(builder.Configuration);
+builder.Services.AddNotificacionesQuartz(builder.Configuration);
 
 // =========================
 // PIPELINE CONFIGURATION
@@ -348,6 +356,6 @@ app.MapRolesConfigEndpoints();
 app.MapDiasFestivosEndpoints();
 app.MapCatalogosConfigEndpoints();
 app.MapProveedoresEndpoints();
-
+app.MapNotificacionesEndpoints();
 app.Run();
 

@@ -11,6 +11,8 @@ using tmr_backend.Features.Proyectos.Domain;
 using tmr_backend.Features.Reportes.Domain;
 using tmr_backend.Features.TimeReport.Domain;
 using tmr_backend.Features.Lideres.Domain;
+using tmr_backend.Features.Notificaciones.Domain;
+using tmr_backend.Infrastructure.Messaging;
 
 
 namespace tmr_backend.Infrastructure.Database;
@@ -99,6 +101,9 @@ public partial class ApplicationDbContext : DbContext
     public DbSet<Proyecto> Proyectos { get; set; } = null!;
     public DbSet<Reporte> Reportes { get; set; } = null!;
     public DbSet<RegistroTiempo> RegistrosTiempo { get; set; } = null!;
+    public DbSet<NotificacionEnvio> NotificacionesEnvio { get; set; } = null!;
+    public DbSet<NotificacionFechaCorte> NotificacionesFechaCorte { get; set; } = null!;
+    public DbSet<EventoOutbox> EventosOutbox { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -2479,7 +2484,167 @@ public partial class ApplicationDbContext : DbContext
             .OnDelete(DeleteBehavior.SetNull);
 
 
+ modelBuilder.Entity<NotificacionEnvio>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("pk_notificacion_envio");
+
+            entity.ToTable("notificacion_envio", "notificacion");
+
+            entity.HasIndex(e => new { e.IdEmpleado, e.FechaCorte }, "uq_idx_notificacion_envio_auto")
+                .IsUnique()
+                .HasFilter("origen = 'Automatico'");
+
+            entity.Property(e => e.Id)
+                .UseIdentityByDefaultColumn()
+                .HasColumnName("id");
+
+            entity.Property(e => e.IdEmpleado)
+                .HasColumnName("id_empleado");
+
+            entity.Property(e => e.InicioPeriodo)
+                .HasColumnName("inicio_periodo");
+
+            entity.Property(e => e.FinPeriodo)
+                .HasColumnName("fin_periodo");
+
+            entity.Property(e => e.FechaCorte)
+                .HasColumnName("fecha_corte");
+
+            entity.Property(e => e.Origen)
+                .HasConversion<string>()
+                .HasMaxLength(20)
+                .HasColumnName("origen");
+
+            entity.Property(e => e.Estado)
+                .HasConversion<string>()
+                .HasMaxLength(20)
+                .HasColumnName("estado");
+
+            entity.Property(e => e.HorasFaltantes)
+                .HasPrecision(6, 2)
+                .HasColumnName("horas_faltantes");
+
+            entity.Property(e => e.IdUsuarioEjecutor)
+                .HasColumnName("id_usuario_ejecutor");
+
+            // Script 17-Inv_tmr_db_notificacion_envio_proyecto.sql
+            entity.Property(e => e.IdProyecto)
+                .HasColumnName("id_proyecto");
+
+            entity.Property(e => e.FechaEnvio)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("fecha_envio");
+
+            entity.Property(e => e.DetalleError)
+                .HasColumnName("detalle_error");
+
+            entity.HasOne(d => d.Empleado)
+                .WithMany()
+                .HasForeignKey(d => d.IdEmpleado)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_notificacion_envio_empleado");
+        });
+
+        // ================================================================
+        // 2. NOTIFICACION_FECHA_CORTE (Flujo 3)
+        // ================================================================
+        modelBuilder.Entity<NotificacionFechaCorte>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("pk_notificacion_fecha_corte");
+
+            entity.ToTable("notificacion_fecha_corte", "notificacion", t =>
+            {
+                t.HasCheckConstraint("chk_notificacion_fecha_corte_mes", "mes BETWEEN 1 AND 12");
+            });
+
+            entity.HasIndex(e => new { e.Anio, e.Mes, e.Tipo }, "uq_notificacion_fecha_corte_periodo")
+                .IsUnique();
+
+            entity.Property(e => e.Id)
+                .UseIdentityByDefaultColumn()
+                .HasColumnName("id");
+
+            entity.Property(e => e.Anio)
+                .HasColumnName("anio");
+
+            entity.Property(e => e.Mes)
+                .HasColumnName("mes");
+
+            entity.Property(e => e.Tipo)
+                .HasMaxLength(20)
+                .HasColumnName("tipo");
+
+            entity.Property(e => e.InicioPeriodo)
+                .HasColumnName("inicio_periodo");
+
+            entity.Property(e => e.FinPeriodo)
+                .HasColumnName("fin_periodo");
+
+            entity.Property(e => e.FechaCorte)
+                .HasColumnName("fecha_corte");
+
+            entity.Property(e => e.Ejecutada)
+                .HasDefaultValue(false)
+                .HasColumnName("ejecutada");
+
+            entity.Property(e => e.FechaEjecucion)
+                .HasColumnName("fecha_ejecucion");
+
+            entity.Property(e => e.IdUsuarioCreador)
+                .HasColumnName("id_usuario_creador");
+
+            entity.Property(e => e.FechaCreacion)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("fecha_creacion");
+        });
+
+        // ================================================================
+        // 3. EVENTO_OUTBOX (Flujos 1, 2 y 3)
+        // ================================================================
+        modelBuilder.Entity<EventoOutbox>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("pk_evento_outbox");
+
+            entity.ToTable("evento_outbox", "notificacion");
+
+            entity.HasIndex(e => new { e.Estado, e.FechaCreacion }, "idx_evento_outbox_estado_fecha");
+
+            entity.Property(e => e.Id)
+                .HasDefaultValueSql("gen_random_uuid()")
+                .HasColumnName("id");
+
+            entity.Property(e => e.TipoEvento)
+                .HasMaxLength(100)
+                .HasColumnName("tipo_evento");
+
+            entity.Property(e => e.Payload)
+                .HasColumnType("jsonb")
+                .HasColumnName("payload");
+
+            entity.Property(e => e.Estado)
+                .HasConversion<string>()
+                .HasMaxLength(20)
+                .HasColumnName("estado");
+
+            entity.Property(e => e.Intentos)
+                .HasDefaultValue(0)
+                .HasColumnName("intentos");
+
+            entity.Property(e => e.UltimoError)
+                .HasColumnName("ultimo_error");
+
+            entity.Property(e => e.FechaCreacion)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("fecha_creacion");
+
+            entity.Property(e => e.FechaProcesado)
+                .HasColumnName("fecha_procesado");
+        });
+
         OnModelCreatingPartial(modelBuilder);
+
+
+
     }
 
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder);

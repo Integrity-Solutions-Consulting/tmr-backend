@@ -52,7 +52,7 @@ docker compose build backend
 docker compose run --rm backend --prepare-database
 ```
 
-Aplica los SQL embebidos **01, 02, 03, 04, 05, 07, 08, 09, 10, 11, 12, 13, 14**,
+Aplica los SQL embebidos **01, 02, 03, 04, 05, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17**,
 en ese orden. Incluyen esquema, funciones, triggers y catálogos/RBAC históricos.
 Mezclan DDL y datos; algunos no son idempotentes ejecutados directamente en psql.
 El comando registra versión y SHA-256 en `public.tmr_installation_history`

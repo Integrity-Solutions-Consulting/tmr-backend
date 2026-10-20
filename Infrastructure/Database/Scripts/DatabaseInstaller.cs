@@ -75,8 +75,8 @@ public static class DatabaseInstaller
         var resources = assembly.GetManifestResourceNames()
             .Where(x => x.Contains(".Scripts_DB.") && x.EndsWith(".sql", StringComparison.Ordinal))
             .Order(StringComparer.Ordinal).ToArray();
-        if (resources.Length != 13)
-            throw new InvalidOperationException("El paquete debe contener los scripts 01–14, excluyendo 06.");
+        if (resources.Length != 16)
+            throw new InvalidOperationException("El paquete debe contener los scripts 01–17, excluyendo 06.");
 
         foreach (var resource in resources)
         {
