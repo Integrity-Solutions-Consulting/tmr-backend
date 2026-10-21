@@ -2596,6 +2596,12 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.FechaCreacion)
                 .HasDefaultValueSql("now()")
                 .HasColumnName("fecha_creacion");
+
+            entity.Property(e => e.IdUsuarioModificacion)
+                .HasColumnName("id_usuario_modificacion");
+
+            entity.Property(e => e.FechaModificacion)
+                .HasColumnName("fecha_modificacion");
         });
 
         // ================================================================

@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using tmr_backend.Features.Notificaciones.Domain;
 using tmr_backend.Features.Notificaciones.Domain.Events;
+using tmr_backend.Features.Notificaciones.Application.Cortes;
 using tmr_backend.Features.Notificaciones.Application.Estado;
 using tmr_backend.Features.Notificaciones.Application.Queries;
 using tmr_backend.Features.Notificaciones.Application.Handlers;
@@ -44,6 +45,8 @@ public static class NotificacionesModule
         services.AddScoped<IConsultaResumenCorte, ConsultaResumenCorte>();
         services.AddSingleton<IResumenCorteCache, ResumenCorteCache>();
         services.AddScoped<IConsultaMisNotificaciones, ConsultaMisNotificaciones>();
+        // Fechas de corte editables (flujo 3): las lee el job y las cambia la pantalla Fechas de Corte
+        services.AddScoped<ICalendarioCortesService, CalendarioCortesService>();
 
         // Handlers: qué handler escucha qué evento
 

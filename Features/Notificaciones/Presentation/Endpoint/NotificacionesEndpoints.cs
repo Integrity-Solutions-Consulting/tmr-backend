@@ -196,6 +196,9 @@ public static class NotificacionesEndpoints
         .RequireAuthorization()
         .WithName("StreamMisNotificaciones")
         .WithSummary("Server-Sent Events con los avisos de horas faltantes enviados al usuario actual");
+
+        // Fechas de corte editables (flujo 3)
+        group.MapFechasCorteEndpoints();
     }
 
     // Sin novedades en memoria se revisa la BD cada tanto (por si el envío se registró en otra instancia)
