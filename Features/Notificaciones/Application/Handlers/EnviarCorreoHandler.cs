@@ -178,6 +178,12 @@ public sealed class EnviarCorreoHandler : IEventHandler<HorasFaltantesDetectadas
 
         var debeEnviar = DebeEnviar(evento.Origen, yaEnviadoEnCorte, ultimoEnvioManual, ahora, _opciones.UmbralNotificacionManual);
 
+        _logger.LogDebug(
+            "Regla anti-duplicados para el empleado {IdEmpleado} ({Origen}): ya enviado en el corte = {YaEnviadoEnCorte}, " +
+            "último manual = {UltimoEnvioManual}, envíos sin registrar en el Outbox = {SinRegistrar}, umbral = {UmbralHoras} h. Enviar = {DebeEnviar}",
+            evento.IdEmpleado, evento.Origen, yaEnviadoEnCorte, ultimoEnvioManual, sinRegistrar.Count,
+            _opciones.UmbralNotificacionManual, debeEnviar);
+
         if (!debeEnviar)
         {
             _logger.LogInformation(

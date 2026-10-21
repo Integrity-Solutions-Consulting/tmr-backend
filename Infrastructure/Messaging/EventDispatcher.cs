@@ -61,7 +61,11 @@ public class EventDispatcher : BackgroundService
 
         var fila = await db.Set<EventoOutbox>().FirstOrDefaultAsync(e => e.Id == id, ct);
         if (fila is null || fila.Estado != EstadoEvento.Pendiente)
-            return;   // ya se procesó o no existe: no hay nada que hacer
+        {
+            // ya se procesó o no existe: no hay nada que hacer
+            _logger.LogDebug("Evento {Id} omitido: ya fue procesado o no existe", id);
+            return;
+        }
 
         // 1. Reconstruir el evento a partir del nombre y el JSON guardados
         if (!_tiposDeEvento.TryGetValue(fila.TipoEvento, out var tipo))
@@ -81,6 +85,9 @@ public class EventDispatcher : BackgroundService
 
         if (handlers.Count == 0)
             _logger.LogWarning("El evento {Tipo} no tiene handlers registrados", fila.TipoEvento);
+
+        _logger.LogDebug("Procesando evento {Tipo} ({Id}), intento {Intento}, con {CantidadHandlers} handler(s)",
+            fila.TipoEvento, fila.Id, fila.Intentos + 1, handlers.Count);
 
         string? falloDefinitivo = null;
 
@@ -120,6 +127,9 @@ public class EventDispatcher : BackgroundService
         }
 
         await db.SaveChangesAsync(ct);
+
+        if (fila.Estado == EstadoEvento.Procesado)
+            _logger.LogDebug("Evento {Tipo} ({Id}) procesado correctamente", fila.TipoEvento, fila.Id);
 
         if (falloDefinitivo is not null)
             await AvisarFalloDefinitivoAsync(tipo, evento, fila, falloDefinitivo, ct);

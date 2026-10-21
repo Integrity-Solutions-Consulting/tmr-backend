@@ -59,6 +59,21 @@ using tmr_backend.Infrastructure.Extensions;
 using tmr_backend.Infrastructure.BackgroundServices;
 using tmr_backend.Features.Notificaciones;
 using tmr_backend.Features.Notificaciones.Presentation.Endpoint;
+using Serilog;
+using tmr_backend.Infrastructure.Logging;
+
+// Logger de arranque: registra lo que ocurra antes de que Serilog lea appsettings
+// (p. ej. falta la cadena de conexión o el JWT). Luego AddSerilog lo reemplaza por el configurado.
+Log.Logger = new LoggerConfiguration()
+    .Enrich.With<NivelAbreviadoEnricher>()
+    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Nivel:l}] {Message:lj}{NewLine}{Exception}")
+    .CreateBootstrapLogger();
+
+AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+{
+    Log.Fatal(e.ExceptionObject as Exception, "El backend se detuvo por un error no controlado");
+    Log.CloseAndFlush();
+};
 
 var databaseCommands = new[] { "--prepare-database", "--initialize-data", "--verify-database" };
 var requestedCommands = args.Where(databaseCommands.Contains).ToArray();
@@ -77,8 +92,12 @@ if (requestedCommands.Length == 1)
 // SERVICES CONFIGURATION
 // =======================
 
-builder.Logging.ClearProviders();
-builder.Logging.AddConsole();
+// ── Logging: Serilog, configurado en la sección "Serilog" de appsettings ──
+builder.Services.AddSerilog((servicios, configuracion) => configuracion
+    .ReadFrom.Configuration(builder.Configuration)
+    .ReadFrom.Services(servicios)
+    .Enrich.FromLogContext()
+    .Enrich.With<NivelAbreviadoEnricher>());   // {Nivel}: TRC/DBG/INF/WRN/ERR/CRT
 
 // ── JSON Serializer Configuration ──
 builder.Services.ConfigureHttpJsonOptions(options =>
@@ -358,4 +377,6 @@ app.MapCatalogosConfigEndpoints();
 app.MapProveedoresEndpoints();
 app.MapNotificacionesEndpoints();
 app.Run();
+
+Log.CloseAndFlush();
 
