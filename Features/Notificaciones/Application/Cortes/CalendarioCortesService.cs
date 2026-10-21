@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using tmr_backend.Features.Notificaciones.Domain;
 using tmr_backend.Infrastructure.Database;
@@ -77,15 +78,19 @@ public sealed class CalendarioCortesService : ICalendarioCortesService
     private readonly ApplicationDbContext _db;
     private readonly NotificacionHorasOptions _opciones;
     private readonly TimeProvider _reloj;
+    private readonly ILogger<CalendarioCortesService> _logger;
 
+    // logger al final y opcional: las pruebas que crean el servicio con (db, opciones, reloj) siguen compilando
     public CalendarioCortesService(
         ApplicationDbContext db,
         IOptions<NotificacionHorasOptions> opciones,
-        TimeProvider? reloj = null)
+        TimeProvider? reloj = null,
+        ILogger<CalendarioCortesService>? logger = null)
     {
         _db = db;
         _opciones = opciones.Value;
         _reloj = reloj ?? TimeProvider.System;
+        _logger = logger ?? NullLogger<CalendarioCortesService>.Instance;
     }
 
     public async Task AsegurarCortesAsync(CancellationToken ct)
@@ -116,12 +121,19 @@ public sealed class CalendarioCortesService : ICalendarioCortesService
             var fechaUtc = fecha.ToUniversalTime();
 
             // ON CONFLICT: si otra instancia del backend la creó primero, se deja la suya
-            await _db.Database.ExecuteSqlInterpolatedAsync($"""
+            int insertadas = await _db.Database.ExecuteSqlInterpolatedAsync($"""
                 INSERT INTO notificacion.notificacion_fecha_corte
                     (anio, mes, tipo, inicio_periodo, fin_periodo, fecha_corte, ejecutada, id_usuario_creador)
                 VALUES ({clave.Anio}, {clave.Mes}, {clave.Tipo}, {inicio}, {fin}, {fechaUtc}, FALSE, {IdUsuarioSistema})
                 ON CONFLICT (anio, mes, tipo) DO NOTHING
                 """, ct);
+
+            if (insertadas == 1)
+                _logger.LogInformation(
+                    "Corte {Tipo} {Mes}/{Anio} creado con la fecha por defecto {FechaCorte} (período {InicioPeriodo} - {FinPeriodo})",
+                    clave.Tipo, clave.Mes, clave.Anio, fecha, inicio, fin);
+            else
+                _logger.LogDebug("El corte {Tipo} {Mes}/{Anio} ya lo creó otra instancia del backend", clave.Tipo, clave.Mes, clave.Anio);
 
             finAnterior = fin;
         }
@@ -208,7 +220,10 @@ public sealed class CalendarioCortesService : ICalendarioCortesService
     {
         var corte = await _db.NotificacionesFechaCorte.FirstOrDefaultAsync(c => c.Id == id, ct);
         if (corte is null)
+        {
+            _logger.LogWarning("Se intentó cambiar la fecha del corte {IdCorte}, que no existe", id);
             return ResultadoCambioCorte.SinCorte;
+        }
 
         var clave = ClaveCorte.De(corte);
         var anterior = await BuscarAsync(clave.Anterior(), ct);
@@ -218,8 +233,13 @@ public sealed class CalendarioCortesService : ICalendarioCortesService
 
         var error = await ValidarAsync(corte, clave, nuevaFecha, anterior, siguiente, ahora, ct);
         if (error is not null)
+        {
+            _logger.LogInformation("Cambio de fecha del corte {IdCorte} ({Tipo} {Mes}/{Anio}) rechazado: {Motivo}",
+                corte.Id, corte.Tipo, corte.Mes, corte.Anio, error);
             return ResultadoCambioCorte.Falla(error);
+        }
 
+        DateTimeOffset fechaAnterior = corte.FechaCorte;
         corte.FechaCorte = nuevaFecha.ToUniversalTime();
         corte.FinPeriodo = FinEfectivo(clave, nuevaFecha);
         corte.IdUsuarioModificacion = idUsuario;
@@ -231,9 +251,18 @@ public sealed class CalendarioCortesService : ICalendarioCortesService
 
         // El período siguiente arranca justo después de este: si el corte se adelantó, cubre los días que quedaron fuera
         if (siguiente is { Ejecutada: false })
+        {
             siguiente.InicioPeriodo = corte.FinPeriodo.AddDays(1);
+            _logger.LogDebug("El período del corte siguiente ({IdCorte}) ahora empieza el {InicioPeriodo}",
+                siguiente.Id, siguiente.InicioPeriodo);
+        }
 
         await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation(
+            "Corte {IdCorte} ({Tipo} {Mes}/{Anio}) reprogramado por el usuario {IdUsuario}: de {FechaAnterior} a {FechaNueva}, período {InicioPeriodo} - {FinPeriodo}",
+            corte.Id, corte.Tipo, corte.Mes, corte.Anio, idUsuario,
+            fechaAnterior.ToOffset(OffsetEcuador), nuevaFecha.ToOffset(OffsetEcuador), corte.InicioPeriodo, corte.FinPeriodo);
         return new ResultadoCambioCorte(await ListarAsync(ct), null);
     }
 
