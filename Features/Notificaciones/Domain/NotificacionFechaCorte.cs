@@ -11,6 +11,9 @@ public class NotificacionFechaCorte
     public DateTimeOffset FechaCorte { get; set; }
     public bool Ejecutada { get; set; }
     public DateTimeOffset? FechaEjecucion { get; set; }
+    // 0 = creada por el sistema con la fecha por defecto
     public int IdUsuarioCreador { get; set; }
     public DateTimeOffset FechaCreacion { get; set; }
+    public int? IdUsuarioModificacion { get; set; }
+    public DateTimeOffset? FechaModificacion { get; set; }
 }
