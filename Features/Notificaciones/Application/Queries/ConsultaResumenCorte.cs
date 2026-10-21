@@ -2,7 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using tmr_backend.Features.Notificaciones.Domain;
 using tmr_backend.Features.Notificaciones.Domain.Events;
-using tmr_backend.Features.Notificaciones.Infrastructure.Jobs;
+using tmr_backend.Features.Notificaciones.Application.Cortes;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Messaging;
 
@@ -60,8 +60,13 @@ public sealed class ConsultaResumenCorte : IConsultaResumenCorte
     ];
 
     private readonly ApplicationDbContext _db;
+    private readonly ICalendarioCortesService _calendario;
 
-    public ConsultaResumenCorte(ApplicationDbContext db) => _db = db;
+    public ConsultaResumenCorte(ApplicationDbContext db, ICalendarioCortesService calendario)
+    {
+        _db = db;
+        _calendario = calendario;
+    }
 
     public async Task<ResumenCorteDto?> UltimoCorteAsync(CancellationToken ct)
     {
@@ -127,7 +132,9 @@ public sealed class ConsultaResumenCorte : IConsultaResumenCorte
             .ThenBy(e => e.Nombre)
             .ToList();
 
-        var (inicio, fin) = RevisarHorasFaltantesJob.PeriodoDelCorte(fechaCorte);
+        // El período se guarda con el corte (puede no ser 1–15 / 16–fin si alguien movió la fecha)
+        var (inicio, fin) = await _calendario.PeriodoDelCorteAsync(fechaCorte, ct)
+            ?? CalendarioCortes.PeriodoDelCorte(fechaCorte);
         var ejecucion = await UltimaEjecucionAsync(fechaCorte, desde, ct);
 
         return new ResumenCorteDto(
