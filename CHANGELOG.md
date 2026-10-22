@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.5.0...v1.5.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* Se elimina validación de mínimo 3 actividades por día ([adbbfc4](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/adbbfc455242533529771ad855007abef885e87a))
+
 ## [1.5.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.4.5...v1.5.0) (2026-10-22)
 
 
