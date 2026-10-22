@@ -60,20 +60,20 @@ public sealed class WeeklyNotificationService : BackgroundService
                             now.Minute >= settings.Minute && 
                             (!_lastRunDate.HasValue || _lastRunDate.Value.Date != now.Date))
                         {
-                            _logger.LogInformation("WeeklyNotificationService: Se cumple la regla de programación semanal. Iniciando proceso de alertas automáticas.");
+                            _logger.LogInformation("Se cumple la regla de programación semanal. Iniciando proceso de alertas automáticas.");
                             await SendWeeklyNotificationsAsync(stoppingToken);
                             _lastRunDate = now;
                         }
                     }
                     else
                     {
-                        _logger.LogWarning("WeeklyNotificationService: El valor de DayOfWeek '{Day}' configurado no es válido.", settings.DayOfWeek);
+                        _logger.LogWarning("El valor de DayOfWeek '{Day}' configurado no es válido.", settings.DayOfWeek);
                     }
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "WeeklyNotificationService: Excepción capturada durante el ciclo de control.");
+                _logger.LogError(ex, "Excepción capturada durante el ciclo de control.");
             }
 
             // Intervalo configurable de chequeo
@@ -112,7 +112,7 @@ public sealed class WeeklyNotificationService : BackgroundService
 
         if (!empleados.Any())
         {
-            _logger.LogInformation("WeeklyNotificationService: No se encontraron empleados activos para evaluar.");
+            _logger.LogInformation("No se encontraron empleados activos para evaluar.");
             return;
         }
 
@@ -153,7 +153,7 @@ public sealed class WeeklyNotificationService : BackgroundService
             var emailDestino = empleado.Emailcorporativo ?? persona.Email;
             if (string.IsNullOrEmpty(emailDestino))
             {
-                _logger.LogWarning("WeeklyNotificationService: Colaborador {Nombre} (ID: {EmpId}) no tiene correo electrónico configurado. Omitiendo notificación.", 
+                _logger.LogWarning("Colaborador {Nombre} (ID: {EmpId}) no tiene correo electrónico configurado. Omitiendo notificación.", 
                     $"{persona.Nombres} {persona.Apellidos}".Trim(), empleado.Id);
                 continue;
             }
@@ -256,15 +256,15 @@ public sealed class WeeklyNotificationService : BackgroundService
                 {
                     await emailService.SendEmailAsync(emailDestino, subject, body);
                     totalCorreosEnviados++;
-                    _logger.LogInformation("WeeklyNotificationService: Alerta enviada con éxito a {Email}", emailDestino);
+                    _logger.LogInformation("Alerta enviada con éxito a {Email}", emailDestino);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "WeeklyNotificationService: Error al enviar alerta a {Email}", emailDestino);
+                    _logger.LogError(ex, "Error al enviar alerta a {Email}", emailDestino);
                 }
             }
         }
 
-        _logger.LogInformation("WeeklyNotificationService: Ciclo de alertas automáticas finalizado. Total correos enviados: {Count}", totalCorreosEnviados);
+        _logger.LogInformation("Ciclo de alertas automáticas finalizado. Total correos enviados: {Count}", totalCorreosEnviados);
     }
 }
