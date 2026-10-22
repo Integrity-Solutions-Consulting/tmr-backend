@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.5.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.4.5...v1.5.0) (2026-10-22)
+
+
+### Features
+
+* Integración del módulo de Notificaciones ([ac0230a](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/ac0230a892e46ce1a2d8accc93ced4ccb806e568))
+* integrate notifications module into develop ([020247d](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/020247db7c66904d07850fc37a160a1fd80a6638))
+* **notificaciones:** fechas de corte configurables (flujo 3) ([682c7d2](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/682c7d21731eca814007d62a0df2210ef70d08ad))
+
+
+### Bug Fixes
+
+* **instalador:** ejecutar solo los scripts numerados NN-*.sql ([afb914b](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/afb914b5ffbd200a3ab4f35c556e9a0bf00e86d0))
+* **instalador:** incluir el script 18 en el paquete SQL embebido ([c7d00c0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/c7d00c0128114b1c99707057896e4630c119df2b))
+* release-tag-pr ([df896f3](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/df896f38c96ac56544c623a9acecae26da6b3970))
+* release-tag-pr ([a023370](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/a02337043f76d33ac030dd37700af8de02352485))
+* **sql:** script 16 compara los roles sin distinguir mayúsculas ([577ccda](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/577ccda573cd2a3c82f87a43113fcb27ce3d0f84))
+* **sql:** script 16 compara los roles sin distinguir mayúsculas ([a3f7392](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/a3f73924ae792ea7d44ada11afd764c756dd8493))
+
 ## [1.4.5](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.4.4...v1.4.5) (2026-10-19)
 
 
