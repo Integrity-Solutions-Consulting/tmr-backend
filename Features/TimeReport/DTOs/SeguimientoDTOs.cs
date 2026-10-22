@@ -62,11 +62,7 @@ public record SeguimientoColaboradorDto(
     string? TipoSalida = null,
     string? CausaSalida = null,
     string? MotivoSalida = null,
-    DateOnly? SalidaProyecto = null,
-    // sm - Días laborables de este colaborador+proyecto que llegaron a la jornada completa (8 h/6 h) pero no
-    // alcanzaron el mínimo de 3 actividades distintas ese día (ver CalculoHorasPeriodo.MinimoActividadesPorDia).
-    // Permite al frontend distinguir "no aprobado por horas" de "no aprobado por falta de detalle de actividades".
-    int DiasActividadesInsuficientes = 0
+    DateOnly? SalidaProyecto = null
 );
 
 // sm - Se comenta: la funcionalidad de aprobar horas se retira de Seguimiento (endpoint /aprobar comentado).

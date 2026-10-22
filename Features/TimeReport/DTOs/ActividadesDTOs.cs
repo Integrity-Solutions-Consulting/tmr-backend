@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using tmr_backend.Features.TimeReport.Services;
 
 namespace tmr_backend.Features.TimeReport.DTOs;
 
@@ -33,13 +32,9 @@ public record ResumenHorasDto(
     decimal HorasPorRegistrar,
     decimal HorasRegistradas,
     decimal PromedioPorDia,
-    // sm - Jornada diaria del colaborador (8 h, o 6 h si es pasante) y mínimo de actividades distintas por día
-    // y proyecto, para que Actividades pueda mostrarle su progreso al registrar (ver CalculoHorasPeriodo).
-    decimal HorasJornada = 8m,
-    int MinimoActividadesPorDia = CalculoHorasPeriodo.MinimoActividadesPorDia,
-    // sm - Fechas (yyyy-MM-dd) con la jornada completa pero sin el mínimo de actividades: el calendario de
-    // "Ver detalle" en Seguimiento las resalta día por día (ver CalculoHorasPeriodo.FechasActividadesInsuficientes).
-    IReadOnlyList<string>? FechasActividadesInsuficientes = null
+    // sm - Jornada diaria del colaborador (8 h, o 6 h si es pasante), para que Actividades pueda mostrarle
+    // su progreso de horas al registrar (ver CalculoHorasPeriodo).
+    decimal HorasJornada = 8m
 );
 
 public record ProyectoLookupDto(
