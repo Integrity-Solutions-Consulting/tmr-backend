@@ -25,7 +25,14 @@ public sealed record HorasPeriodo(
     decimal HorasRegistradas,
     decimal HorasEsperadas,
     decimal HorasPorRegistrar,
-    string Estado)
+    string Estado,
+    // sm - Días laborables con la jornada completa (8 h/6 h) pero con menos de MinimoActividadesPorDia actividades
+    // registradas ese día: cumplen horas, pero no el detalle mínimo de actividades. Se cuentan aparte de
+    // DiasACompletar para que Seguimiento pueda distinguir el motivo ("faltan horas" vs "faltan actividades").
+    int DiasActividadesInsuficientes = 0,
+    // sm - Las fechas puntuales de esos mismos días (no solo el conteo), para que el calendario de "Ver detalle"
+    // en Seguimiento pueda resaltar exactamente esos días, además del resumen numérico de arriba.
+    IReadOnlyList<DateOnly>? FechasActividadesInsuficientes = null)
 {
     // sm - Promedio por día = horas registradas en días laborables ÷ días laborables del periodo.
     public decimal PromedioPorDia => DiasLaborables > 0 ? HorasRegistradas / DiasLaborables : 0m;
@@ -37,6 +44,11 @@ public sealed record HorasPeriodo(
 /// </summary>
 public static class CalculoHorasPeriodo
 {
+    // sm - Mínimo de actividades distintas que debe tener un colaborador en UN proyecto, en UN día, para que ese
+    // día cuente como reportado: antes bastaba una sola fila con todas las horas del día y se perdía el detalle
+    // de qué se hizo. Aplica por igual a trabajadores y pasantes (lo que cambia por pasantía es la jornada en horas).
+    public const int MinimoActividadesPorDia = 3;
+
     // sm - "Hoy" según la hora de Ecuador (UTC−5, sin horario de verano), sin importar la zona horaria del servidor.
     // Se usa para no contar los días futuros del rango.
     public static DateOnly HoyEcuador() => DateOnly.FromDateTime(DateTime.UtcNow.AddHours(-5));
@@ -119,14 +131,17 @@ public static class CalculoHorasPeriodo
             : hasta;
         if (finPeriodo > hoy) finPeriodo = hoy;
 
-        // sm - Horas registradas por día dentro del periodo (para comparar cada día contra la jornada).
-        var horasPorDia = actividades
+        // sm - Horas y cantidad de actividades registradas por día dentro del periodo (para comparar cada día
+        // contra la jornada y contra el mínimo de actividades).
+        var actividadesPorDia = actividades
             .Where(a => a.Idempleado == empleado.Id && a.Fechaactividad >= inicioPeriodo && a.Fechaactividad <= finPeriodo)
             .GroupBy(a => a.Fechaactividad)
-            .ToDictionary(g => g.Key, g => g.Sum(a => a.Cantidadhoras));
+            .ToDictionary(g => g.Key, g => (Horas: g.Sum(a => a.Cantidadhoras), Cantidad: g.Count()));
 
         var diasLaborables = 0;
         var diasConReporte = 0;
+        var diasActividadesInsuficientes = 0;
+        var fechasActividadesInsuficientes = new List<DateOnly>();
         var horasRegistradas = 0m;
         for (var dia = inicioPeriodo; dia <= finPeriodo; dia = dia.AddDays(1))
         {
@@ -137,12 +152,22 @@ public static class CalculoHorasPeriodo
             if (!EstaVigente(dia, vigencias)) continue;
 
             diasLaborables++;
-            horasPorDia.TryGetValue(dia, out var horasDia);
+            actividadesPorDia.TryGetValue(dia, out var datosDia);
+            var horasDia = datosDia.Horas;
+            var cantidadActividadesDia = datosDia.Cantidad;
             horasRegistradas += horasDia;
             // sm - Jornada del contrato vigente ese día (historial); antes era siempre la del contrato actual.
             var jornadaDia = JornadaEn(dia, historial, horasJornada);
             horasEsperadas += jornadaDia;
-            if (horasDia >= jornadaDia) diasConReporte++;
+
+            var horasCompletas = horasDia >= jornadaDia;
+            var actividadesCompletas = cantidadActividadesDia >= MinimoActividadesPorDia;
+            if (horasCompletas && actividadesCompletas) diasConReporte++;
+            else if (horasCompletas && !actividadesCompletas)
+            {
+                diasActividadesInsuficientes++;
+                fechasActividadesInsuficientes.Add(dia);
+            }
         }
 
         var diasACompletar = diasLaborables - diasConReporte;
@@ -155,6 +180,7 @@ public static class CalculoHorasPeriodo
             : "En progreso";
 
         return new HorasPeriodo(horasJornada, diasLaborables, diasConReporte, diasACompletar,
-            horasRegistradas, horasEsperadas, horasPorRegistrar, estado);
+            horasRegistradas, horasEsperadas, horasPorRegistrar, estado, diasActividadesInsuficientes,
+            fechasActividadesInsuficientes);
     }
 }

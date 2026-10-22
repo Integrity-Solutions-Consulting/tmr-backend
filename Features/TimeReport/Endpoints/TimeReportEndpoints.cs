@@ -308,7 +308,10 @@ public static class TimeReportEndpoints
             // pedido, o de cualquiera de sus proyectos si no se manda idProyecto).
             var vigencias = await CalculoHorasPeriodo.CargarVigenciasAsync(db, idEmpleado, idProyecto);
             var calculo = CalculoHorasPeriodo.Calcular(empleado, inicio, fin, actividadesPeriodo, feriadosPeriodo, hoyEcuador, jornadas[idEmpleado], vigencias);
-            return Results.Ok(new ResumenHorasDto(calculo.HorasPorRegistrar, calculo.HorasRegistradas, calculo.PromedioPorDia));
+            var fechasActividadesInsuficientes = (calculo.FechasActividadesInsuficientes ?? [])
+                .Select(f => f.ToString("yyyy-MM-dd"))
+                .ToList();
+            return Results.Ok(new ResumenHorasDto(calculo.HorasPorRegistrar, calculo.HorasRegistradas, calculo.PromedioPorDia, calculo.HorasJornada, CalculoHorasPeriodo.MinimoActividadesPorDia, fechasActividadesInsuficientes));
 
             // sm - Se comenta el resumen anterior: usaba 8 h para todos (también pasantes), contaba el mes completo
             // (incluidos días futuros) y devolvía horas de hoy/semana/mes, que ya no se muestran en Actividades.
@@ -593,7 +596,8 @@ public static class TimeReportEndpoints
                         FechaSalida: fechaSalida,
                         TipoSalida: tipoSalida,
                         CausaSalida: causaSalida,
-                        MotivoSalida: motivoSalida
+                        MotivoSalida: motivoSalida,
+                        DiasActividadesInsuficientes: calculoSinProyecto.DiasActividadesInsuficientes
                     ));
                     continue;
                 }
@@ -645,7 +649,8 @@ public static class TimeReportEndpoints
                         CausaSalida: causaSalida,
                         MotivoSalida: motivoSalida,
                         // sm - Salida del proyecto: si alguna asignación del rango no tiene salida, sigue vigente (null).
-                        SalidaProyecto: g.Any(ep => ep.Fechafinasignacion == null) ? null : g.Max(ep => ep.Fechafinasignacion)
+                        SalidaProyecto: g.Any(ep => ep.Fechafinasignacion == null) ? null : g.Max(ep => ep.Fechafinasignacion),
+                        DiasActividadesInsuficientes: calculo.DiasActividadesInsuficientes
                     ));
                 }
             }
