@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace tmr_backend.Features.TimeReport.DTOs;
 
@@ -30,7 +31,10 @@ public record ActividadDiaDto(
 public record ResumenHorasDto(
     decimal HorasPorRegistrar,
     decimal HorasRegistradas,
-    decimal PromedioPorDia
+    decimal PromedioPorDia,
+    // sm - Jornada diaria del colaborador (8 h, o 6 h si es pasante), para que Actividades pueda mostrarle
+    // su progreso de horas al registrar (ver CalculoHorasPeriodo).
+    decimal HorasJornada = 8m
 );
 
 public record ProyectoLookupDto(

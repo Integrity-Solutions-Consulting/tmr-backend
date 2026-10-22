@@ -142,7 +142,9 @@ public static class CalculoHorasPeriodo
             // sm - Jornada del contrato vigente ese día (historial); antes era siempre la del contrato actual.
             var jornadaDia = JornadaEn(dia, historial, horasJornada);
             horasEsperadas += jornadaDia;
-            if (horasDia >= jornadaDia) diasConReporte++;
+
+            var horasCompletas = horasDia >= jornadaDia;
+            if (horasCompletas) diasConReporte++;
         }
 
         var diasACompletar = diasLaborables - diasConReporte;
