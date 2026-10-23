@@ -33,7 +33,7 @@ BEGIN
     -- 3. Verificar que existan los roles correspondientes.
     SELECT COUNT(*) INTO v_roles_asignados
     FROM autenticacion.tbl_autenticacion_rol
-    WHERE nombre IN ('Administrador', 'Lider')
+    WHERE UPPER(nombre) IN ('ADMINISTRADOR', 'LIDER')
       AND activo = TRUE;
 
     IF v_roles_asignados <> 2 THEN
@@ -47,7 +47,7 @@ BEGIN
     SELECT
         r.id, v_permiso_id, TRUE, 'admin', '127.0.0.1'
     FROM autenticacion.tbl_autenticacion_rol r
-    WHERE r.nombre IN ('Administrador', 'Lider')
+    WHERE UPPER(r.nombre) IN ('ADMINISTRADOR', 'LIDER')
       AND r.activo = TRUE
     ON CONFLICT (idrol, idpermiso) DO UPDATE
     SET activo = TRUE;

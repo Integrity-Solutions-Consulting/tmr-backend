@@ -556,6 +556,16 @@ public sealed class ColaboradorService(
         empleado.Fechamodificacion = DateTime.UtcNow;
         empleado.Ipmodificacion = "127.0.0.1";
 
+        // sm - Actividades ya registradas con fecha posterior a la salida (p. ej. de una actividad recurrente
+        // que se creó antes para muchos días hacia adelante) quedan inválidas: después de la salida no debe
+        // quedar ninguna actividad. Se borran definitivamente (no es borrado lógico): no tiene sentido conservar
+        // en la base de datos un registro que ya no es cierto.
+        var actividadesPosterioresASalida = await db.TblTimeReportActividadDiaria
+            .Where(a => a.Idempleado == id && a.Fechaactividad > request.FechaSalida)
+            .ToListAsync(ct);
+        if (actividadesPosterioresASalida.Count > 0)
+            db.TblTimeReportActividadDiaria.RemoveRange(actividadesPosterioresASalida);
+
         await db.SaveChangesAsync(ct);
     }
 }
