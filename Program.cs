@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
@@ -31,6 +31,8 @@ using tmr_backend.Features.Configuracion.Catalogos.Application;
 using tmr_backend.Features.Configuracion.Catalogos.Endpoints;
 using tmr_backend.Features.HealthCheck.Endpoints;
 using tmr_backend.Features.Proveedores.Endpoints;
+using tmr_backend.Features.Permisos.Endpoints;
+using tmr_backend.Features.Permisos.Services;
 using Scalar.AspNetCore;
 using tmr_backend.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -229,6 +231,11 @@ builder.Services.AddScoped<ICargarActividadesExcelHandler, CargarActividadesExce
 // Feature: HealthCheck
 builder.Services.AddScoped<IHealthCheckService, HealthCheckService>();
 
+// Feature: Permisos, Licencias y Vacaciones
+builder.Services.AddScoped<IPermisosStorageService, PermisosStorageService>();
+builder.Services.AddScoped<IPermisosNotificacionService, PermisosNotificacionService>();
+builder.Services.AddScoped<IPermisosPdfService, PermisosPdfService>();
+
 // ── Fluent Validation ──
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 
@@ -376,6 +383,7 @@ app.MapDiasFestivosEndpoints();
 app.MapCatalogosConfigEndpoints();
 app.MapProveedoresEndpoints();
 app.MapNotificacionesEndpoints();
+app.MapPermisosEndpoints();
 app.Run();
 
 Log.CloseAndFlush();

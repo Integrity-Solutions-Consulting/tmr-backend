@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using tmr_backend.Infrastructure.Database.Entities;
@@ -2130,33 +2130,78 @@ public partial class ApplicationDbContext : DbContext
 
             entity.HasIndex(e => e.Idempleado, "idx_tr_permiso_empleado");
             entity.HasIndex(e => e.Idestadoaprobacion, "idx_tr_permiso_estado");
+            entity.HasIndex(e => e.Idlider, "idx_tr_permiso_lider");
+            entity.HasIndex(e => new { e.Fechainicio, e.Fechafin }, "idx_tr_permiso_fechas");
 
             entity.Property(e => e.Id)
                 .UseIdentityAlwaysColumn()
                 .HasColumnName("id");
+            entity.Property(e => e.Codigo)
+                .HasMaxLength(30)
+                .HasColumnName("codigo");
             entity.Property(e => e.Activo)
                 .HasDefaultValue(true)
                 .HasColumnName("activo");
             entity.Property(e => e.Aprobadopor).HasColumnName("aprobadopor");
+            entity.Property(e => e.Aprobadoporlider)
+                .HasDefaultValue(false)
+                .HasColumnName("aprobadoporlider");
+            entity.Property(e => e.Comentariolider).HasColumnName("comentariolider");
+            entity.Property(e => e.Confirmadoporrrhh)
+                .HasDefaultValue(false)
+                .HasColumnName("confirmadoporrrhh");
             entity.Property(e => e.Descripcion).HasColumnName("descripcion");
+            entity.Property(e => e.Detallehorario)
+                .HasMaxLength(120)
+                .HasColumnName("detallehorario");
             entity.Property(e => e.Espagado).HasColumnName("espagado");
+            entity.Property(e => e.Evidenciamimetype)
+                .HasMaxLength(100)
+                .HasColumnName("evidenciamimetype");
+            entity.Property(e => e.Evidencianombre)
+                .HasMaxLength(255)
+                .HasColumnName("evidencianombre");
+            entity.Property(e => e.Evidenciaurl).HasColumnName("evidenciaurl");
             entity.Property(e => e.Fechaaprobacion).HasColumnName("fechaaprobacion");
+            entity.Property(e => e.Fechaaprobacionlider).HasColumnName("fechaaprobacionlider");
+            entity.Property(e => e.Fechaconfirmacionrrhh).HasColumnName("fechaconfirmacionrrhh");
             entity.Property(e => e.Fechacreacion)
                 .HasDefaultValueSql("now()")
                 .HasColumnName("fechacreacion");
             entity.Property(e => e.Fechafin).HasColumnName("fechafin");
             entity.Property(e => e.Fechainicio).HasColumnName("fechainicio");
             entity.Property(e => e.Fechamodificacion).HasColumnName("fechamodificacion");
+            entity.Property(e => e.Fecharegreso).HasColumnName("fecharegreso");
+            entity.Property(e => e.Horario)
+                .HasMaxLength(20)
+                .HasDefaultValueSql("'COMPLETA'")
+                .HasColumnName("horario");
+            entity.Property(e => e.Idcliente).HasColumnName("idcliente");
             entity.Property(e => e.Idempleado).HasColumnName("idempleado");
+            entity.Property(e => e.Idempleadorrhh).HasColumnName("idempleadorrhh");
             entity.Property(e => e.Idestadoaprobacion).HasColumnName("idestadoaprobacion");
+            entity.Property(e => e.Idlider).HasColumnName("idlider");
+            entity.Property(e => e.Idproyecto).HasColumnName("idproyecto");
             entity.Property(e => e.Idtipopermiso).HasColumnName("idtipopermiso");
+            entity.Property(e => e.Impactotimereport)
+                .HasMaxLength(30)
+                .HasDefaultValueSql("'RESTA_META'")
+                .HasColumnName("impactotimereport");
             entity.Property(e => e.Ipcreacion)
                 .HasMaxLength(45)
                 .HasColumnName("ipcreacion");
             entity.Property(e => e.Ipmodificacion)
                 .HasMaxLength(45)
                 .HasColumnName("ipmodificacion");
+            entity.Property(e => e.Metodolider)
+                .HasMaxLength(50)
+                .HasColumnName("metodolider");
             entity.Property(e => e.Observacion).HasColumnName("observacion");
+            entity.Property(e => e.Observacionrrhh).HasColumnName("observacionrrhh");
+            entity.Property(e => e.Tokenexterno)
+                .HasMaxLength(120)
+                .HasColumnName("tokenexterno");
+            entity.Property(e => e.Tokenexternoexpira).HasColumnName("tokenexternoexpira");
             entity.Property(e => e.Totaldias)
                 .HasPrecision(6, 2)
                 .HasColumnName("totaldias");
@@ -2178,6 +2223,22 @@ public partial class ApplicationDbContext : DbContext
                 .HasForeignKey(d => d.Idempleado)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_time_report_permiso_empleado");
+
+            entity.HasOne(d => d.IdproyectoNavigation).WithMany()
+                .HasForeignKey(d => d.Idproyecto)
+                .HasConstraintName("fk_time_report_permiso_proyecto");
+
+            entity.HasOne(d => d.IdclienteNavigation).WithMany()
+                .HasForeignKey(d => d.Idcliente)
+                .HasConstraintName("fk_time_report_permiso_cliente");
+
+            entity.HasOne(d => d.IdliderNavigation).WithMany()
+                .HasForeignKey(d => d.Idlider)
+                .HasConstraintName("fk_time_report_permiso_lider");
+
+            entity.HasOne(d => d.IdempleadorrhhNavigation).WithMany()
+                .HasForeignKey(d => d.Idempleadorrhh)
+                .HasConstraintName("fk_time_report_permiso_rrhh");
 
             entity.HasOne(d => d.IdestadoaprobacionNavigation).WithMany(p => p.TblTimeReportPermisoIdestadoaprobacionNavigations)
                 .HasForeignKey(d => d.Idestadoaprobacion)
