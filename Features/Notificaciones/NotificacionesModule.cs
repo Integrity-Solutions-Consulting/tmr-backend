@@ -38,7 +38,6 @@ public static class NotificacionesModule
         services.AddSingleton<ICorteNotifier, CorteNotifier>();
         // Aviso en memoria a la campana de cada colaborador (/mias/stream)
         services.AddSingleton<IAvisoColaboradorNotifier, AvisoColaboradorNotifier>();
-        services.AddSingleton<INotificacionInternaNotifier, NotificacionInternaNotifier>();
 
         // Lógica de dominio y consultas
         services.AddScoped<CalculadorHorasFaltantes>();

@@ -51,15 +51,7 @@ public sealed class RevisarHorasFaltantesJob : IJob
             await _calendario.AsegurarCortesAsync(cancellationToken);
 
             var ahora = DateTimeOffset.UtcNow;
-            IReadOnlyList<NotificacionFechaCorte> pendientes = await _calendario.PendientesAsync(ahora, cancellationToken);
-
-            // Corre cada minuto: sin pendientes va en Trace para no llenar la consola
-            if (pendientes.Count == 0)
-                _logger.LogTrace("Revisión de fechas de corte: sin cortes pendientes");
-            else
-                _logger.LogDebug("Revisión de fechas de corte: {Cantidad} corte(s) pendiente(s)", pendientes.Count);
-
-            foreach (NotificacionFechaCorte corte in pendientes)
+            foreach (var corte in await _calendario.PendientesAsync(ahora, cancellationToken))
                 await EjecutarCorteAsync(corte, ahora, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -73,11 +65,7 @@ public sealed class RevisarHorasFaltantesJob : IJob
     {
         // Marca primero: si hay varias instancias del backend, solo una publica el corte
         if (!await _calendario.TomarParaEjecutarAsync(corte.Id, ahora, ct))
-        {
-            _logger.LogDebug("El corte {IdCorte} ({Tipo} {Mes}/{Anio}) ya lo tomó otra instancia; se omite",
-                corte.Id, corte.Tipo, corte.Mes, corte.Anio);
             return;
-        }
 
         var evento = new CorteDeHorasAlcanzado(
             corte.InicioPeriodo,
@@ -90,9 +78,6 @@ public sealed class RevisarHorasFaltantesJob : IJob
         }
         catch
         {
-            // El detalle del error lo registra el catch de Execute
-            _logger.LogWarning("No se pudo publicar el corte {IdCorte} ({Tipo} {Mes}/{Anio}); se libera para reintentarlo en la próxima revisión",
-                corte.Id, corte.Tipo, corte.Mes, corte.Anio);
             await _calendario.LiberarAsync(corte.Id, CancellationToken.None);
             throw;
         }
