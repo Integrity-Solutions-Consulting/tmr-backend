@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.5.1...v1.6.0) (2026-11-04)
+
+
+### Features
+
+* **permisos:** implementar modulo de permisos, evidencias S3/local, generacion PDF y notificaciones Apprise ([0b455e9](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/0b455e99dce80e4e8b0f93f0f02ebcdc8b4efb7c))
+* **permisos:** normalizar esquema 3FN script 19, notificaciones SSE, lectura real BD y soporte dual MinIO ([98c0373](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/98c0373093ee6be6ba6e64db3221fa1b8bd03720))
+
 ## [1.5.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.5.0...v1.5.1) (2026-10-22)
 
 
