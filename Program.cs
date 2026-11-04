@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
@@ -132,6 +132,21 @@ JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 // ── Database Context ──
 builder.Services.AddScoped<AuditInterceptor>();
 var defaultConnection = builder.Configuration.GetConnectionString("DefaultConnection") ?? string.Empty;
+if (defaultConnection.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase) ||
+    defaultConnection.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase))
+{
+    var dbUri = new Uri(defaultConnection);
+    var userInfo = dbUri.UserInfo.Split(':', 2);
+    defaultConnection = new NpgsqlConnectionStringBuilder
+    {
+        Host = dbUri.Host,
+        Port = dbUri.Port > 0 ? dbUri.Port : 5432,
+        Database = dbUri.AbsolutePath.Trim('/'),
+        Username = userInfo.Length > 0 ? Uri.UnescapeDataString(userInfo[0]) : string.Empty,
+        Password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : string.Empty
+    }.ConnectionString;
+    builder.Configuration["ConnectionStrings:DefaultConnection"] = defaultConnection;
+}
 if (string.IsNullOrWhiteSpace(defaultConnection))
     throw new InvalidOperationException(
         "Falta la cadena de conexión de PostgreSQL. Configure ConnectionStrings__DefaultConnection " +

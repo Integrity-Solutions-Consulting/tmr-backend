@@ -8,7 +8,9 @@ public sealed record ProyectoAsignadoPermisoDto(
     int? IdLider,
     string LiderNombre,
     string LiderTipo, // "INT" | "EXT"
-    string? LiderCorreo);
+    string? LiderCorreo,
+    int? IdAsignacionProyecto = null,
+    bool EsAsignacionPropia = false);
 
 public sealed record LiderDisponiblePermisoDto(
     int IdLider,
@@ -17,6 +19,14 @@ public sealed record LiderDisponiblePermisoDto(
     string? Correo,
     int? IdCliente,
     string? ClienteNombre);
+
+public sealed record TipoPermisoCatalogoDto(
+    int Id,
+    string Codigo,
+    string CodigoCorto,
+    string Nombre,
+    bool RequiereAdjunto,
+    short Orden);
 
 public sealed record ContextoColaboradorPermisoDto(
     int IdEmpleado,
@@ -31,7 +41,17 @@ public sealed record ContextoColaboradorPermisoDto(
     int Aprobados,
     decimal HorasAcumuladas,
     IReadOnlyList<ProyectoAsignadoPermisoDto> ProyectosAsignados,
-    IReadOnlyList<LiderDisponiblePermisoDto> LideresDisponibles);
+    IReadOnlyList<LiderDisponiblePermisoDto> LideresDisponibles,
+    bool EsNomina = true,
+    string TipoContrato = "Nómina",
+    IReadOnlyList<TipoPermisoCatalogoDto>? TiposPermiso = null);
+
+public sealed record AdjuntoPermisoDto(
+    int Id,
+    string NombreOriginal,
+    string ContentType,
+    long TamanoBytes,
+    string FechaCreacion);
 
 public sealed record PermisoItemDto(
     int Id,
@@ -90,7 +110,8 @@ public sealed record PermisoItemDto(
     string EstadoLider, // Pendiente, Aprobado, Observado, Rechazado
     string? Comentarios,
     string? TraslapeAlerta,
-    string? TokenExterno);
+    string? TokenExterno,
+    IReadOnlyList<AdjuntoPermisoDto>? Adjuntos = null);
 
 public sealed record CrearPermisoRequest(
     int? IdProyecto,
