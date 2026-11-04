@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.6.0...v1.6.1) (2026-11-04)
+
+
+### Bug Fixes
+
+* revertir merge accidental de feat/permisos en master ([#160](https://github.com/Integrity-Solutions-Consulting/tmr-backend/issues/160)) ([92c4c89](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/92c4c89dc846df945a3699eb66cc71fdfc99c7ac))
+
 ## [1.6.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.5.1...v1.6.0) (2026-11-04)
 
 
