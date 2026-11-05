@@ -34,13 +34,18 @@ public class CrearColaboradorRequestValidator : AbstractValidator<CrearColaborad
             .NotEmpty().WithMessage("Los apellidos son requeridos.")
             .MaximumLength(100).WithMessage("Los apellidos no pueden superar los 100 caracteres.");
 
+        // Debe existir al menos un correo: personal o institucional.
+        RuleFor(x => x)
+            .Must(x => !string.IsNullOrWhiteSpace(x.Email) || !string.IsNullOrWhiteSpace(x.EmailCorporativo))
+            .WithMessage("Ingrese al menos un correo: personal o institucional.");
+
         RuleFor(x => x.Email)
             .Cascade(CascadeMode.Stop)
-            .NotEmpty().WithMessage("El correo personal es requerido.")
             .MaximumLength(100).WithMessage("El correo personal no puede superar los 100 caracteres.")
             .EmailAddress().WithMessage("El correo personal no tiene un formato válido.")
             .Must(x => !CorreoInstitucional.EsInstitucional(x))
-            .WithMessage($"El correo personal no puede ser {CorreoInstitucional.Dominio}.");
+            .WithMessage($"El correo personal no puede ser {CorreoInstitucional.Dominio}.")
+            .When(x => !string.IsNullOrWhiteSpace(x.Email));
 
         RuleFor(x => x.EmailCorporativo)
             .Cascade(CascadeMode.Stop)
