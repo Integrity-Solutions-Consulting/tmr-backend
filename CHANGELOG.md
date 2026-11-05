@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.7.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.6.1...v1.7.0) (2026-11-05)
+
+
+### Features
+
+* **colaboradores:** separar correo institucional y correo personal ([6ff2a88](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/6ff2a88efdd1b082789b95b178cb0870ba814097))
+* **correos:** mostrar institucional o, si no hay, personal ([bb4b738](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/bb4b73896d944949059a8c4e2e3dbb64f087653e))
+* **correos:** mostrar institucional o, si no hay, personal ([de0a085](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/de0a085cafd6c048ec94c96426801c716c86db0e))
+
+
+### Bug Fixes
+
+* **colaboradores:** exigir al menos un correo ([2803ec9](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/2803ec94023382dcde4c9e3d29de9eaa33757e9e))
+* **colaboradores:** exigir al menos un correo ([f9c0b85](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/f9c0b85316e2acb4102bddf77eeedef30367c842))
+
 ## [1.6.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.6.0...v1.6.1) (2026-11-04)
 
 
