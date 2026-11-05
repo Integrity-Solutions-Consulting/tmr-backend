@@ -11,7 +11,9 @@ public record LiderResponse(
     string? TipoNombre,
     string NumeroIdentificacion,
     bool Activo,
-    DateTime Fechacreacion
+    DateTime Fechacreacion,
+    // Correo institucional, si el líder también es colaborador. Solo para mostrar: Email sigue siendo el que se edita.
+    string? EmailCorporativo = null
 );
 
 public record ContadoresLiderResponse(

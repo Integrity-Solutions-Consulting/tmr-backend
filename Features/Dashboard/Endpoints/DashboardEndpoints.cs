@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using tmr_backend.Features.Colaboradores.Domain;
 using tmr_backend.Features.Dashboard.Domain;
 using tmr_backend.Features.Dashboard.DTOs;
 using tmr_backend.Features.TimeReport.Services;
@@ -268,7 +269,7 @@ public static class DashboardEndpoints
                 return Results.BadRequest(new { Mensaje = "Empleado no encontrado o inactivo" });
             }
 
-            var emailDestino = empleado.Emailcorporativo ?? empleado.IdpersonaNavigation?.Email;
+            var emailDestino = CorreoInstitucional.Principal(empleado.Emailcorporativo, empleado.IdpersonaNavigation?.Email);
             if (string.IsNullOrEmpty(emailDestino))
             {
                 return Results.BadRequest(new { Mensaje = "El empleado no tiene una dirección de correo configurada" });
@@ -432,7 +433,7 @@ public static class DashboardEndpoints
                         resultado.Add(new CollaboratorMissingHoursResponse(
                             empId,
                             $"{persona.Nombres} {persona.Apellidos}".Trim(),
-                            persona.Email ?? empleado.Emailcorporativo ?? string.Empty,
+                            CorreoInstitucional.Principal(empleado.Emailcorporativo, persona.Email) ?? string.Empty,
                             totalExpected,
                             totalRegistered,
                             totalExpected - totalRegistered,

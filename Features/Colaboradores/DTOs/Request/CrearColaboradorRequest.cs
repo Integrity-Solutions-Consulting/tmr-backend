@@ -16,7 +16,8 @@ public record CrearColaboradorRequest(
     DateOnly? FechaNacimiento,
 
     // ── Datos de contacto ─────────────────────────────
-    string? Email,
+    string? Email,               // Correo personal
+    string? EmailCorporativo,    // Correo institucional (debe venir al menos uno de los dos)
     string? Telefono,
     string? Direccion,
 
