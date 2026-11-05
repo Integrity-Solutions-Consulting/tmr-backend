@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using tmr_backend.Features.Colaboradores.Domain;
 using tmr_backend.Features.Dashboard.DTOs;
 using tmr_backend.Features.Dashboard.Services;
 using tmr_backend.Features.TimeReport.Services;
@@ -318,7 +319,7 @@ public static class DashboardEjecutivoEndpoints
             ultimoRegistroPorFila.TryGetValue((f.IdEmpleado, f.IdProyecto), out var ultimo);
 
             return new CumplimientoDetalleDto(
-                e.Id, NombreEmpleado(e), e.Emailcorporativo ?? e.IdpersonaNavigation?.Email ?? "",
+                e.Id, NombreEmpleado(e), CorreoInstitucional.Principal(e.Emailcorporativo, e.IdpersonaNavigation?.Email) ?? "",
                 p.Id, p.Codigo ?? "", p.Nombre, p.Idcliente ?? 0, NombreCliente(p),
                 vigencia.Min(a => a.Desde),
                 vigencia.Any(a => a.Hasta == null) ? null : vigencia.Max(a => a.Hasta),
