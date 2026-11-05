@@ -432,7 +432,7 @@ public static class DashboardEndpoints
                         resultado.Add(new CollaboratorMissingHoursResponse(
                             empId,
                             $"{persona.Nombres} {persona.Apellidos}".Trim(),
-                            persona.Email ?? empleado.Emailcorporativo ?? string.Empty,
+                            empleado.Emailcorporativo ?? persona.Email ?? string.Empty,
                             totalExpected,
                             totalRegistered,
                             totalExpected - totalRegistered,

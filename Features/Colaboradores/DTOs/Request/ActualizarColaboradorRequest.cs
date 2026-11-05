@@ -13,7 +13,8 @@ public record ActualizarColaboradorRequest(
     int? IdGenero,
     int? IdNacionalidad,
 
-    string? Email,
+    string? Email,               // Correo personal
+    string? EmailCorporativo,    // Correo institucional
     string? Telefono,
     string? Direccion,
 

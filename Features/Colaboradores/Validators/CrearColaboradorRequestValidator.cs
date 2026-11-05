@@ -1,4 +1,5 @@
 using FluentValidation;
+using tmr_backend.Features.Colaboradores.Domain;
 using tmr_backend.Features.Colaboradores.DTOs.Request;
 
 namespace tmr_backend.Features.Colaboradores.Validators;
@@ -34,9 +35,20 @@ public class CrearColaboradorRequestValidator : AbstractValidator<CrearColaborad
             .MaximumLength(100).WithMessage("Los apellidos no pueden superar los 100 caracteres.");
 
         RuleFor(x => x.Email)
-            .MaximumLength(100).WithMessage("El correo no puede superar los 100 caracteres.")
-            .EmailAddress().WithMessage("El correo no tiene un formato válido.")
-            .When(x => !string.IsNullOrWhiteSpace(x.Email));
+            .Cascade(CascadeMode.Stop)
+            .NotEmpty().WithMessage("El correo personal es requerido.")
+            .MaximumLength(100).WithMessage("El correo personal no puede superar los 100 caracteres.")
+            .EmailAddress().WithMessage("El correo personal no tiene un formato válido.")
+            .Must(x => !CorreoInstitucional.EsInstitucional(x))
+            .WithMessage($"El correo personal no puede ser {CorreoInstitucional.Dominio}.");
+
+        RuleFor(x => x.EmailCorporativo)
+            .Cascade(CascadeMode.Stop)
+            .MaximumLength(100).WithMessage("El correo institucional no puede superar los 100 caracteres.")
+            .EmailAddress().WithMessage("El correo institucional no tiene un formato válido.")
+            .Must(CorreoInstitucional.EsInstitucional)
+            .WithMessage($"El correo institucional debe ser {CorreoInstitucional.Dominio}.")
+            .When(x => !string.IsNullOrWhiteSpace(x.EmailCorporativo));
 
         RuleFor(x => x.Telefono)
             .MaximumLength(20).WithMessage("El teléfono no puede superar los 20 caracteres.")

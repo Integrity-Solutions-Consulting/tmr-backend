@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using MiniExcelLibs;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
+using tmr_backend.Features.Colaboradores.Domain;
 using tmr_backend.Features.TimeReport.Services;
 
 namespace tmr_backend.Features.CargaActividades
@@ -364,7 +365,10 @@ namespace tmr_backend.Features.CargaActividades
                     Tipopersona          = "NATURAL",
                     Nombres              = string.IsNullOrWhiteSpace(colaborador) ? "Carga Excel" : colaborador.Trim(),
                     Apellidos            = "Usuario",
-                    Email                = string.IsNullOrWhiteSpace(email) ? fallbackEmail : email.Trim(),
+                    // El correo de Integrity va solo en empleado.emailcorporativo.
+                    Email                = string.IsNullOrWhiteSpace(email) ? fallbackEmail
+                                           : CorreoInstitucional.EsInstitucional(email) ? null
+                                           : email.Trim(),
                     Activo               = true,
                     Usuariocreacion      = "carga_excel",
                     Fechacreacion        = DateTime.UtcNow,
@@ -383,7 +387,9 @@ namespace tmr_backend.Features.CargaActividades
             {
                 Idpersona        = persona.Id,
                 Codigoempleado   = string.IsNullOrWhiteSpace(codigoEmpleado) ? fallbackCodigo : codigoEmpleado.Trim(),
-                Emailcorporativo = string.IsNullOrWhiteSpace(email) ? fallbackEmail : email.Trim(),
+                Emailcorporativo = string.IsNullOrWhiteSpace(email) ? fallbackEmail
+                                   : CorreoInstitucional.EsInstitucional(email) ? email.Trim().ToLowerInvariant()
+                                   : null,
                 Activo           = true,
                 Usuariocreacion  = "carga_excel",
                 Fechacreacion    = DateTime.UtcNow,
