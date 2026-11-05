@@ -366,7 +366,8 @@ public sealed class ColaboradorService(
         // ── Actualizar datos laborales ───────────────────────────────
         // sm - Si cambia el tipo de contrato se guarda en el historial con su fecha de vigencia (la jornada esperada
         // depende de él: 8 h o 6 h pasante). Sin fecha, el cambio rige desde hoy; si antes no tenía tipo, desde el ingreso.
-        if (empleado.Idtipocontrato != request.IdTipoContrato)
+        // TEMPORAL-CONTRATO: sin tipo de contrato en la petición se conserva el actual. Quitar el HasValue al revertir.
+        if (request.IdTipoContrato.HasValue && empleado.Idtipocontrato != request.IdTipoContrato)
         {
             var desde = request.FechaCambioContrato
                 ?? (empleado.Idtipocontrato is null
@@ -375,13 +376,13 @@ public sealed class ColaboradorService(
             var ingreso = request.FechaIngreso ?? empleado.Fechaingreso;
             if (ingreso.HasValue && desde < ingreso.Value)
                 throw new InvalidOperationException("La fecha del cambio de contrato no puede ser anterior a la fecha de ingreso.");
-            await CambiarContratoAsync(id, empleado.Idtipocontrato, request.IdTipoContrato, desde, ingreso, ct);
+            await CambiarContratoAsync(id, empleado.Idtipocontrato, request.IdTipoContrato.Value, desde, ingreso, ct);
         }
 
         empleado.Idcargo = request.IdCargo;
         empleado.Idmodotrabajo = request.IdModoTrabajo;
         empleado.Idcategoriaempleado = request.IdCategoriaEmpleado;
-        empleado.Idtipocontrato = request.IdTipoContrato;
+        empleado.Idtipocontrato = request.IdTipoContrato ?? empleado.Idtipocontrato; // TEMPORAL-CONTRATO
         empleado.Fechaingreso = request.FechaIngreso;
         empleado.Aniosexperiencia = request.AniosExperiencia;
         empleado.Activo = request.Activo;
