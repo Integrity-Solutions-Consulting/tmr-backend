@@ -16,6 +16,7 @@ public class ActualizarColaboradorRequestValidator : AbstractValidator<Actualiza
             .EmailAddress().WithMessage("El correo institucional no tiene un formato válido.")
             .When(x => !string.IsNullOrWhiteSpace(x.EmailCorporativo));
 
+        // TEMPORAL-CONTRATO: un valor vacío ya no da error. Al revertir, volver a exigirlo con NotNull.
         RuleFor(x => x.IdTipoContrato)
             .GreaterThan(0).WithMessage("El tipo de contrato es requerido.");
 
