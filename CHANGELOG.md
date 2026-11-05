@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.2](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.7.1...v1.7.2) (2026-11-05)
+
+
+### Bug Fixes
+
+* **colaboradores:** reactivar tipo de contrato obligatorio ([9252441](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/9252441342af86eb46b2483cecf0c36b2a5f4067))
+* **colaboradores:** reactivar tipo de contrato obligatorio ([c1115f0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/c1115f03d84a7fa01f21829110ffe6576699bdeb))
+
 ## [1.7.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.7.0...v1.7.1) (2026-11-05)
 
 
