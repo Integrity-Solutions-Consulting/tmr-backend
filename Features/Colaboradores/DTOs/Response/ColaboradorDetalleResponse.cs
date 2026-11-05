@@ -40,7 +40,8 @@ public record ColaboradorDetalleResponse(
     string? Nacionalidad,
 
     // ── Datos de contacto ─────────────────────────────
-    string Email,
+    string Email,                 // Correo personal
+    string EmailCorporativo,      // Correo institucional
     string Telefono,
     string Direccion,
 
