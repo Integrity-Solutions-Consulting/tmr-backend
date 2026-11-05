@@ -19,7 +19,7 @@ public record ActualizarColaboradorRequest(
     string? Direccion,
 
     int? IdEmpresaCatalogo,
-    int? IdTipoContrato, // TEMPORAL-CONTRATO: volver a int para que sea obligatorio.
+    int IdTipoContrato,
     bool Activo,
 
     int IdDepartamento,
