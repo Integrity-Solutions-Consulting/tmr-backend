@@ -82,10 +82,17 @@ public class EmailService : IEmailService
             {
                 socketOptions = SecureSocketOptions.StartTls;
             }
+            else if (port == 1025)
+            {
+                socketOptions = SecureSocketOptions.StartTlsWhenAvailable;
+                client.ServerCertificateValidationCallback = (_, _, _, _) => true;
+            }
 
             await client.ConnectAsync(smtpServer, port, socketOptions);
 
-            if (!string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password))
+            if (!string.IsNullOrEmpty(username)
+                && !string.IsNullOrEmpty(password)
+                && client.Capabilities.HasFlag(SmtpCapabilities.Authentication))
             {
                 await client.AuthenticateAsync(username, password);
             }

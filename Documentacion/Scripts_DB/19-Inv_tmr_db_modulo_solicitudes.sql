@@ -122,9 +122,14 @@ BEGIN
           AND codigo IN ('TPE', 'EPE', 'HPE');
     END IF;
 
-    -- Limpiar tablas intermedias si se hubiera probado algún borrador del script 20
-    DROP TABLE IF EXISTS time_report.tbl_time_report_solicitud_adjunto CASCADE;
-    DROP TABLE IF EXISTS time_report.tbl_time_report_solicitud_revision CASCADE;
+    -- Limpiar tablas intermedias si se hubiera probado algún borrador del script 20.
+    -- Solo cuando la cabecera tbl_time_report_solicitud aún no existe: si ya existe, el módulo
+    -- está instalado y estas tablas guardan el historial de revisiones y los adjuntos reales,
+    -- así que volver a ejecutar el script no debe borrarlas.
+    IF to_regclass('time_report.tbl_time_report_solicitud') IS NULL THEN
+        DROP TABLE IF EXISTS time_report.tbl_time_report_solicitud_adjunto CASCADE;
+        DROP TABLE IF EXISTS time_report.tbl_time_report_solicitud_revision CASCADE;
+    END IF;
 
     -- Limpiar entrada antigua del instalador si existiera con el nombre viejo
     IF to_regclass('public.tmr_installation_history') IS NOT NULL THEN

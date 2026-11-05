@@ -6,6 +6,7 @@ using tmr_backend.Features.Notificaciones.Application.Cortes;
 using tmr_backend.Features.Notificaciones.Application.Estado;
 using tmr_backend.Features.Notificaciones.Application.Queries;
 using tmr_backend.Features.Notificaciones.Application.Handlers;
+using tmr_backend.Features.Permisos.Services;
 using tmr_backend.Infrastructure.Messaging;
 using tmr_backend.Features.Notificaciones.Infrastructure.Apprise;
 
@@ -66,6 +67,9 @@ public static class NotificacionesModule
         // Avisos que agotaron sus reintentos: quedan registrados como Fallido
         services.AddScoped<IEventoFallidoHandler<HorasFaltantesDetectadas>, FalloDefinitivoHandler>();
         services.AddScoped<IEventoFallidoHandler<NotificacionManualSolicitada>, FalloDefinitivoHandler>();
+
+        // Correos asíncronos del módulo de Permisos
+        services.AddScoped<IEventHandler<CorreoPermisoEncolado>, EnviarCorreoPermisoHandler>();
 
         return services;
     }

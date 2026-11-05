@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using tmr_backend.Features.Notificaciones.Application.Estado;
 using tmr_backend.Features.Notificaciones.Domain;
 using tmr_backend.Features.Permisos.DTOs;
@@ -19,14 +20,23 @@ public static class PermisosEndpoints
     {
         var group = app.MapGroup("/api/permisos").WithTags("Permisos");
 
-        // 0. Diagnóstico de conexión a MinIO S3
+        // 0. Diagnóstico de conexión a MinIO S3 (restringido a RRHH / Administradores)
         group.MapGet("/storage/estado", async (
+            ApplicationDbContext db,
+            ICurrentUserService currentUser,
             IPermisosStorageService storageService,
             CancellationToken ct) =>
         {
+            var actor = await ResolverActorActualAsync(db, currentUser, ct);
+            if (actor is null)
+                return Results.Json(ApiResponse<object>.Fail(401, "Sesión no válida.", []), statusCode: 401);
+
+            if (!actor.EsAdmin && !actor.EsRrhh)
+                return Results.Json(ApiResponse<object>.Fail(403, "Acceso exclusivo para Administradores o Talento Humano.", []), statusCode: 403);
+
             var estado = await storageService.VerificarConexionAsync(ct);
             return Results.Ok(ApiResponse<EstadoConexionMinio>.Ok(estado, estado.Mensaje));
-        });
+        }).RequireAuthorization("PERMISOS_RRHH_READ");
 
         // 1. Contexto del colaborador autenticado (RF-001)
         group.MapGet("/contexto", async (
@@ -36,8 +46,6 @@ public static class PermisosEndpoints
         {
             if (currentUser.UserId <= 0)
                 return Results.Json(ApiResponse<object>.Fail(401, "Sesión no válida.", []), statusCode: 401);
-
-            await AsegurarEsquemaSolicitudesAsync(db, ct);
 
             var usuario = await db.TblAutenticacionUsuarios
                 .AsNoTracking()
@@ -215,50 +223,31 @@ public static class PermisosEndpoints
                 }
             }
 
-            List<TipoPermisoCatalogoDto> tiposPermisoCatalogo = [];
-            try
-            {
-                tiposPermisoCatalogo = await db.TblTimeReportTiposPermiso
-                    .AsNoTracking()
-                    .Where(t => t.Activo)
-                    .OrderBy(t => t.Orden)
-                    .Select(t => new TipoPermisoCatalogoDto(
-                        t.Id,
-                        t.Codigo,
-                        t.CodigoCorto,
-                        t.Nombre,
-                        t.RequiereAdjunto,
-                        t.Orden))
-                    .ToListAsync(ct);
-            }
-            catch
-            {
-                tiposPermisoCatalogo = [];
-            }
+            var tiposPermisoCatalogo = await db.TblTimeReportTiposPermiso
+                .AsNoTracking()
+                .Where(t => t.Activo)
+                .OrderBy(t => t.Orden)
+                .Select(t => new TipoPermisoCatalogoDto(
+                    t.Id,
+                    t.Codigo,
+                    t.CodigoCorto,
+                    t.Nombre,
+                    t.RequiereAdjunto,
+                    t.Orden))
+                .ToListAsync(ct);
 
             List<TblTimeReportSolicitud> misSolicitudes = [];
             if (empleado is not null)
             {
-                try
-                {
-                    misSolicitudes = await db.TblTimeReportSolicitudes
-                        .AsNoTracking()
-                        .Where(s => s.IdEmpleado == empleado.Id && s.Activo)
-                        .Include(s => s.Estado)
-                        .Include(s => s.TipoPermiso)
-                        .ToListAsync(ct);
-                }
-                catch
-                {
-                    misSolicitudes = [];
-                }
+                misSolicitudes = await db.TblTimeReportSolicitudes
+                    .AsNoTracking()
+                    .Where(s => s.IdEmpleado == empleado.Id && s.Activo)
+                    .Include(s => s.Estado)
+                    .Include(s => s.TipoPermiso)
+                    .ToListAsync(ct);
             }
 
-            var diasVacacionesTomados = misSolicitudes
-                .Where(s => s.TipoPermiso.Codigo == "VACACIONES" && s.Estado.Codigo != "RECHAZADA")
-                .Sum(s => s.DiasSolicitados);
-
-            var diasDisponibles = Math.Max(0, 15m - diasVacacionesTomados);
+            var diasDisponibles = CalcularDiasVacacionesDisponibles(empleado, misSolicitudes);
             var enProceso = misSolicitudes.Count(s => s.Estado.Semaforo == "AMARILLO");
             var aprobados = misSolicitudes.Count(s => s.Estado.Codigo == "APROBADA");
             var horasAcumuladas = misSolicitudes
@@ -295,7 +284,7 @@ public static class PermisosEndpoints
                 TiposPermiso: tiposPermisoCatalogo);
 
             return Results.Ok(ApiResponse<ContextoColaboradorPermisoDto>.Ok(dto));
-        });
+        }).RequireAuthorization("MIS_PERMISOS_READ");
 
         // 2. Listar Mis Solicitudes (Colaborador actual)
         group.MapGet("/mis-permisos", async (
@@ -317,7 +306,7 @@ public static class PermisosEndpoints
 
             var dtos = items.Select(s => MapearSolicitudDto(s, null)).ToList();
             return Results.Ok(ApiResponse<IReadOnlyList<PermisoItemDto>>.Ok(dtos));
-        });
+        }).RequireAuthorization("MIS_PERMISOS_READ");
 
         // 3. Crear nueva solicitud sin adjunto (JSON)
         group.MapPost("", async (
@@ -339,7 +328,7 @@ public static class PermisosEndpoints
                 sseNotifier,
                 notificacionService,
                 ct);
-        });
+        }).RequireAuthorization("MIS_PERMISOS_CREATE");
 
         // 4. Crear nueva solicitud con uno o más archivos adjuntos (multipart/form-data -> MinIO)
         group.MapPost("/con-evidencia", async (
@@ -384,9 +373,11 @@ public static class PermisosEndpoints
                 sseNotifier,
                 notificacionService,
                 ct);
-        }).DisableAntiforgery();
+        })
+        .DisableAntiforgery()
+        .RequireAuthorization("MIS_PERMISOS_CREATE");
 
-        // 5. Subir o agregar evidencia a una solicitud existente (Anti-IDOR + MinIO)
+        // 5. Subir o agregar evidencia a una solicitud existente (Anti-IDOR + MinIO + limpieza si falla BD)
         group.MapPost("/{id:int}/evidencia", async (
             int id,
             IFormFile archivo,
@@ -410,10 +401,11 @@ public static class PermisosEndpoints
             if (!esDueno && !actor.EsRrhh && !actor.EsAdmin)
                 return Results.Json(ApiResponse<object>.Fail(403, "No tienes permiso para adjuntar archivos a esta solicitud.", []), statusCode: 403);
 
+            ArchivoAdjuntoSubido? subido = null;
             try
             {
                 var validado = await storageService.ValidarYLeerArchivoAsync(archivo, ct);
-                var subido = await storageService.SubirAdjuntoValidadoAsync(validado, solicitud.Id, solicitud.FechaInicio.Year, ct);
+                subido = await storageService.SubirAdjuntoValidadoAsync(validado, solicitud.Id, solicitud.FechaInicio.Year, ct);
 
                 db.TblTimeReportSolicitudAdjuntos.Add(new TblTimeReportSolicitudAdjunto
                 {
@@ -438,9 +430,19 @@ public static class PermisosEndpoints
             }
             catch (InvalidOperationException ex)
             {
+                if (subido is not null)
+                    await storageService.EliminarAdjuntoAsync(subido.BucketName, subido.ObjectKey, CancellationToken.None);
                 return Results.BadRequest(ApiResponse<object>.Fail(400, ex.Message, []));
             }
-        }).DisableAntiforgery();
+            catch
+            {
+                if (subido is not null)
+                    await storageService.EliminarAdjuntoAsync(subido.BucketName, subido.ObjectKey, CancellationToken.None);
+                throw;
+            }
+        })
+        .DisableAntiforgery()
+        .RequireAuthorization("MIS_PERMISOS_CREATE");
 
         // 6. Descargar evidencia adjunta desde MinIO (RNF-005 Anti-IDOR)
         group.MapGet("/{id:int}/evidencia", async (
@@ -484,7 +486,7 @@ public static class PermisosEndpoints
                 return Results.NotFound(ApiResponse<object>.Fail(404, "No se encontró el objeto en MinIO.", []));
 
             return Results.File(descarga.Contenido, descarga.MimeType, descarga.NombreArchivo);
-        });
+        }).RequireAuthorization("PERMISOS_VIEW");
 
         // 7. Descargar PDF oficial de una solicitud (RNF-005 Anti-IDOR)
         group.MapGet("/{id:int}/pdf", async (
@@ -510,7 +512,7 @@ public static class PermisosEndpoints
             var dto = MapearSolicitudDto(solicitud, null);
             var pdfBytes = pdfService.GenerarFormularioOficialPdf(dto);
             return Results.File(pdfBytes, "application/pdf", $"Formulario_Permiso_{dto.FolioOrCodigo()}.pdf");
-        });
+        }).RequireAuthorization("PERMISOS_VIEW");
 
         // 8. Bandeja de Aprobación Líder (Paso 2)
         group.MapGet("/equipo", async (
@@ -541,7 +543,7 @@ public static class PermisosEndpoints
 
             var dtos = lista.Select(s => MapearSolicitudDto(s, CalcularAlertaTraslape(s, lista))).ToList();
             return Results.Ok(ApiResponse<IReadOnlyList<PermisoItemDto>>.Ok(dtos));
-        });
+        }).RequireAuthorization("PERMISOS_LIDER_READ");
 
         // 9. Decisión del Jefe Inmediato / Líder (Paso 2: aprobar | observar | rechazar)
         group.MapPost("/{id:int}/decision-lider", async (
@@ -571,8 +573,18 @@ public static class PermisosEndpoints
             if (!actor.EsAdmin && (!actor.IdLider.HasValue || solicitud.IdLider != actor.IdLider.Value))
                 return Results.Json(ApiResponse<object>.Fail(403, "Esta solicitud no pertenece a tu bandeja de líder.", []), statusCode: 403);
 
-            if (solicitud.Estado.Codigo is "APROBADA" or "RECHAZADA")
-                return Results.BadRequest(ApiResponse<object>.Fail(400, $"La solicitud ya fue cerrada en estado '{solicitud.Estado.Nombre}'.", []));
+            // Nadie aprueba su propia solicitud, ni siquiera un administrador
+            if (actor.IdEmpleado.HasValue && solicitud.IdEmpleado == actor.IdEmpleado.Value)
+                return Results.Json(ApiResponse<object>.Fail(403, "No puedes decidir sobre tu propia solicitud.", []), statusCode: 403);
+
+            // Máquina de estados estricta: el Jefe Inmediato solo decide cuando está en PENDIENTE_JEFE
+            if (solicitud.Estado.Codigo != "PENDIENTE_JEFE")
+            {
+                return Results.BadRequest(ApiResponse<object>.Fail(
+                    400,
+                    $"No se puede registrar la decisión del Jefe Inmediato porque la solicitud se encuentra en estado '{solicitud.Estado.Nombre}'.",
+                    []));
+            }
 
             var accion = (request.Accion ?? "aprobar").Trim().ToLowerInvariant();
             if (accion is not ("aprobar" or "observar" or "rechazar"))
@@ -625,7 +637,7 @@ public static class PermisosEndpoints
             await notificacionService.NotificarCambioEstadoAsync(dto, correoColab, evento, ct);
 
             return Results.Ok(ApiResponse<PermisoItemDto>.Ok(dto, "Decisión del Jefe Inmediato registrada correctamente."));
-        });
+        }).RequireAuthorization("PERMISOS_LIDER_APPROVE");
 
         // 10. Bandeja de Validación Talento Humano (Paso 3)
         group.MapGet("/rrhh", async (
@@ -647,7 +659,7 @@ public static class PermisosEndpoints
 
             var dtos = lista.Select(s => MapearSolicitudDto(s, null)).ToList();
             return Results.Ok(ApiResponse<IReadOnlyList<PermisoItemDto>>.Ok(dtos));
-        });
+        }).RequireAuthorization("PERMISOS_RRHH_READ");
 
         // 11. Decisión de Talento Humano RRHH (Paso 3: confirmar | devolver)
         group.MapPost("/{id:int}/decision-rrhh", async (
@@ -675,30 +687,50 @@ public static class PermisosEndpoints
             if (solicitud is null)
                 return Results.NotFound(ApiResponse<object>.Fail(404, "Solicitud no encontrada.", []));
 
-            if (solicitud.Estado.Codigo == "RECHAZADA")
-                return Results.BadRequest(ApiResponse<object>.Fail(400, "No se puede confirmar una solicitud rechazada.", []));
+            // Nadie confirma su propia solicitud, ni siquiera un administrador
+            if (actor.IdEmpleado.HasValue && solicitud.IdEmpleado == actor.IdEmpleado.Value)
+                return Results.Json(ApiResponse<object>.Fail(403, "No puedes decidir sobre tu propia solicitud.", []), statusCode: 403);
 
-            var confirmar = !string.Equals(request.Accion, "devolver", StringComparison.OrdinalIgnoreCase);
+            var accion = (request.Accion ?? "confirmar").Trim().ToLowerInvariant();
+            if (accion is not ("confirmar" or "devolver"))
+                return Results.BadRequest(ApiResponse<object>.Fail(400, "Acción inválida. Use 'confirmar' o 'devolver'.", []));
+
+            var confirmar = accion == "confirmar";
             var observacion = request.Observacion?.Trim();
 
             if (!confirmar && string.IsNullOrWhiteSpace(observacion))
-                return Results.BadRequest(ApiResponse<object>.Fail(400, "Debe ingresar la observación al devolver la solicitud.", []));
+                return Results.BadRequest(ApiResponse<object>.Fail(400, "Debe ingresar la observación al devolver la solicitud (RF-007).", []));
 
-            if (confirmar && solicitud.IdLider.HasValue)
+            // Máquina de estados estricta: RRHH solo decide sobre solicitudes en PENDIENTE_TH
+            // (o PENDIENTE_JEFE únicamente cuando la solicitud no tiene líder asignado).
+            if (solicitud.Estado.Codigo is "APROBADA" or "RECHAZADA" or "OBSERVADA")
             {
-                var aprobadaPorLider = solicitud.Revisiones.Any(r =>
-                    r.EtapaRevision == "JEFE_INMEDIATO" && r.Decision == "APROBADO")
-                    || solicitud.Estado.Codigo == "PENDIENTE_TH";
+                return Results.BadRequest(ApiResponse<object>.Fail(
+                    400,
+                    $"La solicitud ya fue procesada en estado '{solicitud.Estado.Nombre}' y no admite una nueva decisión.",
+                    []));
+            }
 
-                if (!aprobadaPorLider && !actor.EsAdmin)
-                    return Results.BadRequest(ApiResponse<object>.Fail(400, "La solicitud aún requiere la aprobación previa del Jefe Inmediato (Paso 2).", []));
+            if (solicitud.Estado.Codigo != "PENDIENTE_TH")
+            {
+                if (solicitud.IdLider.HasValue)
+                {
+                    return Results.BadRequest(ApiResponse<object>.Fail(
+                        400,
+                        "La solicitud aún requiere la aprobación previa del Jefe Inmediato (Paso 2).",
+                        []));
+                }
             }
 
             var codigoEstadoDestino = confirmar ? "APROBADA" : "OBSERVADA";
             solicitud.IdEstado = await ObtenerIdEstadoSolicitudAsync(db, codigoEstadoDestino, ct);
 
             if (!string.IsNullOrWhiteSpace(request.ImpactoTimeReport))
-                solicitud.ImpactoTimeReport = request.ImpactoTimeReport.Trim().ToUpperInvariant();
+            {
+                var impacto = request.ImpactoTimeReport.Trim().ToUpperInvariant();
+                if (impacto is "RESTA_META" or "SUMA_REPORTADAS" or "SIN_IMPACTO")
+                    solicitud.ImpactoTimeReport = impacto;
+            }
 
             solicitud.UsuarioModificacion = actor.Email;
             solicitud.FechaModificacion = DateTime.UtcNow;
@@ -734,7 +766,7 @@ public static class PermisosEndpoints
                 confirmar
                     ? "Solicitud confirmada definitivamente por Talento Humano."
                     : "Solicitud devuelta con observaciones."));
-        });
+        }).RequireAuthorization("PERMISOS_RRHH_CONFIRM");
 
         // 12. Reenviar enlace externo Magic Link (regenera vigencia y limpia uso previo)
         group.MapPost("/{id:int}/reenviar-enlace", async (
@@ -749,10 +781,19 @@ public static class PermisosEndpoints
                 return Results.Json(ApiResponse<object>.Fail(403, "No autorizado.", []), statusCode: 403);
 
             var solicitud = await db.TblTimeReportSolicitudes
+                .Include(s => s.Estado)
+                .Include(s => s.Lider)
+                    .ThenInclude(l => l!.IdtipoNavigation)
                 .FirstOrDefaultAsync(s => s.Id == id && s.Activo, ct);
 
             if (solicitud is null)
                 return Results.NotFound(ApiResponse<object>.Fail(404, "Solicitud no encontrada.", []));
+
+            if (!EsLiderExterno(solicitud.Lider))
+                return Results.BadRequest(ApiResponse<object>.Fail(400, "El Jefe Inmediato de esta solicitud es interno; no usa enlace externo.", []));
+
+            if (solicitud.Estado.Codigo != "PENDIENTE_JEFE")
+                return Results.BadRequest(ApiResponse<object>.Fail(400, "La solicitud ya no está pendiente del Jefe Inmediato.", []));
 
             solicitud.TokenExterno = Guid.NewGuid().ToString("N");
             solicitud.TokenExternoExpira = DateTime.UtcNow.AddHours(72);
@@ -761,17 +802,19 @@ public static class PermisosEndpoints
             await db.SaveChangesAsync(ct);
 
             var recargada = await ConsultarSolicitudesBase(db).FirstAsync(s => s.Id == id, ct);
-            var dto = MapearSolicitudDto(recargada, null);
+            var dtoCorreo = MapearSolicitudDto(recargada, null) with { TokenExterno = recargada.TokenExterno };
             var correoColab = recargada.Empleado.Emailcorporativo ?? recargada.Empleado.IdpersonaNavigation.Email;
 
             await notificacionService.NotificarCambioEstadoAsync(
-                dto,
+                dtoCorreo,
                 correoColab,
                 EventoNotificacionPermiso.ReenvioMagicLink,
                 ct);
 
-            return Results.Ok(ApiResponse<PermisoItemDto>.Ok(dto, "Magic Link regenerado y reenviado al líder externo."));
-        });
+            return Results.Ok(ApiResponse<PermisoItemDto>.Ok(
+                dtoCorreo with { TokenExterno = null },
+                "Magic Link regenerado y reenviado al líder externo."));
+        }).RequireAuthorization("PERMISOS_RRHH_CONFIRM");
 
         // 13. Historial General (Gerencia / RRHH / Admin)
         group.MapGet("/gerencia", async (
@@ -794,7 +837,7 @@ public static class PermisosEndpoints
 
             var dtos = lista.Select(s => MapearSolicitudDto(s, null)).ToList();
             return Results.Ok(ApiResponse<IReadOnlyList<PermisoItemDto>>.Ok(dtos));
-        });
+        }).RequireAuthorization("PERMISOS_GERENCIA_READ");
 
         // 14. Portal externo para Líderes de Clientes vía Magic Link (con expiración y un solo uso)
         group.MapGet("/externo/{token}", async (
@@ -821,6 +864,8 @@ public static class PermisosEndpoints
         {
             var solicitud = await db.TblTimeReportSolicitudes
                 .Include(s => s.Estado)
+                .Include(s => s.Lider)
+                    .ThenInclude(l => l!.IdtipoNavigation)
                 .FirstOrDefaultAsync(s => s.TokenExterno == token && s.Activo, ct);
 
             if (solicitud is null || (solicitud.TokenExternoExpira.HasValue && solicitud.TokenExternoExpira.Value < DateTime.UtcNow))
@@ -829,7 +874,18 @@ public static class PermisosEndpoints
             if (solicitud.TokenExternoUsadoEn.HasValue)
                 return Results.BadRequest(ApiResponse<object>.Fail(400, "Este enlace de aprobación ya fue utilizado anteriormente.", []));
 
-            var aprobar = !string.Equals(request.Accion, "rechazar", StringComparison.OrdinalIgnoreCase);
+            // El magic link es solo para jefes de cliente externo; los internos deciden desde su cuenta TMR
+            if (!EsLiderExterno(solicitud.Lider))
+                return Results.BadRequest(ApiResponse<object>.Fail(400, "Esta solicitud debe ser revisada por su Jefe Inmediato desde TMR.", []));
+
+            if (solicitud.Estado.Codigo != "PENDIENTE_JEFE")
+                return Results.BadRequest(ApiResponse<object>.Fail(400, $"La solicitud ya no está pendiente del Jefe Inmediato (estado actual: '{solicitud.Estado.Nombre}').", []));
+
+            var accion = (request.Accion ?? "aprobar").Trim().ToLowerInvariant();
+            if (accion is not ("aprobar" or "rechazar"))
+                return Results.BadRequest(ApiResponse<object>.Fail(400, "Acción inválida. Use 'aprobar' o 'rechazar'.", []));
+
+            var aprobar = accion == "aprobar";
             var comentario = request.Comentario?.Trim();
             if (!aprobar && string.IsNullOrWhiteSpace(comentario))
                 return Results.BadRequest(ApiResponse<object>.Fail(400, "Debe indicar el motivo del rechazo (RF-007).", []));
@@ -936,10 +992,9 @@ public static class PermisosEndpoints
         if (currentUser.UserId <= 0)
             return Results.Json(ApiResponse<object>.Fail(401, "Sesión no válida.", []), statusCode: 401);
 
-        await AsegurarEsquemaSolicitudesAsync(db, ct);
-
         var usuario = await db.TblAutenticacionUsuarios
-            .FirstOrDefaultAsync(u => u.Id == currentUser.UserId, ct);
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Id == currentUser.UserId && u.Activo, ct);
 
         if (usuario is null)
             return Results.Json(ApiResponse<object>.Fail(404, "Usuario no encontrado.", []), statusCode: 404);
@@ -966,48 +1021,10 @@ public static class PermisosEndpoints
 
         if (empleado is null)
         {
-            if (!usuario.Idpersona.HasValue)
-            {
-                var emailLower = usuario.Email.Trim().ToLowerInvariant();
-                var personaExistente = await db.TblAdministracionPersonas
-                    .FirstOrDefaultAsync(p => p.Activo && p.Email != null && p.Email.ToLower() == emailLower, ct);
-
-                if (personaExistente is null)
-                {
-                    var alias = usuario.Email.Contains('@') ? usuario.Email.Split('@')[0] : usuario.Email;
-                    personaExistente = new TblAdministracionPersona
-                    {
-                        Nombres = alias,
-                        Apellidos = "",
-                        Numeroidentificacion = $"USR-{usuario.Id:D5}",
-                        Email = usuario.Email,
-                        Activo = true,
-                        Usuariocreacion = usuario.Email,
-                        Fechacreacion = DateTime.UtcNow,
-                        Ipcreacion = ObtenerIpCliente(httpContext)
-                    };
-                    db.TblAdministracionPersonas.Add(personaExistente);
-                    await db.SaveChangesAsync(ct);
-                }
-
-                usuario.Idpersona = personaExistente.Id;
-                await db.SaveChangesAsync(ct);
-            }
-
-            var nuevoEmp = new TblAdministracionEmpleado
-            {
-                Idpersona = usuario.Idpersona.Value,
-                Codigoempleado = $"EMP-{usuario.Id:D3}",
-                Emailcorporativo = usuario.Email,
-                Fechaingreso = DateOnly.FromDateTime(DateTime.UtcNow),
-                Activo = true,
-                Usuariocreacion = usuario.Email,
-                Fechacreacion = DateTime.UtcNow,
-                Ipcreacion = ObtenerIpCliente(httpContext)
-            };
-            db.TblAdministracionEmpleados.Add(nuevoEmp);
-            await db.SaveChangesAsync(ct);
-            empleado = nuevoEmp;
+            return Results.BadRequest(ApiResponse<object>.Fail(
+                400,
+                "Tu usuario no tiene una ficha de colaborador activa asociada. Solicita a Talento Humano o al Administrador que vincule tu ficha de empleado antes de registrar solicitudes.",
+                []));
         }
 
         if (string.IsNullOrWhiteSpace(request.Motivo))
@@ -1021,26 +1038,77 @@ public static class PermisosEndpoints
         if (fechaFin.Value < fechaInicio.Value)
             return Results.BadRequest(ApiResponse<object>.Fail(400, "La fecha de finalización no puede ser anterior a la fecha de inicio.", []));
 
-        var fechaRegreso = ParsearFecha(request.FechaRegreso) ?? CalcularSiguienteDiaLaborable(fechaFin.Value);
         var horario = string.IsNullOrWhiteSpace(request.Horario) ? "COMPLETA" : request.Horario.Trim().ToUpperInvariant();
         if (horario is not ("COMPLETA" or "MANANA" or "TARDE" or "OTROS"))
             horario = "COMPLETA";
 
-        var diasHabiles = request.TotalDias is > 0
-            ? request.TotalDias.Value
-            : horario is "MANANA" or "TARDE"
-                ? 0.5m
-                : CalcularDiasLaborables(fechaInicio.Value, fechaFin.Value);
+        // Cargar feriados activos del rango para descontarlos de los días hábiles y fecha de regreso
+        var feriados = await CargarFeriadosRangoAsync(db, fechaInicio.Value, fechaFin.Value.AddDays(15), ct);
 
-        var horasTotales = request.TotalHoras is > 0
-            ? request.TotalHoras.Value
-            : horario is "MANANA" or "TARDE"
-                ? 4m
-                : diasHabiles * 8m;
+        var diasLaborablesRango = CalcularDiasLaborablesSinMinimo(fechaInicio.Value, fechaFin.Value, feriados);
+        if (diasLaborablesRango <= 0)
+        {
+            return Results.BadRequest(ApiResponse<object>.Fail(
+                400,
+                "El período seleccionado solo contiene fines de semana o días feriados.",
+                []));
+        }
+
+        var fechaRegresoSolicitada = ParsearFecha(request.FechaRegreso);
+        var fechaRegreso = fechaRegresoSolicitada.HasValue
+                           && fechaRegresoSolicitada.Value > fechaFin.Value
+                           && EsDiaLaborable(fechaRegresoSolicitada.Value, feriados)
+            ? fechaRegresoSolicitada.Value
+            : CalcularSiguienteDiaLaborable(fechaFin.Value, feriados);
+
+        decimal diasHabiles;
+        decimal horasTotales;
+        if (horario is "MANANA" or "TARDE")
+        {
+            diasHabiles = 0.5m;
+            horasTotales = 4m;
+        }
+        else if (horario == "OTROS" && request.TotalHoras is > 0)
+        {
+            horasTotales = request.TotalHoras.Value;
+            diasHabiles = request.TotalDias is > 0
+                ? request.TotalDias.Value
+                : Math.Round(horasTotales / 8m, 2);
+        }
+        else
+        {
+            diasHabiles = diasLaborablesRango;
+            horasTotales = diasHabiles * 8m;
+        }
+
+        // Validar que el mismo colaborador no tenga otra solicitud activa traslapada en esas fechas
+        var solicitudesMismoEmpleado = await db.TblTimeReportSolicitudes
+            .AsNoTracking()
+            .Include(s => s.Estado)
+            .Include(s => s.TipoPermiso)
+            .Where(s => s.Activo
+                        && s.IdEmpleado == empleado.Id
+                        && s.Estado.Codigo != "RECHAZADA"
+                        && s.FechaInicio <= fechaFin.Value
+                        && s.FechaFin >= fechaInicio.Value)
+            .ToListAsync(ct);
+
+        var traslapePropio = solicitudesMismoEmpleado.FirstOrDefault(s =>
+            !(s.FechaInicio == fechaInicio.Value
+              && s.FechaFin == fechaFin.Value
+              && ((s.Horario == "MANANA" && horario == "TARDE") || (s.Horario == "TARDE" && horario == "MANANA"))));
+
+        if (traslapePropio is not null)
+        {
+            return Results.BadRequest(ApiResponse<object>.Fail(
+                400,
+                $"Ya tienes una solicitud activa ({traslapePropio.Codigo} - {traslapePropio.TipoPermiso.Nombre}, del {traslapePropio.FechaInicio:dd/MM/yyyy} al {traslapePropio.FechaFin:dd/MM/yyyy}) que se traslapa con las fechas seleccionadas.",
+                []));
+        }
 
         var tipoPermiso = await ObtenerTipoPermisoAsync(db, request.TipoOficial, ct);
         if (tipoPermiso is null)
-            return Results.BadRequest(ApiResponse<object>.Fail(400, "El catálogo de tipos de permiso no está inicializado. Ejecute el script 19.", []));
+            return Results.BadRequest(ApiResponse<object>.Fail(400, "El catálogo de tipos de permiso no está inicializado.", []));
 
         // RF-004: Certificado médico obligatorio para Nómina en Licencia por enfermedad > 1 día
         var (esNomina, _) = await ResolverRegimenContratoAsync(db, empleado, ct);
@@ -1077,102 +1145,135 @@ public static class PermisosEndpoints
 
         var idEstadoPendiente = await ObtenerIdEstadoSolicitudAsync(db, "PENDIENTE_JEFE", ct);
 
-        // Resolver asignación de proyecto, cliente y líder (RF-001)
+        // Resolver asignación de proyecto, cliente y líder (RF-001).
         int? idAsignacion = null;
+        int? idCliente = null;
+        int? idLider = null;
         int? idProyecto = request.IdProyecto is > 0 ? request.IdProyecto : null;
-        int? idCliente = request.IdCliente is > 0 ? request.IdCliente : null;
-        int? idLider = request.IdLider is > 0 ? request.IdLider : null;
+        int? idLiderSolicitado = request.IdLider is > 0 ? request.IdLider : null;
 
         var asignacionesEmpleado = await db.TblTimeReportAsignacionProyectos
             .AsNoTracking()
-            .Include(a => a.IdproyectoNavigation)
             .Where(a => a.Idempleado == empleado.Id && a.Activo)
             .OrderByDescending(a => a.Id)
             .ToListAsync(ct);
 
-        var asigElegida = idProyecto.HasValue
-            ? asignacionesEmpleado.FirstOrDefault(a => a.Idproyecto == idProyecto.Value)
-            : asignacionesEmpleado.FirstOrDefault();
+        // Sin proyecto elegido se usa la asignación activa más reciente del colaborador
+        idProyecto ??= asignacionesEmpleado.FirstOrDefault()?.Idproyecto;
 
-        if (asigElegida is not null)
+        if (idProyecto.HasValue)
         {
-            idAsignacion = asigElegida.Id;
-            idProyecto ??= asigElegida.Idproyecto;
-            idCliente ??= asigElegida.IdproyectoNavigation.Idcliente;
-            idLider ??= asigElegida.Idlider;
-        }
+            var proyecto = await db.TblTimeReportProyectos.AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Id == idProyecto.Value && p.Activo, ct);
+            if (proyecto is null)
+                return Results.BadRequest(ApiResponse<object>.Fail(400, "El proyecto seleccionado no existe o no está activo.", []));
 
-        if (idProyecto.HasValue && (!idCliente.HasValue || !idLider.HasValue || !idAsignacion.HasValue))
-        {
-            var proy = await db.TblTimeReportProyectos.AsNoTracking()
-                .FirstOrDefaultAsync(p => p.Id == idProyecto.Value, ct);
-            idCliente ??= proy?.Idcliente;
+            idCliente = proyecto.Idcliente;
 
-            var asigProyecto = await db.TblTimeReportAsignacionProyectos
+            var asigPropia = asignacionesEmpleado.FirstOrDefault(a => a.Idproyecto == idProyecto.Value);
+            idAsignacion = asigPropia?.Id;
+
+            // Líderes del proyecto: el de la asignación propia, el de la fila cabecera (Idempleado == null) o cualquier fila activa
+            var filasConLider = await db.TblTimeReportAsignacionProyectos
                 .AsNoTracking()
                 .Where(a => a.Activo && a.Idproyecto == idProyecto.Value && a.Idlider != null)
-                .OrderByDescending(a => a.Idempleado == null)
-                .FirstOrDefaultAsync(ct);
+                .ToListAsync(ct);
 
-            if (asigProyecto is not null)
+            if (filasConLider.Count > 0)
             {
-                idLider ??= asigProyecto.Idlider;
-                idAsignacion ??= asigProyecto.Id;
+                if (idLiderSolicitado.HasValue && filasConLider.All(a => a.Idlider != idLiderSolicitado.Value))
+                    return Results.BadRequest(ApiResponse<object>.Fail(400, "El Jefe Inmediato indicado no es líder del proyecto seleccionado.", []));
+
+                var filaLider = idLiderSolicitado.HasValue
+                    ? filasConLider
+                        .Where(a => a.Idlider == idLiderSolicitado.Value)
+                        .OrderByDescending(a => a.Idempleado == empleado.Id)
+                        .ThenByDescending(a => a.Idempleado == null)
+                        .First()
+                    : asigPropia?.Idlider is not null
+                        ? asigPropia
+                        : filasConLider.OrderByDescending(a => a.Idempleado == null).First();
+
+                idLider = filaLider.Idlider;
+                idAsignacion ??= filaLider.Id;
             }
         }
 
-        var anio = fechaInicio.Value.Year;
-        var consecutivo = await db.TblTimeReportSolicitudes.CountAsync(s => s.FechaInicio.Year == anio, ct) + 1;
-        var codigo = $"PER-{anio}-{consecutivo:D3}";
-        while (await db.TblTimeReportSolicitudes.AnyAsync(s => s.Codigo == codigo, ct))
+        if (!idLider.HasValue && idLiderSolicitado.HasValue)
         {
-            consecutivo++;
-            codigo = $"PER-{anio}-{consecutivo:D3}";
+            var liderActivo = await db.TblAdministracionLiders
+                .AnyAsync(l => l.Id == idLiderSolicitado.Value && l.Activo, ct);
+            if (!liderActivo)
+                return Results.BadRequest(ApiResponse<object>.Fail(400, "El Jefe Inmediato indicado no existe o no está activo.", []));
+
+            idLider = idLiderSolicitado;
         }
 
-        int nuevaSolicitudId;
+        var anio = fechaInicio.Value.Year;
+        int nuevaSolicitudId = 0;
+        var objetosSubidos = new List<ArchivoAdjuntoSubido>();
+
         await using (var tx = await db.Database.BeginTransactionAsync(ct))
         {
-            var nueva = new TblTimeReportSolicitud
+            try
             {
-                Codigo = codigo,
-                IdEmpleado = empleado.Id,
-                IdAsignacionProyecto = idAsignacion,
-                IdProyecto = idProyecto,
-                IdCliente = idCliente,
-                IdLider = idLider,
-                IdTipoPermiso = tipoPermiso.Id,
-                IdEstado = idEstadoPendiente,
-                FechaSolicitud = CalculoHorasPeriodo.HoyEcuador(),
-                Motivo = request.Motivo.Trim(),
-                FechaInicio = fechaInicio.Value,
-                FechaFin = fechaFin.Value,
-                FechaRegreso = fechaRegreso,
-                DiasSolicitados = diasHabiles,
-                Horario = horario,
-                DetalleHorario = string.IsNullOrWhiteSpace(request.DetalleHorario) ? null : request.DetalleHorario.Trim(),
-                HorasSolicitadas = horasTotales,
-                ImpactoTimeReport = "RESTA_META",
-                TokenExterno = Guid.NewGuid().ToString("N"),
-                TokenExternoExpira = DateTime.UtcNow.AddHours(72),
-                Activo = true,
-                UsuarioCreacion = usuario.Email,
-                FechaCreacion = DateTime.UtcNow,
-                IpCreacion = ObtenerIpCliente(httpContext)
-            };
+                TblTimeReportSolicitud? nueva = null;
+                for (var intento = 1; intento <= 5; intento++)
+                {
+                    var codigo = await GenerarSiguienteCodigoSolicitudAsync(db, anio, intento - 1, ct);
+                    nueva = new TblTimeReportSolicitud
+                    {
+                        Codigo = codigo,
+                        IdEmpleado = empleado.Id,
+                        IdAsignacionProyecto = idAsignacion,
+                        IdProyecto = idProyecto,
+                        IdCliente = idCliente,
+                        IdLider = idLider,
+                        IdTipoPermiso = tipoPermiso.Id,
+                        IdEstado = idEstadoPendiente,
+                        FechaSolicitud = CalculoHorasPeriodo.HoyEcuador(),
+                        Motivo = request.Motivo.Trim(),
+                        FechaInicio = fechaInicio.Value,
+                        FechaFin = fechaFin.Value,
+                        FechaRegreso = fechaRegreso,
+                        DiasSolicitados = diasHabiles,
+                        Horario = horario,
+                        DetalleHorario = string.IsNullOrWhiteSpace(request.DetalleHorario) ? null : request.DetalleHorario.Trim(),
+                        HorasSolicitadas = horasTotales,
+                        ImpactoTimeReport = "RESTA_META",
+                        TokenExterno = Guid.NewGuid().ToString("N"),
+                        TokenExternoExpira = DateTime.UtcNow.AddHours(72),
+                        Activo = true,
+                        UsuarioCreacion = usuario.Email,
+                        FechaCreacion = DateTime.UtcNow,
+                        IpCreacion = ObtenerIpCliente(httpContext)
+                    };
 
-            db.TblTimeReportSolicitudes.Add(nueva);
-            await db.SaveChangesAsync(ct);
-            nuevaSolicitudId = nueva.Id;
+                    db.TblTimeReportSolicitudes.Add(nueva);
+                    try
+                    {
+                        await db.SaveChangesAsync(ct);
+                        break;
+                    }
+                    catch (DbUpdateException ex) when (
+                        intento < 5
+                        && ex.InnerException is PostgresException pg
+                        && pg.SqlState == PostgresErrorCodes.UniqueViolation)
+                    {
+                        db.Entry(nueva).State = EntityState.Detached;
+                    }
+                }
 
-            // Subir a MinIO con llave UUID estructurada solicitudes/{anio}/{id}/{uuid}.{ext}
-            if (archivosValidados.Count > 0 && storageService is not null)
-            {
-                try
+                nuevaSolicitudId = nueva!.Id;
+
+                // Subir a MinIO con llave UUID estructurada solicitudes/{anio}/{id}/{uuid}.{ext}
+                if (archivosValidados.Count > 0 && storageService is not null)
                 {
                     foreach (var val in archivosValidados)
                     {
                         var subido = await storageService.SubirAdjuntoValidadoAsync(val, nueva.Id, anio, ct);
+                        objetosSubidos.Add(subido);
+
                         db.TblTimeReportSolicitudAdjuntos.Add(new TblTimeReportSolicitudAdjunto
                         {
                             IdSolicitud = nueva.Id,
@@ -1189,14 +1290,19 @@ public static class PermisosEndpoints
                     }
                     await db.SaveChangesAsync(ct);
                 }
-                catch (Exception ex)
-                {
-                    await tx.RollbackAsync(ct);
-                    return Results.BadRequest(ApiResponse<object>.Fail(400, ex.Message, []));
-                }
-            }
 
-            await tx.CommitAsync(ct);
+                await tx.CommitAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                await tx.RollbackAsync(CancellationToken.None);
+                if (storageService is not null && objetosSubidos.Count > 0)
+                {
+                    foreach (var obj in objetosSubidos)
+                        await storageService.EliminarAdjuntoAsync(obj.BucketName, obj.ObjectKey, CancellationToken.None);
+                }
+                return Results.BadRequest(ApiResponse<object>.Fail(400, ex.Message, []));
+            }
         }
 
         var creada = await ConsultarSolicitudesBase(db).FirstAsync(s => s.Id == nuevaSolicitudId, ct);
@@ -1205,18 +1311,44 @@ public static class PermisosEndpoints
         // Campana SSE en tiempo real (RF-010)
         await EmitirNotificacionesInternasPaso1Async(db, sseNotifier, creada, dto, ct);
 
-        // Correo / Apprise
+        // Correo / Apprise (encolado asíncronamente en el Outbox de mensajería)
         var correoColab = creada.Empleado.Emailcorporativo
                           ?? creada.Empleado.IdpersonaNavigation.Email
                           ?? usuario.Email;
 
+        // Solo el correo al líder externo usa el token; la respuesta HTTP no lo incluye
         await notificacionService.NotificarCambioEstadoAsync(
-            dto,
+            dto with { TokenExterno = creada.TokenExterno },
             correoColab,
             EventoNotificacionPermiso.SolicitudCreada,
             ct);
 
         return Results.Ok(ApiResponse<PermisoItemDto>.Ok(dto, "Solicitud registrada exitosamente."));
+    }
+
+    private static async Task<string> GenerarSiguienteCodigoSolicitudAsync(
+        ApplicationDbContext db,
+        int anio,
+        int desplazamientoReintento,
+        CancellationToken ct)
+    {
+        var prefijo = $"PER-{anio}-";
+        var codigosAnio = await db.TblTimeReportSolicitudes
+            .AsNoTracking()
+            .Where(s => s.Codigo.StartsWith(prefijo))
+            .Select(s => s.Codigo)
+            .ToListAsync(ct);
+
+        var maxConsecutivo = 0;
+        foreach (var cod in codigosAnio)
+        {
+            var sufijo = cod[prefijo.Length..];
+            if (int.TryParse(sufijo, NumberStyles.Integer, CultureInfo.InvariantCulture, out var num) && num > maxConsecutivo)
+                maxConsecutivo = num;
+        }
+
+        var siguiente = maxConsecutivo + 1 + desplazamientoReintento;
+        return $"{prefijo}{siguiente:D3}";
     }
 
     // =========================================================================
@@ -1406,7 +1538,9 @@ public static class PermisosEndpoints
             EstadoLider: estadoLider,
             Comentarios: comentarios,
             TraslapeAlerta: traslapeAlerta,
-            TokenExterno: s.TokenExterno,
+            // El token del magic link nunca sale en respuestas de la API: solo se agrega
+            // (con `with`) al DTO que se usa para el correo al líder externo.
+            TokenExterno: null,
             Adjuntos: adjuntosDto);
     }
 
@@ -1430,8 +1564,6 @@ public static class PermisosEndpoints
     {
         if (currentUser.UserId <= 0) return null;
 
-        await AsegurarEsquemaSolicitudesAsync(db, ct);
-
         var usuario = await db.TblAutenticacionUsuarios
             .AsNoTracking()
             .FirstOrDefaultAsync(u => u.Id == currentUser.UserId && u.Activo, ct);
@@ -1441,6 +1573,7 @@ public static class PermisosEndpoints
         var empleado = await db.TblAdministracionEmpleados
             .AsNoTracking()
             .DeLaPersona(usuario.Idpersona)
+            .Include(e => e.IdcargoNavigation)
             .FirstOrDefaultAsync(ct);
 
         int? idLider = null;
@@ -1455,8 +1588,12 @@ public static class PermisosEndpoints
         bool TieneRol(params string[] nombres) =>
             currentUser.Roles.Any(r => nombres.Any(n => r.Equals(n, StringComparison.OrdinalIgnoreCase)));
 
+        var cargoNombre = empleado?.IdcargoNavigation?.Nombrecargo?.Trim();
+        var esCargoLiderTh = string.Equals(cargoNombre, "Líder de Talento Humano", StringComparison.OrdinalIgnoreCase)
+                             || string.Equals(cargoNombre, "Lider de Talento Humano", StringComparison.OrdinalIgnoreCase);
+
         var esAdmin = TieneRol("ADMINISTRADOR", "ADMIN");
-        var esRrhh = TieneRol("RECURSOS HUMANOS", "RECURSOS_HUMANOS");
+        var esRrhh = esCargoLiderTh || TieneRol("RECURSOS HUMANOS", "RECURSOS_HUMANOS");
         var esLider = idLider.HasValue || TieneRol("LIDER", "LÍDER");
         var esGerente = TieneRol("GERENTE", "GERENCIA");
 
@@ -1523,6 +1660,33 @@ public static class PermisosEndpoints
                               || valor.Contains("Honorarios", StringComparison.OrdinalIgnoreCase);
 
         return (!esServiciosProf, detalle.Valor ?? "Relación de dependencia (Nómina)");
+    }
+
+    private static decimal CalcularDiasVacacionesDisponibles(
+        TblAdministracionEmpleado? empleado,
+        IReadOnlyCollection<TblTimeReportSolicitud> misSolicitudes)
+    {
+        var hoy = CalculoHorasPeriodo.HoyEcuador();
+        var diasBaseAnual = 15m;
+
+        if (empleado?.Fechaingreso is { } ingreso && ingreso < hoy)
+        {
+            var aniosCompletos = hoy.Year - ingreso.Year;
+            if (hoy < ingreso.AddYears(aniosCompletos))
+                aniosCompletos--;
+
+            // Código del Trabajo (Art. 69): 1 día adicional por cada año que exceda de 5, hasta 15 adicionales
+            if (aniosCompletos > 5)
+                diasBaseAnual += Math.Min(15, aniosCompletos - 5);
+        }
+
+        var diasVacacionesTomadosAnio = misSolicitudes
+            .Where(s => s.TipoPermiso.Codigo == "VACACIONES"
+                        && s.Estado.Codigo != "RECHAZADA"
+                        && s.FechaInicio.Year == hoy.Year)
+            .Sum(s => s.DiasSolicitados);
+
+        return Math.Max(0m, diasBaseAnual - diasVacacionesTomadosAnio);
     }
 
     private static async Task EmitirNotificacionesInternasPaso1Async(
@@ -1672,8 +1836,25 @@ public static class PermisosEndpoints
             .Select(u => (int?)u.Id)
             .FirstOrDefaultAsync(ct);
 
-    private static async Task<List<int>> ObtenerIdsUsuariosRrhhAsync(ApplicationDbContext db, CancellationToken ct) =>
-        await db.TblAutenticacionUsuarioRols
+    private static async Task<List<int>> ObtenerIdsUsuariosRrhhAsync(ApplicationDbContext db, CancellationToken ct)
+    {
+        var idsLiderTh = await db.TblAdministracionEmpleados
+            .AsNoTracking()
+            .Where(e => e.Activo
+                        && e.IdcargoNavigation != null
+                        && e.IdcargoNavigation.Activo
+                        && (e.IdcargoNavigation.Nombrecargo.ToUpper() == "LÍDER DE TALENTO HUMANO"
+                            || e.IdcargoNavigation.Nombrecargo.ToUpper() == "LIDER DE TALENTO HUMANO"))
+            .SelectMany(e => e.IdpersonaNavigation.TblAutenticacionUsuarios
+                .Where(u => u.Activo)
+                .Select(u => u.Id))
+            .Distinct()
+            .ToListAsync(ct);
+
+        if (idsLiderTh.Count > 0)
+            return idsLiderTh;
+
+        return await db.TblAutenticacionUsuarioRols
             .AsNoTracking()
             .Where(ur => ur.Activo
                          && ur.IdusuarioNavigation.Activo
@@ -1683,9 +1864,10 @@ public static class PermisosEndpoints
             .Select(ur => ur.Idusuario)
             .Distinct()
             .ToListAsync(ct);
+    }
 
     // =========================================================================
-    // Helpers de Catálogo Normalizado y Fechas
+    // Helpers de Catálogo Normalizado, Feriados y Fechas
     // =========================================================================
     private static (string EstadoClase, string EstadoTexto, string EstadoRrhh, string EstadoLider) ResolverEstados(
         string codigoEstado,
@@ -1808,69 +1990,37 @@ public static class PermisosEndpoints
         return estado.Id;
     }
 
-    private static readonly SemaphoreSlim EsquemaLock = new(1, 1);
-    private static bool _esquemaSolicitudesVerificado;
-
-    private static async Task AsegurarEsquemaSolicitudesAsync(ApplicationDbContext db, CancellationToken ct)
+    private static async Task<HashSet<DateOnly>> CargarFeriadosRangoAsync(
+        ApplicationDbContext db,
+        DateOnly desde,
+        DateOnly hasta,
+        CancellationToken ct)
     {
-        if (_esquemaSolicitudesVerificado) return;
+        var feriadosDb = await db.TblTimeReportFeriados
+            .AsNoTracking()
+            .Where(f => f.Activo && ((f.Fechaferiado >= desde && f.Fechaferiado <= hasta) || f.Esrecurrente == true))
+            .Select(f => new { f.Fechaferiado, f.Esrecurrente })
+            .ToListAsync(ct);
 
-        await EsquemaLock.WaitAsync(ct);
-        try
+        var set = new HashSet<DateOnly>();
+        foreach (var f in feriadosDb)
         {
-            if (_esquemaSolicitudesVerificado) return;
+            if (f.Fechaferiado >= desde && f.Fechaferiado <= hasta)
+                set.Add(f.Fechaferiado);
 
-            var conn = (Npgsql.NpgsqlConnection)db.Database.GetDbConnection();
-            var abrir = conn.State != System.Data.ConnectionState.Open;
-            if (abrir) await conn.OpenAsync(ct);
-
-            try
+            if (f.Esrecurrente == true)
             {
-                await using var checkCmd = new Npgsql.NpgsqlCommand(
-                    "SELECT to_regclass('time_report.tbl_time_report_solicitud') IS NOT NULL;", conn);
-                var existe = (bool)(await checkCmd.ExecuteScalarAsync(ct) ?? false);
-                if (!existe)
+                for (var anio = desde.Year; anio <= hasta.Year; anio++)
                 {
-                    var asm = typeof(PermisosEndpoints).Assembly;
-                    var resName = asm.GetManifestResourceNames()
-                        .FirstOrDefault(n => n.EndsWith("19-Inv_tmr_db_modulo_solicitudes.sql", StringComparison.OrdinalIgnoreCase));
-
-                    string? sql = null;
-                    if (resName is not null)
-                    {
-                        using var reader = new StreamReader(asm.GetManifestResourceStream(resName)!);
-                        sql = await reader.ReadToEndAsync(ct);
-                    }
-                    else
-                    {
-                        var filePath = Path.Combine(AppContext.BaseDirectory, "Documentacion", "Scripts_DB", "19-Inv_tmr_db_modulo_solicitudes.sql");
-                        if (File.Exists(filePath))
-                            sql = await File.ReadAllTextAsync(filePath, ct);
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(sql))
-                    {
-                        sql = System.Text.RegularExpressions.Regex.Replace(sql, @"(?m)^\s*(BEGIN|COMMIT);[ \t]*$", "");
-                        await using var execCmd = new Npgsql.NpgsqlCommand(sql, conn) { CommandTimeout = 180 };
-                        await execCmd.ExecuteNonQueryAsync(ct);
-                    }
+                    var diasEnMes = DateTime.DaysInMonth(anio, f.Fechaferiado.Month);
+                    var proyectada = new DateOnly(anio, f.Fechaferiado.Month, Math.Min(f.Fechaferiado.Day, diasEnMes));
+                    if (proyectada >= desde && proyectada <= hasta)
+                        set.Add(proyectada);
                 }
+            }
+        }
 
-                _esquemaSolicitudesVerificado = true;
-            }
-            finally
-            {
-                if (abrir) await conn.CloseAsync();
-            }
-        }
-        catch
-        {
-            // Si falla la auto-migración se reintentará en la siguiente petición
-        }
-        finally
-        {
-            EsquemaLock.Release();
-        }
+        return set;
     }
 
     private static string ObtenerIpCliente(HttpContext httpContext) =>
@@ -1889,24 +2039,28 @@ public static class PermisosEndpoints
         return null;
     }
 
-    private static decimal CalcularDiasLaborables(DateOnly inicio, DateOnly fin)
+    private static bool EsDiaLaborable(DateOnly fecha, IReadOnlySet<DateOnly> feriados) =>
+        fecha.DayOfWeek is not DayOfWeek.Saturday and not DayOfWeek.Sunday
+        && !feriados.Contains(fecha);
+
+    private static decimal CalcularDiasLaborablesSinMinimo(DateOnly inicio, DateOnly fin, IReadOnlySet<DateOnly> feriados)
     {
-        if (fin < inicio) return 1m;
+        if (fin < inicio) return 0m;
         var dias = 0;
         var cursor = inicio;
         while (cursor <= fin)
         {
-            if (cursor.DayOfWeek is not DayOfWeek.Saturday and not DayOfWeek.Sunday)
+            if (EsDiaLaborable(cursor, feriados))
                 dias++;
             cursor = cursor.AddDays(1);
         }
-        return Math.Max(1, dias);
+        return dias;
     }
 
-    private static DateOnly CalcularSiguienteDiaLaborable(DateOnly fin)
+    private static DateOnly CalcularSiguienteDiaLaborable(DateOnly fin, IReadOnlySet<DateOnly> feriados)
     {
         var siguiente = fin.AddDays(1);
-        while (siguiente.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)
+        while (!EsDiaLaborable(siguiente, feriados))
         {
             siguiente = siguiente.AddDays(1);
         }

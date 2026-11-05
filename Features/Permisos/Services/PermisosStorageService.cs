@@ -4,7 +4,6 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 
 namespace tmr_backend.Features.Permisos.Services;
 
@@ -55,33 +54,22 @@ public interface IPermisosStorageService
         string contentType,
         CancellationToken ct = default);
 
+    Task EliminarAdjuntoAsync(
+        string bucketName,
+        string objectKey,
+        CancellationToken ct = default);
+
     Task<EstadoConexionMinio> VerificarConexionAsync(CancellationToken ct = default);
 }
 
 /// <summary>
-/// Almacenamiento de adjuntos (PDF, PNG, JPG &lt;= 5 MB) en MinIO / S3 en Dokploy (RNF-003, RNF-004).
-/// Soporta tanto la API S3 nativa (puerto 9000, AWS Signature V4) como puente automático hacia la API REST
-/// de MinIO Console (/api/v1, puerto 9001) cuando el dominio público en Dokploy apunta a la consola web.
+/// Almacenamiento de adjuntos (PDF, PNG, JPG &lt;= 5 MB) en MinIO / S3 vía API S3 nativa (AWS Signature V4) (RNF-003, RNF-004).
 /// </summary>
 public sealed class PermisosStorageService : IPermisosStorageService
 {
     public const long TamanoMaximoBytes = 5 * 1024 * 1024; // 5 MB exactos (RF-005 / RNF-003)
     private const string LocalBucketMarker = "__local__";
 
-    // HttpClient dedicado sin CookieContainer automático para enviar la cookie JWT de MinIO Console sin interferencias
-    private static readonly HttpClient ConsoleHttpClient = new(new SocketsHttpHandler
-    {
-        PooledConnectionLifetime = TimeSpan.FromMinutes(5),
-        UseCookies = false,
-        AutomaticDecompression = DecompressionMethods.All
-    })
-    {
-        Timeout = TimeSpan.FromSeconds(60)
-    };
-
-    private static readonly ConcurrentDictionary<string, bool> ModoConsolaPorEndpoint = new(StringComparer.OrdinalIgnoreCase);
-    private static readonly ConcurrentDictionary<string, bool> UploadPrefixUsaBase64PorEndpoint = new(StringComparer.OrdinalIgnoreCase);
-    private static readonly ConcurrentDictionary<string, (string CookieHeader, DateTime ExpiraUtc)> SesionesConsola = new(StringComparer.Ordinal);
     private static readonly ConcurrentDictionary<string, bool> BucketsVerificados = new(StringComparer.Ordinal);
 
     private readonly IConfiguration _configuration;
@@ -148,7 +136,7 @@ public sealed class PermisosStorageService : IPermisosStorageService
 
         if (cfg.Configurado)
         {
-            await SubirAMinioAsync(
+            await SubirAMinioS3Async(
                 cfg.Endpoint!,
                 cfg.UseSsl,
                 cfg.BucketName,
@@ -160,7 +148,7 @@ public sealed class PermisosStorageService : IPermisosStorageService
                 ct);
 
             _logger.LogInformation(
-                "Adjunto subido a MinIO exitosamente: bucket={Bucket}, key={ObjectKey}, bytes={Bytes}",
+                "Adjunto subido a MinIO S3 exitosamente: bucket={Bucket}, key={ObjectKey}, bytes={Bytes}",
                 cfg.BucketName, objectKey, archivo.Bytes.Length);
 
             return new ArchivoAdjuntoSubido(
@@ -225,7 +213,7 @@ public sealed class PermisosStorageService : IPermisosStorageService
         if (!cfg.Configurado)
             throw new InvalidOperationException("MinIO no está configurado para descargar este archivo.");
 
-        var bytes = await DescargarDeMinioAsync(
+        var bytes = await DescargarDeMinioS3Async(
             cfg.Endpoint!,
             cfg.UseSsl,
             bucketName,
@@ -235,6 +223,51 @@ public sealed class PermisosStorageService : IPermisosStorageService
             ct);
 
         return bytes is null ? null : new ArchivoEvidenciaDescarga(bytes, nombreDescarga, mime);
+    }
+
+    public async Task EliminarAdjuntoAsync(
+        string bucketName,
+        string objectKey,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            if (string.Equals(bucketName, LocalBucketMarker, StringComparison.OrdinalIgnoreCase))
+            {
+                var rootPath = string.IsNullOrWhiteSpace(_env.WebRootPath)
+                    ? Path.Combine(AppContext.BaseDirectory, "wwwroot")
+                    : _env.WebRootPath;
+
+                var fullPath = Path.Combine(rootPath, "uploads", objectKey.Replace('/', Path.DirectorySeparatorChar));
+                if (File.Exists(fullPath))
+                    File.Delete(fullPath);
+                return;
+            }
+
+            var cfg = LeerConfiguracionMinio();
+            if (!cfg.Configurado) return;
+
+            var baseUri = ConstruirBaseUri(cfg.Endpoint!, cfg.UseSsl);
+            var client = _httpClientFactory.CreateClient();
+            using var delReq = CrearRequestFirmadaS3(
+                HttpMethod.Delete,
+                baseUri,
+                bucketName,
+                objectKey,
+                [],
+                "application/octet-stream",
+                cfg.AccessKey!,
+                cfg.SecretKey!);
+            using var resp = await client.SendAsync(delReq, ct);
+
+            _logger.LogInformation(
+                "Limpieza de objeto huérfano en MinIO S3: bucket={Bucket}, key={ObjectKey}, status={StatusCode}",
+                bucketName, objectKey, (int)resp.StatusCode);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "No se pudo eliminar el objeto huérfano {ObjectKey} del bucket {Bucket}", objectKey, bucketName);
+        }
     }
 
     public async Task<EstadoConexionMinio> VerificarConexionAsync(CancellationToken ct = default)
@@ -254,24 +287,22 @@ public sealed class PermisosStorageService : IPermisosStorageService
         try
         {
             var baseUri = ConstruirBaseUri(cfg.Endpoint!, cfg.UseSsl);
-            var usaConsola = await ResolverModoYBucketAsync(baseUri, cfg.BucketName, cfg.AccessKey!, cfg.SecretKey!, ct);
+            await AsegurarBucketS3Async(baseUri, cfg.BucketName, cfg.AccessKey!, cfg.SecretKey!, ct);
 
             return new EstadoConexionMinio(
                 Configurado: true,
                 Conectado: true,
-                Proveedor: usaConsola ? "MINIO_CONSOLE_API" : "MINIO_S3",
+                Proveedor: "MINIO_S3",
                 Endpoint: baseUri.ToString(),
                 BucketName: cfg.BucketName,
-                Mensaje: usaConsola
-                    ? $"Conectado a MinIO vía API de Consola (/api/v1) y bucket '{cfg.BucketName}' disponible."
-                    : $"Conectado a MinIO S3 correctamente y bucket '{cfg.BucketName}' disponible.");
+                Mensaje: $"Conectado a MinIO S3 correctamente y bucket '{cfg.BucketName}' disponible.");
         }
         catch (Exception ex)
         {
             return new EstadoConexionMinio(
                 Configurado: true,
                 Conectado: false,
-                Proveedor: "MINIO",
+                Proveedor: "MINIO_S3",
                 Endpoint: cfg.Endpoint,
                 BucketName: cfg.BucketName,
                 Mensaje: ex.Message);
@@ -284,7 +315,7 @@ public sealed class PermisosStorageService : IPermisosStorageService
         var accessKey = _configuration["Minio:AccessKey"]?.Trim();
         var secretKey = _configuration["Minio:SecretKey"]?.Trim();
         var bucket = _configuration["Minio:BucketName"]?.Trim();
-        if (string.IsNullOrWhiteSpace(bucket)) bucket = "tmr-solicitudes";
+        if (string.IsNullOrWhiteSpace(bucket)) bucket = "permisos";
 
         var useSsl = bool.TryParse(_configuration["Minio:UseSSL"], out var ssl) && ssl;
         var allowLocal = bool.TryParse(_configuration["Minio:AllowLocalFallback"], out var fallback) && fallback;
@@ -327,62 +358,30 @@ public sealed class PermisosStorageService : IPermisosStorageService
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // ORQUESTACIÓN DUAL: API S3 NATIVA (9000) + PUENTE MINIO CONSOLE API (9001)
+    // IMPLEMENTACIÓN MINIO S3 NATIVA (AWS SIGNATURE V4)
     // ═══════════════════════════════════════════════════════════════════════════
 
-    private async Task<bool> ResolverModoYBucketAsync(
+    private async Task AsegurarBucketS3Async(
         Uri baseUri,
         string bucket,
         string accessKey,
         string secretKey,
         CancellationToken ct)
     {
-        var endpointKey = baseUri.ToString();
-        var bucketCacheKey = $"{endpointKey}|{bucket}";
+        var bucketCacheKey = $"{baseUri}|{bucket}";
+        if (BucketsVerificados.ContainsKey(bucketCacheKey))
+            return;
 
-        if (ModoConsolaPorEndpoint.TryGetValue(endpointKey, out var modoConsolaConocido))
-        {
-            if (modoConsolaConocido)
-            {
-                if (!BucketsVerificados.ContainsKey(bucketCacheKey))
-                {
-                    await AsegurarBucketConsolaAsync(baseUri, bucket, accessKey, secretKey, ct);
-                    BucketsVerificados[bucketCacheKey] = true;
-                }
-                return true;
-            }
-
-            if (!BucketsVerificados.ContainsKey(bucketCacheKey))
-            {
-                await AsegurarBucketS3Async(baseUri, bucket, accessKey, secretKey, ct);
-                BucketsVerificados[bucketCacheKey] = true;
-            }
-            return false;
-        }
-
-        // Primera conexión al endpoint: probar S3 HEAD /{bucket}; si responde como Consola Web (HTML / 405), activar puente /api/v1
         var client = _httpClientFactory.CreateClient();
         using var headReq = CrearRequestFirmadaS3(HttpMethod.Head, baseUri, bucket, "", [], "application/octet-stream", accessKey, secretKey);
         using var headResp = await client.SendAsync(headReq, ct);
 
-        if (EsRespuestaConsolaWeb(headResp))
-        {
-            _logger.LogInformation(
-                "MinIO en '{Endpoint}' responde en puerto de Consola Web; activando puente automático REST /api/v1 para el bucket '{Bucket}'.",
-                baseUri, bucket);
+        VerificarNoSeaConsolaWeb(headResp, baseUri);
 
-            ModoConsolaPorEndpoint[endpointKey] = true;
-            await AsegurarBucketConsolaAsync(baseUri, bucket, accessKey, secretKey, ct);
-            BucketsVerificados[bucketCacheKey] = true;
-            return true;
-        }
-
-        // Verificar también el caso en que HEAD devuelva 200 sin HTML pero un PUT a S3 sea rechazado con 405 por un proxy de consola
         if (headResp.StatusCode == HttpStatusCode.OK)
         {
-            ModoConsolaPorEndpoint[endpointKey] = false;
             BucketsVerificados[bucketCacheKey] = true;
-            return false;
+            return;
         }
 
         if (headResp.StatusCode == HttpStatusCode.NotFound)
@@ -390,13 +389,7 @@ public sealed class PermisosStorageService : IPermisosStorageService
             using var putBucketReq = CrearRequestFirmadaS3(HttpMethod.Put, baseUri, bucket, "", [], "application/octet-stream", accessKey, secretKey);
             using var putBucketResp = await client.SendAsync(putBucketReq, ct);
 
-            if (EsRespuestaConsolaWeb(putBucketResp))
-            {
-                ModoConsolaPorEndpoint[endpointKey] = true;
-                await AsegurarBucketConsolaAsync(baseUri, bucket, accessKey, secretKey, ct);
-                BucketsVerificados[bucketCacheKey] = true;
-                return true;
-            }
+            VerificarNoSeaConsolaWeb(putBucketResp, baseUri);
 
             if (!putBucketResp.IsSuccessStatusCode && putBucketResp.StatusCode != HttpStatusCode.Conflict)
             {
@@ -405,9 +398,8 @@ public sealed class PermisosStorageService : IPermisosStorageService
                     $"No se pudo crear ni acceder al bucket '{bucket}' en MinIO S3 ({(int)putBucketResp.StatusCode}): {err}");
             }
 
-            ModoConsolaPorEndpoint[endpointKey] = false;
             BucketsVerificados[bucketCacheKey] = true;
-            return false;
+            return;
         }
 
         if (headResp.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized)
@@ -415,12 +407,9 @@ public sealed class PermisosStorageService : IPermisosStorageService
             throw new InvalidOperationException(
                 $"MinIO rechazó las credenciales ({(int)headResp.StatusCode}) para el bucket '{bucket}'. Verifique Minio:AccessKey y Minio:SecretKey.");
         }
-
-        ModoConsolaPorEndpoint[endpointKey] = false;
-        return false;
     }
 
-    private async Task SubirAMinioAsync(
+    private async Task SubirAMinioS3Async(
         string endpoint,
         bool useSsl,
         string bucket,
@@ -432,28 +421,13 @@ public sealed class PermisosStorageService : IPermisosStorageService
         CancellationToken ct)
     {
         var baseUri = ConstruirBaseUri(endpoint, useSsl);
-        var usaConsola = await ResolverModoYBucketAsync(baseUri, bucket, accessKey, secretKey, ct);
-
-        if (usaConsola)
-        {
-            await SubirObjetoConsolaAsync(baseUri, bucket, key, content, contentType, accessKey, secretKey, ct);
-            return;
-        }
+        await AsegurarBucketS3Async(baseUri, bucket, accessKey, secretKey, ct);
 
         var client = _httpClientFactory.CreateClient();
         using var putReq = CrearRequestFirmadaS3(HttpMethod.Put, baseUri, bucket, key, content, contentType, accessKey, secretKey);
         using var response = await client.SendAsync(putReq, ct);
 
-        if (EsRespuestaConsolaWeb(response))
-        {
-            // El endpoint respondió 200 en HEAD pero 405/HTML en PUT: conmutar inmediatamente a MinIO Console API
-            ModoConsolaPorEndpoint[baseUri.ToString()] = true;
-            BucketsVerificados.TryRemove($"{baseUri}|{bucket}", out _);
-            await AsegurarBucketConsolaAsync(baseUri, bucket, accessKey, secretKey, ct);
-            BucketsVerificados[$"{baseUri}|{bucket}"] = true;
-            await SubirObjetoConsolaAsync(baseUri, bucket, key, content, contentType, accessKey, secretKey, ct);
-            return;
-        }
+        VerificarNoSeaConsolaWeb(response, baseUri);
 
         if (!response.IsSuccessStatusCode)
         {
@@ -463,7 +437,7 @@ public sealed class PermisosStorageService : IPermisosStorageService
         }
     }
 
-    private async Task<byte[]?> DescargarDeMinioAsync(
+    private async Task<byte[]?> DescargarDeMinioS3Async(
         string endpoint,
         bool useSsl,
         string bucket,
@@ -473,22 +447,13 @@ public sealed class PermisosStorageService : IPermisosStorageService
         CancellationToken ct)
     {
         var baseUri = ConstruirBaseUri(endpoint, useSsl);
-        var usaConsola = await ResolverModoYBucketAsync(baseUri, bucket, accessKey, secretKey, ct);
-
-        if (usaConsola)
-        {
-            return await DescargarObjetoConsolaAsync(baseUri, bucket, key, accessKey, secretKey, ct);
-        }
+        await AsegurarBucketS3Async(baseUri, bucket, accessKey, secretKey, ct);
 
         var client = _httpClientFactory.CreateClient();
         using var getReq = CrearRequestFirmadaS3(HttpMethod.Get, baseUri, bucket, key, [], "application/octet-stream", accessKey, secretKey);
         using var response = await client.SendAsync(getReq, ct);
 
-        if (EsRespuestaConsolaWeb(response))
-        {
-            ModoConsolaPorEndpoint[baseUri.ToString()] = true;
-            return await DescargarObjetoConsolaAsync(baseUri, bucket, key, accessKey, secretKey, ct);
-        }
+        VerificarNoSeaConsolaWeb(response, baseUri);
 
         if (response.StatusCode == HttpStatusCode.NotFound)
             return null;
@@ -502,490 +467,15 @@ public sealed class PermisosStorageService : IPermisosStorageService
         return await response.Content.ReadAsByteArrayAsync(ct);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // IMPLEMENTACIÓN MINIO CONSOLE REST API (/api/v1 — PUERTO 9001 EN DOKPLOY)
-    // ═══════════════════════════════════════════════════════════════════════════
-
-    private async Task<string> ObtenerCookieSesionConsolaAsync(
-        Uri baseUri,
-        string accessKey,
-        string secretKey,
-        bool forzarRenovacion,
-        CancellationToken ct)
-    {
-        var cacheKey = $"{baseUri}|{accessKey}";
-        if (!forzarRenovacion
-            && SesionesConsola.TryGetValue(cacheKey, out var sesion)
-            && sesion.ExpiraUtc > DateTime.UtcNow)
-        {
-            return sesion.CookieHeader;
-        }
-
-        var loginUri = new Uri(baseUri, "/api/v1/login");
-        var payloadJson = JsonSerializer.Serialize(new
-        {
-            accessKey,
-            secretKey
-        });
-
-        using var req = new HttpRequestMessage(HttpMethod.Post, loginUri)
-        {
-            Content = new StringContent(payloadJson, Encoding.UTF8, "application/json")
-        };
-
-        using var resp = await ConsoleHttpClient.SendAsync(req, ct);
-        if (!resp.IsSuccessStatusCode)
-        {
-            var errBody = await resp.Content.ReadAsStringAsync(ct);
-            throw new InvalidOperationException(
-                $"No se pudo autenticar en MinIO ({(int)resp.StatusCode}). Verifique Minio:AccessKey y Minio:SecretKey. Detalle: {ExtraerMensajeError(errBody)}");
-        }
-
-        var cookies = new List<string>();
-        if (resp.Headers.TryGetValues("Set-Cookie", out var setCookieHeaders))
-        {
-            foreach (var raw in setCookieHeaders)
-            {
-                var par = raw.Split(';', 2)[0].Trim();
-                if (!string.IsNullOrWhiteSpace(par))
-                    cookies.Add(par);
-            }
-        }
-
-        if (cookies.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"MinIO Console en '{baseUri}' aceptó el login pero no devolvió cookie de sesión.");
-        }
-
-        var cookieHeader = string.Join("; ", cookies);
-        SesionesConsola[cacheKey] = (cookieHeader, DateTime.UtcNow.AddMinutes(25));
-        return cookieHeader;
-    }
-
-    private async Task<HttpResponseMessage> EnviarRequestConsolaAutenticadaAsync(
-        Func<string, HttpRequestMessage> requestFactory,
-        Uri baseUri,
-        string accessKey,
-        string secretKey,
-        CancellationToken ct)
-    {
-        var cookie = await ObtenerCookieSesionConsolaAsync(baseUri, accessKey, secretKey, forzarRenovacion: false, ct);
-        using var req1 = requestFactory(cookie);
-        var resp1 = await ConsoleHttpClient.SendAsync(req1, ct);
-
-        if (resp1.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
-        {
-            resp1.Dispose();
-            var cookieNueva = await ObtenerCookieSesionConsolaAsync(baseUri, accessKey, secretKey, forzarRenovacion: true, ct);
-            using var req2 = requestFactory(cookieNueva);
-            return await ConsoleHttpClient.SendAsync(req2, ct);
-        }
-
-        return resp1;
-    }
-
-    private async Task AsegurarBucketConsolaAsync(
-        Uri baseUri,
-        string bucket,
-        string accessKey,
-        string secretKey,
-        CancellationToken ct)
-    {
-        // 1. Consultar buckets existentes en /api/v1/buckets
-        var listUri = new Uri(baseUri, "/api/v1/buckets");
-        using (var listResp = await EnviarRequestConsolaAutenticadaAsync(cookie =>
-               {
-                   var r = new HttpRequestMessage(HttpMethod.Get, listUri);
-                   r.Headers.TryAddWithoutValidation("Cookie", cookie);
-                   return r;
-               }, baseUri, accessKey, secretKey, ct))
-        {
-            if (listResp.IsSuccessStatusCode)
-            {
-                var json = await listResp.Content.ReadAsStringAsync(ct);
-                if (ExisteBucketEnRespuestaConsola(json, bucket))
-                    return;
-            }
-        }
-
-        // 2. Crear bucket en /api/v1/buckets (intento 1: esquema moderno de MinIO Console; intento 2: esquema booleano anterior)
-        var payloadsCreacion = new[]
-        {
-            JsonSerializer.Serialize(new
-            {
-                name = bucket,
-                locking = false,
-                versioning = new
-                {
-                    enabled = false,
-                    excludePrefixes = Array.Empty<string>(),
-                    excludeFolders = false
-                }
-            }),
-            JsonSerializer.Serialize(new
-            {
-                name = bucket,
-                locking = false,
-                versioning = false
-            })
-        };
-
-        string ultimoError = string.Empty;
-        int ultimoStatus = 0;
-
-        foreach (var bodyJson in payloadsCreacion)
-        {
-            using var createResp = await EnviarRequestConsolaAutenticadaAsync(cookie =>
-            {
-                var r = new HttpRequestMessage(HttpMethod.Post, listUri)
-                {
-                    Content = new StringContent(bodyJson, Encoding.UTF8, "application/json")
-                };
-                r.Headers.TryAddWithoutValidation("Cookie", cookie);
-                return r;
-            }, baseUri, accessKey, secretKey, ct);
-
-            if (createResp.IsSuccessStatusCode || createResp.StatusCode == HttpStatusCode.Conflict)
-            {
-                _logger.LogInformation("Bucket '{Bucket}' verificado/creado exitosamente en MinIO.", bucket);
-                return;
-            }
-
-            ultimoStatus = (int)createResp.StatusCode;
-            ultimoError = await createResp.Content.ReadAsStringAsync(ct);
-
-            if (ultimoError.Contains("already own it", StringComparison.OrdinalIgnoreCase)
-                || ultimoError.Contains("already exists", StringComparison.OrdinalIgnoreCase)
-                || ultimoError.Contains("BucketAlreadyOwnedByYou", StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-        }
-
-        throw new InvalidOperationException(
-            $"No se pudo crear ni acceder al bucket '{bucket}' en MinIO ({ultimoStatus}): {ExtraerMensajeError(ultimoError)}");
-    }
-
-    private async Task SubirObjetoConsolaAsync(
-        Uri baseUri,
-        string bucket,
-        string key,
-        byte[] content,
-        string contentType,
-        string accessKey,
-        string secretKey,
-        CancellationToken ct)
-    {
-        var slashIdx = key.LastIndexOf('/');
-        var folderPrefix = slashIdx >= 0 ? key[..(slashIdx + 1)] : string.Empty;
-        var fileName = slashIdx >= 0 ? key[(slashIdx + 1)..] : key;
-        var prefixBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(folderPrefix));
-        var endpointKey = baseUri.ToString();
-
-        var usarBase64 = !UploadPrefixUsaBase64PorEndpoint.TryGetValue(endpointKey, out var conocido) || conocido;
-        var prefixQuery = usarBase64 ? prefixBase64 : folderPrefix;
-
-        await EjecutarUploadConsolaConReintentoAsync(
-            baseUri, bucket, prefixQuery, fileName, content, contentType, accessKey, secretKey, ct);
-
-        // En la primera subida por este endpoint, confirmar que el objeto quedó en la ruta exacta 'solicitudes/{anio}/{id}/...'
-        if (!UploadPrefixUsaBase64PorEndpoint.ContainsKey(endpointKey) && !string.IsNullOrEmpty(folderPrefix))
-        {
-            var existeEnRutaEsperada = await ExisteObjetoConsolaAsync(baseUri, bucket, key, accessKey, secretKey, ct);
-            if (existeEnRutaEsperada)
-            {
-                UploadPrefixUsaBase64PorEndpoint[endpointKey] = usarBase64;
-            }
-            else
-            {
-                // Esta versión de MinIO Console recibe prefix sin codificar Base64 en /objects/upload
-                UploadPrefixUsaBase64PorEndpoint[endpointKey] = false;
-                await EjecutarUploadConsolaConReintentoAsync(
-                    baseUri, bucket, folderPrefix, fileName, content, contentType, accessKey, secretKey, ct);
-            }
-        }
-    }
-
-    private async Task EjecutarUploadConsolaConReintentoAsync(
-        Uri baseUri,
-        string bucket,
-        string prefixParam,
-        string fileName,
-        byte[] content,
-        string contentType,
-        string accessKey,
-        string secretKey,
-        CancellationToken ct)
-    {
-        var uploadUri = new Uri(
-            baseUri,
-            $"/api/v1/buckets/{Uri.EscapeDataString(bucket)}/objects/upload?prefix={Uri.EscapeDataString(prefixParam)}");
-
-        // En MinIO Console (restapi/objects_handlers.go), el nombre del campo multipart es el tamaño en bytes del archivo
-        var sizeFieldName = content.Length.ToString(CultureInfo.InvariantCulture);
-
-        using var resp = await EnviarUploadMultipartConsolaAsync(
-            uploadUri, baseUri, sizeFieldName, fileName, content, contentType, accessKey, secretKey, ct);
-
-        if (resp.IsSuccessStatusCode)
-            return;
-
-        if (resp.StatusCode == HttpStatusCode.NotFound)
-        {
-            // Si el bucket fue eliminado externamente mientras el backend estaba encendido, recrearlo y reintentar una vez
-            BucketsVerificados.TryRemove($"{baseUri}|{bucket}", out _);
-            await AsegurarBucketConsolaAsync(baseUri, bucket, accessKey, secretKey, ct);
-            BucketsVerificados[$"{baseUri}|{bucket}"] = true;
-
-            using var retryResp = await EnviarUploadMultipartConsolaAsync(
-                uploadUri, baseUri, sizeFieldName, fileName, content, contentType, accessKey, secretKey, ct);
-
-            if (retryResp.IsSuccessStatusCode)
-                return;
-
-            var retryErr = await retryResp.Content.ReadAsStringAsync(ct);
-            throw new InvalidOperationException(
-                $"Error al subir el adjunto al bucket '{bucket}' en MinIO ({(int)retryResp.StatusCode}): {ExtraerMensajeError(retryErr)}");
-        }
-
-        // Respaldo de compatibilidad si una versión específica espera campo 'file' en lugar del tamaño
-        var errBody = await resp.Content.ReadAsStringAsync(ct);
-        using var fallbackResp = await EnviarUploadMultipartConsolaAsync(
-            uploadUri, baseUri, "file", fileName, content, contentType, accessKey, secretKey, ct);
-
-        if (fallbackResp.IsSuccessStatusCode)
-            return;
-
-        throw new InvalidOperationException(
-            $"Error al subir el adjunto al bucket '{bucket}' en MinIO ({(int)resp.StatusCode}): {ExtraerMensajeError(errBody)}");
-    }
-
-    private async Task<bool> ExisteObjetoConsolaAsync(
-        Uri baseUri,
-        string bucket,
-        string key,
-        string accessKey,
-        string secretKey,
-        CancellationToken ct)
-    {
-        try
-        {
-            var keyBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(key));
-            var checkUri = new Uri(
-                baseUri,
-                $"/api/v1/buckets/{Uri.EscapeDataString(bucket)}/objects?prefix={Uri.EscapeDataString(keyBase64)}");
-
-            using var resp = await EnviarRequestConsolaAutenticadaAsync(cookie =>
-            {
-                var r = new HttpRequestMessage(HttpMethod.Get, checkUri);
-                r.Headers.TryAddWithoutValidation("Cookie", cookie);
-                return r;
-            }, baseUri, accessKey, secretKey, ct);
-
-            if (!resp.IsSuccessStatusCode)
-                return false;
-
-            var json = await resp.Content.ReadAsStringAsync(ct);
-            using var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.ValueKind == JsonValueKind.Object
-                && doc.RootElement.TryGetProperty("objects", out var objs)
-                && objs.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var obj in objs.EnumerateArray())
-                {
-                    if (obj.TryGetProperty("name", out var nameProp)
-                        && string.Equals(nameProp.GetString(), key, StringComparison.Ordinal))
-                    {
-                        return true;
-                    }
-                }
-            }
-        }
-        catch
-        {
-            // Si el listado falla, asumir éxito de la respuesta 2xx previa
-            return true;
-        }
-
-        return false;
-    }
-
-    private async Task<HttpResponseMessage> EnviarUploadMultipartConsolaAsync(
-        Uri uploadUri,
-        Uri baseUri,
-        string fieldName,
-        string fileName,
-        byte[] content,
-        string contentType,
-        string accessKey,
-        string secretKey,
-        CancellationToken ct)
-    {
-        return await EnviarRequestConsolaAutenticadaAsync(cookie =>
-        {
-            var boundary = $"----TmrMinioUpload{Guid.NewGuid():N}";
-            var form = new MultipartFormDataContent(boundary);
-            form.Headers.ContentType = MediaTypeHeaderValue.Parse($"multipart/form-data; boundary={boundary}");
-
-            var filePart = new ByteArrayContent(content);
-            filePart.Headers.ContentType = new MediaTypeHeaderValue(contentType);
-            filePart.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
-            {
-                Name = $"\"{fieldName}\"",
-                FileName = $"\"{fileName}\""
-            };
-            form.Add(filePart);
-
-            var req = new HttpRequestMessage(HttpMethod.Post, uploadUri)
-            {
-                Content = form
-            };
-            req.Headers.TryAddWithoutValidation("Cookie", cookie);
-            return req;
-        }, baseUri, accessKey, secretKey, ct);
-    }
-
-    private async Task<byte[]?> DescargarObjetoConsolaAsync(
-        Uri baseUri,
-        string bucket,
-        string key,
-        string accessKey,
-        string secretKey,
-        CancellationToken ct)
-    {
-        var keyBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(key));
-        var downloadUri = new Uri(
-            baseUri,
-            $"/api/v1/buckets/{Uri.EscapeDataString(bucket)}/objects/download?prefix={Uri.EscapeDataString(keyBase64)}");
-
-        using var resp = await EnviarRequestConsolaAutenticadaAsync(cookie =>
-        {
-            var req = new HttpRequestMessage(HttpMethod.Get, downloadUri);
-            req.Headers.TryAddWithoutValidation("Cookie", cookie);
-            return req;
-        }, baseUri, accessKey, secretKey, ct);
-
-        if (resp.StatusCode == HttpStatusCode.NotFound)
-            return null;
-
-        if (!resp.IsSuccessStatusCode)
-        {
-            var errBody = await resp.Content.ReadAsStringAsync(ct);
-            throw new InvalidOperationException(
-                $"MinIO devolvió {(int)resp.StatusCode} al descargar '{key}': {ExtraerMensajeError(errBody)}");
-        }
-
-        return await resp.Content.ReadAsByteArrayAsync(ct);
-    }
-
-    private static bool ExisteBucketEnRespuestaConsola(string json, string targetBucket)
-    {
-        if (string.IsNullOrWhiteSpace(json))
-            return false;
-
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.ValueKind == JsonValueKind.Object
-                && doc.RootElement.TryGetProperty("buckets", out var bucketsProp)
-                && bucketsProp.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var item in bucketsProp.EnumerateArray())
-                {
-                    if (item.TryGetProperty("name", out var nameProp)
-                        && string.Equals(nameProp.GetString(), targetBucket, StringComparison.Ordinal))
-                    {
-                        return true;
-                    }
-                }
-            }
-        }
-        catch
-        {
-            // Ignorar error de parseo y continuar con intento de creación idempotente
-        }
-
-        return false;
-    }
-
-    private static string ExtraerMensajeError(string rawBody)
-    {
-        if (string.IsNullOrWhiteSpace(rawBody))
-            return "Sin detalle adicional del servidor.";
-
-        try
-        {
-            using var doc = JsonDocument.Parse(rawBody);
-            if (doc.RootElement.ValueKind == JsonValueKind.Object)
-            {
-                if (doc.RootElement.TryGetProperty("detailedMessage", out var detailed)
-                    && detailed.ValueKind == JsonValueKind.String
-                    && !string.IsNullOrWhiteSpace(detailed.GetString()))
-                {
-                    return detailed.GetString()!;
-                }
-
-                if (doc.RootElement.TryGetProperty("message", out var msg)
-                    && msg.ValueKind == JsonValueKind.String
-                    && !string.IsNullOrWhiteSpace(msg.GetString()))
-                {
-                    return msg.GetString()!;
-                }
-            }
-        }
-        catch
-        {
-            // Devolver texto plano truncado
-        }
-
-        return rawBody.Length > 300 ? rawBody[..300] : rawBody;
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // IMPLEMENTACIÓN MINIO S3 NATIVA (AWS SIGNATURE V4 — PUERTO 9000)
-    // ═══════════════════════════════════════════════════════════════════════════
-
-    private async Task AsegurarBucketS3Async(
-        Uri baseUri,
-        string bucket,
-        string accessKey,
-        string secretKey,
-        CancellationToken ct)
-    {
-        var client = _httpClientFactory.CreateClient();
-        using var headReq = CrearRequestFirmadaS3(HttpMethod.Head, baseUri, bucket, "", [], "application/octet-stream", accessKey, secretKey);
-        using var headResp = await client.SendAsync(headReq, ct);
-
-        if (headResp.StatusCode == HttpStatusCode.OK)
-            return;
-
-        if (headResp.StatusCode == HttpStatusCode.NotFound)
-        {
-            using var putBucketReq = CrearRequestFirmadaS3(HttpMethod.Put, baseUri, bucket, "", [], "application/octet-stream", accessKey, secretKey);
-            using var putBucketResp = await client.SendAsync(putBucketReq, ct);
-
-            if (!putBucketResp.IsSuccessStatusCode && putBucketResp.StatusCode != HttpStatusCode.Conflict)
-            {
-                var err = await putBucketResp.Content.ReadAsStringAsync(ct);
-                throw new InvalidOperationException(
-                    $"No se pudo crear ni acceder al bucket '{bucket}' en MinIO S3 ({(int)putBucketResp.StatusCode}): {err}");
-            }
-            return;
-        }
-
-        if (headResp.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized)
-        {
-            throw new InvalidOperationException(
-                $"MinIO rechazó las credenciales ({(int)headResp.StatusCode}) para el bucket '{bucket}'. Verifique Minio:AccessKey y Minio:SecretKey.");
-        }
-    }
-
-    private static bool EsRespuestaConsolaWeb(HttpResponseMessage response)
+    private static void VerificarNoSeaConsolaWeb(HttpResponseMessage response, Uri baseUri)
     {
         var mediaType = response.Content.Headers.ContentType?.MediaType;
-        return string.Equals(mediaType, "text/html", StringComparison.OrdinalIgnoreCase)
-               || response.StatusCode == HttpStatusCode.MethodNotAllowed;
+        if (string.Equals(mediaType, "text/html", StringComparison.OrdinalIgnoreCase)
+            || response.StatusCode == HttpStatusCode.MethodNotAllowed)
+        {
+            throw new InvalidOperationException(
+                $"El endpoint de MinIO '{baseUri}' respondió como Consola Web (HTML/405). Configure Minio:Endpoint apuntando al dominio o puerto de la API S3 (9000/9002).");
+        }
     }
 
     private static Uri ConstruirBaseUri(string endpoint, bool useSsl)
