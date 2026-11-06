@@ -249,9 +249,7 @@ public sealed class ColaboradorService(
                 request.FechaIngreso ?? CalculoHorasPeriodo.HoyEcuador(), request.FechaIngreso, ct);
             await db.SaveChangesAsync(ct);
 
-            // ================================================================
-            // NUEVO: Si se envió un reemplazo, actualizar el inactivo
-            // ================================================================
+            // Si se envió un reemplazo, actualizar el inactivo.
             if (request.IdEmpleadoReemplazo.HasValue)
             {
                 var inactivo = await db.TblAdministracionEmpleados
@@ -394,9 +392,7 @@ public sealed class ColaboradorService(
         empleado.Fechamodificacion = DateTime.UtcNow;
         empleado.Ipmodificacion = IpSistema;
 
-        // ================================================================
-        // NUEVO: Manejar el reemplazo en edición
-        // ================================================================
+        // Manejar el reemplazo en edición.
         // Buscar el reemplazo actual (el inactivo que tiene este empleado como reemplazo)
         var reemplazoActual = await db.TblAdministracionEmpleados
             .FirstOrDefaultAsync(e => e.IdEmpleadoReemplazo == id && e.Activo == false, ct);

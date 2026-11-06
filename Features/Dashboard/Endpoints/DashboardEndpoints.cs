@@ -15,7 +15,6 @@ public static class DashboardEndpoints
         // sm - Se exige sesión (JWT) en TODO el grupo: antes GET /, GET /proyectos/{id}/horas-incompletas (con nombres y
         // correos), GET/POST/PUT/DELETE de DashboardItems respondían sin token. Las rutas que ya tenían
         // RequireAuthorization (mis-horas-incompletas y notificar-faltantes-email) siguen igual.
-        // var group = app.MapGroup("/api/dashboard").WithTags("Dashboard");
         var group = app.MapGroup("/api/dashboard").WithTags("Dashboard").RequireAuthorization();
 
         group.MapGet("/", async (string? rango, ApplicationDbContext db) =>

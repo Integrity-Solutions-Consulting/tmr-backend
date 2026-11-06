@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
-using tmr_backend.Infrastructure.Security;
 
 namespace tmr_backend.Infrastructure.BackgroundServices;
 

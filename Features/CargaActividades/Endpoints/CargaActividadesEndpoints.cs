@@ -210,10 +210,6 @@ public static class CargaActividadesEndpoints
                 }
 
                 // sm - También colaboradores con salida registrada: siguen completando sus actividades hasta la salida (EmpleadoSesion).
-                // var empleadoId = await (from usuario in db.TblAutenticacionUsuarios
-                //                         join empleado in db.TblAdministracionEmpleados on usuario.Idpersona equals empleado.Idpersona
-                //                         where usuario.Id == userId && usuario.Activo && empleado.Activo
-                //                         select (int?)empleado.Id).FirstOrDefaultAsync(context.RequestAborted);
                 var idPersona = await db.TblAutenticacionUsuarios
                     .Where(u => u.Id == userId && u.Activo)
                     .Select(u => u.Idpersona)
@@ -232,8 +228,6 @@ public static class CargaActividadesEndpoints
 
                 if (response.IsSuccess)
                 {
-                    // MODIFICACIÓN DE RETORNO: Aseguramos que si 'response' contiene la lista expuesta, 
-                    // o si deseas mapearla dinámicamente, se envíe de forma consistente al cliente HTTP.
                     return Results.Ok(response);
                 }
 

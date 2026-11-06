@@ -35,9 +35,7 @@ public class ActualizarColaboradorRequestValidator : AbstractValidator<Actualiza
             .When(x => x.IdCategoriaEmpleado.HasValue)
             .WithMessage("La categoría seleccionada no es válida.");
 
-        // ================================================================
-        // NUEVO: Validar reemplazo (si se envía, debe existir)
-        // ================================================================
+        // Validar reemplazo (si se envía, debe existir).
         RuleFor(x => x.IdEmpleadoReemplazo)
             .GreaterThan(0)
             .When(x => x.IdEmpleadoReemplazo.HasValue)

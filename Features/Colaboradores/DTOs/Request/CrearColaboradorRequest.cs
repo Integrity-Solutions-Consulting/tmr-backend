@@ -33,8 +33,6 @@ public record CrearColaboradorRequest(
     int? IdModoTrabajo,
     int? IdCategoriaEmpleado,
 
-    // ================================================================
-    // NUEVO: CAMPO REEMPLAZO (ID del inactivo a reemplazar)
-    // ================================================================
+    // Id del inactivo a reemplazar, si corresponde.
     int? IdEmpleadoReemplazo
 );
