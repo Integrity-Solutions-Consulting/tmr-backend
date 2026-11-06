@@ -153,9 +153,20 @@ public static class TimeReportEndpoints
             // sm - Se agrega la vigencia (entrada/salida) de la asignación y la salida del colaborador, para que Agregar
             // actividad avise al elegir una fecha fuera de ella. Con varias filas del mismo proyecto se toma la entrada
             // más temprana y la salida más tardía (sin salida en alguna = sin límite); el backend valida exacto al guardar.
+<<<<<<< Updated upstream
+=======
+            // var proyectosAsignados = await db.TblTimeReportAsignacionProyectos
+            //     .AsNoTracking()
+            //     .Where(ep => ep.Idempleado == empleado.Id && ep.Activo && ep.IdproyectoNavigation.Activo)
+            //     .Select(ep => new ProyectoLookupDto(ep.Idproyecto, ep.IdproyectoNavigation.Nombre, ep.IdproyectoNavigation.Codigo))
+            //     .Distinct()
+            //     .ToListAsync();
+            // sm - TR-004: también los proyectos Inactivos, para registrar horas atrasadas dentro de la vigencia de la
+            // asignación (la fecha la valida ValidarAsignacionAsync). Antes: ... && ep.IdproyectoNavigation.Activo
+>>>>>>> Stashed changes
             var asignacionesEmpleado = await db.TblTimeReportAsignacionProyectos
                 .AsNoTracking()
-                .Where(ep => ep.Idempleado == empleado.Id && ep.Activo && ep.IdproyectoNavigation.Activo)
+                .Where(ep => ep.Idempleado == empleado.Id && ep.Activo)
                 .Select(ep => new
                 {
                     ep.Idproyecto,
@@ -627,9 +638,11 @@ public static class TimeReportEndpoints
     // fin, si la tiene). Devuelve el mensaje de error o null si es válido.
     private static async Task<string?> ValidarAsignacionAsync(ApplicationDbContext db, int idEmpleado, int idProyecto, DateOnly fecha)
     {
+        // sm - TR-004: el proyecto puede estar Inactivo; lo que manda es la vigencia de la asignación.
+        // Antes: ... && ep.IdproyectoNavigation.Activo
         var asignaciones = await db.TblTimeReportAsignacionProyectos
             .AsNoTracking()
-            .Where(ep => ep.Idempleado == idEmpleado && ep.Idproyecto == idProyecto && ep.Activo && ep.IdproyectoNavigation.Activo)
+            .Where(ep => ep.Idempleado == idEmpleado && ep.Idproyecto == idProyecto && ep.Activo)
             .Select(ep => new { ep.Fechaasignacion, ep.Fechafinasignacion })
             .ToListAsync();
 
