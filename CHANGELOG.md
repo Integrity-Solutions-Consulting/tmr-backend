@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.3](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.7.2...v1.7.3) (2026-11-06)
+
+
+### Bug Fixes
+
+* Corrección de errores ([e2af9e3](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/e2af9e37eb40a5017d41e8d1ee56375c2ad80a54))
+* **seguimiento:** filtro de cliente solo muestra proyectos de ese cliente ([c15b440](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/c15b4409458422c57111e3afb6717f5d802a5076))
+
 ## [1.7.2](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.7.1...v1.7.2) (2026-11-05)
 
 
