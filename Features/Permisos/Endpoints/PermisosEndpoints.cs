@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Npgsql;
 using tmr_backend.Features.Notificaciones.Application.Estado;
 using tmr_backend.Features.Notificaciones.Domain;
@@ -281,7 +282,8 @@ public static class PermisosEndpoints
                 LideresDisponibles: lideresDisponibles,
                 EsNomina: esNomina,
                 TipoContrato: tipoContratoNombre,
-                TiposPermiso: tiposPermisoCatalogo);
+                TiposPermiso: tiposPermisoCatalogo,
+                RrhhDisponibles: await ObtenerCatalogoUsuariosRrhhAsync(db, ct));
 
             return Results.Ok(ApiResponse<ContextoColaboradorPermisoDto>.Ok(dto));
         }).RequireAuthorization("MIS_PERMISOS_READ");
@@ -360,7 +362,8 @@ public static class PermisosEndpoints
                 DetalleHorario: form["detalleHorario"].FirstOrDefault(),
                 TotalDias: ParseDec("totalDias"),
                 TotalHoras: ParseDec("totalHoras"),
-                Motivo: form["motivo"].FirstOrDefault() ?? "");
+                Motivo: form["motivo"].FirstOrDefault() ?? "",
+                IdUsuarioRrhh: ParseInt("idUsuarioRrhh"));
 
             var archivos = form.Files.Where(f => f.Length > 0).ToList();
             return await CrearSolicitudInternaAsync(
@@ -426,19 +429,21 @@ public static class PermisosEndpoints
                 await db.SaveChangesAsync(ct);
 
                 var recargada = await ConsultarSolicitudesBase(db).FirstAsync(s => s.Id == id, ct);
-                return Results.Ok(ApiResponse<PermisoItemDto>.Ok(MapearSolicitudDto(recargada, null), "Evidencia subida a MinIO exitosamente."));
+                return Results.Ok(ApiResponse<PermisoItemDto>.Ok(MapearSolicitudDto(recargada, null), "Archivo adjunto guardado correctamente."));
             }
             catch (InvalidOperationException ex)
             {
                 if (subido is not null)
                     await storageService.EliminarAdjuntoAsync(subido.BucketName, subido.ObjectKey, CancellationToken.None);
-                return Results.BadRequest(ApiResponse<object>.Fail(400, ex.Message, []));
+                RegistrarErrorInfraestructura(db, ex, $"Validación o subida rechazada para usuario {currentUser.UserId}");
+                return Results.BadRequest(ApiResponse<object>.Fail(400, TraducirErrorInfraestructuraAmigable(ex, tieneArchivo: true), []));
             }
-            catch
+            catch (Exception ex)
             {
                 if (subido is not null)
                     await storageService.EliminarAdjuntoAsync(subido.BucketName, subido.ObjectKey, CancellationToken.None);
-                throw;
+                RegistrarErrorInfraestructura(db, ex, $"Error al adjuntar archivo en solicitud {id}");
+                return Results.BadRequest(ApiResponse<object>.Fail(400, TraducirErrorInfraestructuraAmigable(ex, tieneArchivo: true), []));
             }
         })
         .DisableAntiforgery()
@@ -483,7 +488,7 @@ public static class PermisosEndpoints
                 ct);
 
             if (descarga is null)
-                return Results.NotFound(ApiResponse<object>.Fail(404, "No se encontró el objeto en MinIO.", []));
+                return Results.NotFound(ApiResponse<object>.Fail(404, "El archivo adjunto no se encuentra disponible en este momento.", []));
 
             return Results.File(descarga.Contenido, descarga.MimeType, descarga.NombreArchivo);
         }).RequireAuthorization("PERMISOS_VIEW");
@@ -593,7 +598,7 @@ public static class PermisosEndpoints
             var comentario = request.Comentario?.Trim();
             // RF-007: Comentario obligatorio en caso de rechazo u observación
             if (accion != "aprobar" && string.IsNullOrWhiteSpace(comentario))
-                return Results.BadRequest(ApiResponse<object>.Fail(400, "Debe ingresar obligatoriamente el comentario con el motivo (RF-007).", []));
+                return Results.BadRequest(ApiResponse<object>.Fail(400, "Por favor ingresa el motivo en los comentarios para continuar.", []));
 
             var (codigoEstadoDestino, decisionTabla) = accion switch
             {
@@ -624,7 +629,7 @@ public static class PermisosEndpoints
             var recargada = await ConsultarSolicitudesBase(db).FirstAsync(s => s.Id == id, ct);
             var dto = MapearSolicitudDto(recargada, null);
 
-            await EmitirNotificacionesInternasPaso2Async(db, sseNotifier, recargada, dto, decisionTabla, ct);
+            var campanaOk = await EmitirNotificacionesInternasPaso2SeguraAsync(db, sseNotifier, recargada, dto, decisionTabla, ct);
 
             var correoColab = recargada.Empleado.Emailcorporativo ?? recargada.Empleado.IdpersonaNavigation.Email;
             var evento = accion switch
@@ -634,9 +639,9 @@ public static class PermisosEndpoints
                 _ => EventoNotificacionPermiso.RechazadaPorLider
             };
 
-            await notificacionService.NotificarCambioEstadoAsync(dto, correoColab, evento, ct);
+            var correoOk = await NotificarCorreoSeguroAsync(db, notificacionService, dto, correoColab, evento, ct);
 
-            return Results.Ok(ApiResponse<PermisoItemDto>.Ok(dto, "Decisión del Jefe Inmediato registrada correctamente."));
+            return ResponderPostCommit(dto, "Tu decisión fue registrada correctamente.", campanaOk && correoOk);
         }).RequireAuthorization("PERMISOS_LIDER_APPROVE");
 
         // 10. Bandeja de Validación Talento Humano (Paso 3)
@@ -699,7 +704,7 @@ public static class PermisosEndpoints
             var observacion = request.Observacion?.Trim();
 
             if (!confirmar && string.IsNullOrWhiteSpace(observacion))
-                return Results.BadRequest(ApiResponse<object>.Fail(400, "Debe ingresar la observación al devolver la solicitud (RF-007).", []));
+                return Results.BadRequest(ApiResponse<object>.Fail(400, "Por favor escribe la observación antes de devolver la solicitud.", []));
 
             // Máquina de estados estricta: RRHH solo decide sobre solicitudes en PENDIENTE_TH
             // (o PENDIENTE_JEFE únicamente cuando la solicitud no tiene líder asignado).
@@ -752,20 +757,20 @@ public static class PermisosEndpoints
             var recargada = await ConsultarSolicitudesBase(db).FirstAsync(s => s.Id == id, ct);
             var dto = MapearSolicitudDto(recargada, null);
 
-            await EmitirNotificacionesInternasPaso3Async(db, sseNotifier, recargada, dto, confirmar, ct);
+            var campanaOk = await EmitirNotificacionesInternasPaso3SeguraAsync(db, sseNotifier, recargada, dto, confirmar, ct);
 
             var correoColab = recargada.Empleado.Emailcorporativo ?? recargada.Empleado.IdpersonaNavigation.Email;
-            await notificacionService.NotificarCambioEstadoAsync(
+            var correoOk = await NotificarCorreoSeguroAsync(db, notificacionService,
                 dto,
                 correoColab,
                 confirmar ? EventoNotificacionPermiso.ConfirmadaPorRrhh : EventoNotificacionPermiso.DevueltaPorRrhh,
                 ct);
 
-            return Results.Ok(ApiResponse<PermisoItemDto>.Ok(
+            return ResponderPostCommit(
                 dto,
                 confirmar
                     ? "Solicitud confirmada definitivamente por Talento Humano."
-                    : "Solicitud devuelta con observaciones."));
+                    : "Solicitud devuelta con observaciones.", campanaOk && correoOk);
         }).RequireAuthorization("PERMISOS_RRHH_CONFIRM");
 
         // 12. Reenviar enlace externo Magic Link (regenera vigencia y limpia uso previo)
@@ -805,15 +810,15 @@ public static class PermisosEndpoints
             var dtoCorreo = MapearSolicitudDto(recargada, null) with { TokenExterno = recargada.TokenExterno };
             var correoColab = recargada.Empleado.Emailcorporativo ?? recargada.Empleado.IdpersonaNavigation.Email;
 
-            await notificacionService.NotificarCambioEstadoAsync(
+            var correoOk = await NotificarCorreoSeguroAsync(db, notificacionService,
                 dtoCorreo,
                 correoColab,
                 EventoNotificacionPermiso.ReenvioMagicLink,
                 ct);
 
-            return Results.Ok(ApiResponse<PermisoItemDto>.Ok(
+            return ResponderPostCommit(
                 dtoCorreo with { TokenExterno = null },
-                "Magic Link regenerado y reenviado al líder externo."));
+                "Se envió un nuevo enlace de revisión al correo del jefe inmediato.", correoOk);
         }).RequireAuthorization("PERMISOS_RRHH_CONFIRM");
 
         // 13. Historial General (Gerencia / RRHH / Admin)
@@ -888,7 +893,7 @@ public static class PermisosEndpoints
             var aprobar = accion == "aprobar";
             var comentario = request.Comentario?.Trim();
             if (!aprobar && string.IsNullOrWhiteSpace(comentario))
-                return Results.BadRequest(ApiResponse<object>.Fail(400, "Debe indicar el motivo del rechazo (RF-007).", []));
+                return Results.BadRequest(ApiResponse<object>.Fail(400, "Por favor indica el motivo por el cual rechazas la solicitud.", []));
 
             var codigoEstadoDestino = aprobar ? "PENDIENTE_TH" : "RECHAZADA";
             solicitud.IdEstado = await ObtenerIdEstadoSolicitudAsync(db, codigoEstadoDestino, ct);
@@ -911,20 +916,20 @@ public static class PermisosEndpoints
             var recargada = await ConsultarSolicitudesBase(db).FirstAsync(s => s.Id == solicitud.Id, ct);
             var dto = MapearSolicitudDto(recargada, null);
 
-            await EmitirNotificacionesInternasPaso2Async(db, sseNotifier, recargada, dto, aprobar ? "APROBADO" : "RECHAZADO", ct);
+            var campanaOk = await EmitirNotificacionesInternasPaso2SeguraAsync(db, sseNotifier, recargada, dto, aprobar ? "APROBADO" : "RECHAZADO", ct);
 
             var correoColab = recargada.Empleado.Emailcorporativo ?? recargada.Empleado.IdpersonaNavigation.Email;
-            await notificacionService.NotificarCambioEstadoAsync(
+            var correoOk = await NotificarCorreoSeguroAsync(db, notificacionService,
                 dto,
                 correoColab,
                 aprobar ? EventoNotificacionPermiso.AprobadaPorLider : EventoNotificacionPermiso.RechazadaPorLider,
                 ct);
 
-            return Results.Ok(ApiResponse<PermisoItemDto>.Ok(
+            return ResponderPostCommit(
                 dto,
                 aprobar
-                    ? "Solicitud aprobada exitosamente vía Magic Link."
-                    : "Solicitud rechazada vía Magic Link."));
+                    ? "¡Gracias! Tu aprobación quedó registrada correctamente."
+                    : "Tu decisión quedó registrada correctamente.", campanaOk && correoOk);
         }).AllowAnonymous();
 
         group.MapGet("/externo/{token}/pdf", async (
@@ -970,7 +975,7 @@ public static class PermisosEndpoints
                 ct);
 
             return descarga is null
-                ? Results.NotFound(ApiResponse<object>.Fail(404, "Archivo no encontrado en MinIO.", []))
+                ? Results.NotFound(ApiResponse<object>.Fail(404, "El archivo adjunto no se encuentra disponible en este momento.", []))
                 : Results.File(descarga.Contenido, descarga.MimeType, descarga.NombreArchivo);
         }).AllowAnonymous();
     }
@@ -1028,7 +1033,7 @@ public static class PermisosEndpoints
         }
 
         if (string.IsNullOrWhiteSpace(request.Motivo))
-            return Results.BadRequest(ApiResponse<object>.Fail(400, "Debe ingresar el motivo de la solicitud (RF-003).", []));
+            return Results.BadRequest(ApiResponse<object>.Fail(400, "Por favor escribe el motivo de tu solicitud.", []));
 
         var fechaInicio = ParsearFecha(request.FechaInicio);
         var fechaFin = ParsearFecha(request.FechaFin);
@@ -1119,7 +1124,7 @@ public static class PermisosEndpoints
         {
             return Results.BadRequest(ApiResponse<object>.Fail(
                 400,
-                "Para colaboradores en Nómina, la Licencia por enfermedad mayor a 1 día exige adjuntar certificado médico (RF-004).",
+                "Para licencias por enfermedad mayores a 1 día es necesario adjuntar el certificado médico.",
                 []));
         }
 
@@ -1139,7 +1144,8 @@ public static class PermisosEndpoints
             }
             catch (InvalidOperationException ex)
             {
-                return Results.BadRequest(ApiResponse<object>.Fail(400, ex.Message, []));
+                RegistrarErrorInfraestructura(db, ex, $"Validación o subida rechazada para usuario {currentUser.UserId}");
+                return Results.BadRequest(ApiResponse<object>.Fail(400, TraducirErrorInfraestructuraAmigable(ex, tieneArchivo: true), []));
             }
         }
 
@@ -1301,7 +1307,8 @@ public static class PermisosEndpoints
                     foreach (var obj in objetosSubidos)
                         await storageService.EliminarAdjuntoAsync(obj.BucketName, obj.ObjectKey, CancellationToken.None);
                 }
-                return Results.BadRequest(ApiResponse<object>.Fail(400, ex.Message, []));
+                RegistrarErrorInfraestructura(db, ex, $"Validación o subida rechazada para usuario {currentUser.UserId}");
+                return Results.BadRequest(ApiResponse<object>.Fail(400, TraducirErrorInfraestructuraAmigable(ex, tieneArchivo: true), []));
             }
         }
 
@@ -1309,7 +1316,7 @@ public static class PermisosEndpoints
         var dto = MapearSolicitudDto(creada, null);
 
         // Campana SSE en tiempo real (RF-010)
-        await EmitirNotificacionesInternasPaso1Async(db, sseNotifier, creada, dto, ct);
+        var campanaOk = await EmitirNotificacionesInternasPaso1SeguraAsync(db, sseNotifier, creada, dto, ct, request.IdUsuarioRrhh);
 
         // Correo / Apprise (encolado asíncronamente en el Outbox de mensajería)
         var correoColab = creada.Empleado.Emailcorporativo
@@ -1317,13 +1324,13 @@ public static class PermisosEndpoints
                           ?? usuario.Email;
 
         // Solo el correo al líder externo usa el token; la respuesta HTTP no lo incluye
-        await notificacionService.NotificarCambioEstadoAsync(
+        var correoOk = await NotificarCorreoSeguroAsync(db, notificacionService,
             dto with { TokenExterno = creada.TokenExterno },
             correoColab,
-            EventoNotificacionPermiso.SolicitudCreada,
+            EventoNotificacionPermiso.SolicitudCreada, request.IdUsuarioRrhh,
             ct);
 
-        return Results.Ok(ApiResponse<PermisoItemDto>.Ok(dto, "Solicitud registrada exitosamente."));
+        return ResponderPostCommit(dto, "Tu solicitud fue registrada correctamente.", campanaOk && correoOk);
     }
 
     private static async Task<string> GenerarSiguienteCodigoSolicitudAsync(
@@ -1354,7 +1361,7 @@ public static class PermisosEndpoints
     // =========================================================================
     // Consultas y Mapeo desde las 5 Tablas Normalizadas (3FN)
     // =========================================================================
-    private static IQueryable<TblTimeReportSolicitud> ConsultarSolicitudesBase(ApplicationDbContext db)
+    internal static IQueryable<TblTimeReportSolicitud> ConsultarSolicitudesBase(ApplicationDbContext db)
     {
         return db.TblTimeReportSolicitudes
             .AsNoTracking()
@@ -1387,7 +1394,7 @@ public static class PermisosEndpoints
                     .ThenInclude(u => u!.IdpersonaNavigation);
     }
 
-    private static PermisoItemDto MapearSolicitudDto(TblTimeReportSolicitud s, string? traslapeAlerta)
+    internal static PermisoItemDto MapearSolicitudDto(TblTimeReportSolicitud s, string? traslapeAlerta)
     {
         var persona = s.Empleado.IdpersonaNavigation;
         var colaborador = $"{persona.Apellidos} {persona.Nombres}".Trim();
@@ -1689,7 +1696,7 @@ public static class PermisosEndpoints
         return Math.Max(0m, diasBaseAnual - diasVacacionesTomadosAnio);
     }
 
-    private static async Task EmitirNotificacionesInternasPaso1Async(
+    private static async Task EmitirNotificacionesInternasPaso1LegacyUnusedAsync(
         ApplicationDbContext db,
         INotificacionInternaNotifier sseNotifier,
         TblTimeReportSolicitud solicitud,
@@ -1712,11 +1719,50 @@ public static class PermisosEndpoints
                 destinatarios[idUsuarioLider.Value] = "/permisos/equipo";
         }
 
-        // Copia desde Paso 1 a Talento Humano (RF-008)
+    }
+
+    private static async Task EmitirNotificacionesInternasPaso1Async(
+        ApplicationDbContext db,
+        INotificacionInternaNotifier sseNotifier,
+        TblTimeReportSolicitud solicitud,
+        PermisoItemDto dto,
+        CancellationToken ct,
+        int? idUsuarioRrhhElegido = null)
+    {
+        var destinatarios = new Dictionary<int, string>();
+
+        var personaLiderId = solicitud.Lider?.Idpersona ?? solicitud.AsignacionProyecto?.IdliderNavigation?.Idpersona;
+        if (personaLiderId.HasValue)
+        {
+            var idUsuarioLider = await db.TblAutenticacionUsuarios
+                .AsNoTracking()
+                .Where(u => u.Idpersona == personaLiderId.Value && u.Activo)
+                .Select(u => (int?)u.Id)
+                .FirstOrDefaultAsync(ct);
+
+            if (idUsuarioLider.HasValue)
+                destinatarios[idUsuarioLider.Value] = "/permisos/equipo";
+        }
+
+        if (idUsuarioRrhhElegido is > 0
+            && await db.TblAutenticacionUsuarios.AnyAsync(u => u.Id == idUsuarioRrhhElegido.Value && u.Activo, ct))
+        {
+            destinatarios.TryAdd(idUsuarioRrhhElegido.Value, "/permisos/rrhh");
+        }
+        else
+        {
+            var idsRrhhFallback = await ObtenerIdsUsuariosRrhhAsync(db, ct);
+            foreach (var idRrhh in idsRrhhFallback)
+                destinatarios.TryAdd(idRrhh, "/permisos/rrhh");
+        }
+
+        if (false)
+        {
         var idsRrhh = await ObtenerIdsUsuariosRrhhAsync(db, ct);
         foreach (var idRrhh in idsRrhh)
             destinatarios.TryAdd(idRrhh, "/permisos/rrhh");
 
+        }
         if (destinatarios.Count == 0) return;
 
         foreach (var (idUsuarioDestino, ruta) in destinatarios)
@@ -1771,7 +1817,34 @@ public static class PermisosEndpoints
             idsNotificados.Add(idUsuarioColab.Value);
         }
 
-        // A Talento Humano
+        // A Talento Humano (respetando el destinatario RRHH seleccionado en Paso 1 si existe)
+        var idsRrhhElegidos = await db.NotificacionesUsuario
+            .AsNoTracking()
+            .Where(n => n.IdSolicitud == solicitud.Id && n.UrlDestino == "/permisos/rrhh")
+            .Select(n => n.IdUsuarioDestino)
+            .Distinct()
+            .ToListAsync(ct);
+
+        foreach (var idRrhhElegido in idsRrhhElegidos)
+        {
+            if (idRrhhElegido == idUsuarioColab) continue;
+            db.NotificacionesUsuario.Add(new NotificacionUsuario
+            {
+                IdUsuarioDestino = idRrhhElegido,
+                IdSolicitud = solicitud.Id,
+                Titulo = decision == "APROBADO"
+                    ? $"Pendiente confirmación TH: {dto.Codigo}"
+                    : $"Solicitud {dto.Codigo} {dto.EstadoTexto}",
+                Mensaje = $"{dto.LiderNombre} marcó la solicitud de {dto.Colaborador} como {decision}.",
+                UrlDestino = "/permisos/rrhh",
+                Leida = false,
+                FechaCreacion = DateTime.UtcNow
+            });
+            idsNotificados.Add(idRrhhElegido);
+        }
+
+        if (idsRrhhElegidos.Count == 0)
+        {
         var idsRrhh = await ObtenerIdsUsuariosRrhhAsync(db, ct);
         foreach (var idRrhh in idsRrhh)
         {
@@ -1792,6 +1865,7 @@ public static class PermisosEndpoints
             idsNotificados.Add(idRrhh);
         }
 
+        }
         if (idsNotificados.Count > 0)
         {
             await db.SaveChangesAsync(ct);
@@ -1867,6 +1941,109 @@ public static class PermisosEndpoints
     }
 
     // =========================================================================
+    private static async Task<IReadOnlyList<RrhhDisponiblePermisoDto>> ObtenerCatalogoUsuariosRrhhAsync(
+        ApplicationDbContext db,
+        CancellationToken ct)
+    {
+        var idsPorRol = await db.TblAutenticacionUsuarioRols
+            .AsNoTracking()
+            .Where(ur => ur.Activo
+                         && ur.IdusuarioNavigation.Activo
+                         && ur.IdrolNavigation.Activo
+                         && (ur.IdrolNavigation.Nombre.ToUpper() == "RECURSOS HUMANOS"
+                             || ur.IdrolNavigation.Nombre.ToUpper() == "RECURSOS_HUMANOS"))
+            .Select(ur => ur.Idusuario)
+            .Distinct()
+            .ToListAsync(ct);
+
+        var empleadosLiderTh = await db.TblAdministracionEmpleados
+            .AsNoTracking()
+            .Where(e => e.Activo
+                        && e.IdcargoNavigation != null
+                        && e.IdcargoNavigation.Activo
+                        && (e.IdcargoNavigation.Nombrecargo.ToUpper() == "LÍDER DE TALENTO HUMANO"
+                            || e.IdcargoNavigation.Nombrecargo.ToUpper() == "LIDER DE TALENTO HUMANO"))
+            .Select(e => e.Idpersona)
+            .Distinct()
+            .ToListAsync(ct);
+
+        var idsPorCargo = empleadosLiderTh.Count > 0
+            ? await db.TblAutenticacionUsuarios
+                .AsNoTracking()
+                .Where(u => u.Activo && u.Idpersona.HasValue && empleadosLiderTh.Contains(u.Idpersona.Value))
+                .Select(u => u.Id)
+                .ToListAsync(ct)
+            : [];
+
+        var todosIds = idsPorRol.Union(idsPorCargo).Distinct().ToList();
+        if (todosIds.Count == 0)
+            return [];
+
+        var usuarios = await db.TblAutenticacionUsuarios
+            .AsNoTracking()
+            .Include(u => u.IdpersonaNavigation)
+            .Where(u => todosIds.Contains(u.Id) && u.Activo)
+            .ToListAsync(ct);
+
+        var idsPersonas = usuarios
+            .Where(u => u.Idpersona.HasValue)
+            .Select(u => u.Idpersona!.Value)
+            .Distinct()
+            .ToList();
+
+        var empleadosPorPersona = idsPersonas.Count > 0
+            ? await db.TblAdministracionEmpleados
+                .AsNoTracking()
+                .Include(e => e.IdcargoNavigation)
+                .Where(e => e.Activo && idsPersonas.Contains(e.Idpersona))
+                .ToListAsync(ct)
+            : [];
+
+        var mapaEmpleado = empleadosPorPersona
+            .GroupBy(e => e.Idpersona)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        var lista = new List<RrhhDisponiblePermisoDto>();
+        foreach (var u in usuarios)
+        {
+            var emp = u.Idpersona.HasValue ? mapaEmpleado.GetValueOrDefault(u.Idpersona.Value) : null;
+            var nombre = u.IdpersonaNavigation is { } p
+                ? $"{p.Nombres} {p.Apellidos}".Trim()
+                : "";
+            if (string.IsNullOrWhiteSpace(nombre))
+                nombre = u.Email;
+
+            var cargo = emp?.IdcargoNavigation?.Nombrecargo?.Trim();
+            var esLiderTh = string.Equals(cargo, "Líder de Talento Humano", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(cargo, "Lider de Talento Humano", StringComparison.OrdinalIgnoreCase);
+
+            var correo = !string.IsNullOrWhiteSpace(emp?.Emailcorporativo)
+                ? emp!.Emailcorporativo!.Trim()
+                : !string.IsNullOrWhiteSpace(u.Email)
+                    ? u.Email.Trim()
+                    : u.IdpersonaNavigation?.Email?.Trim();
+
+            lista.Add(new RrhhDisponiblePermisoDto(
+                IdUsuario: u.Id,
+                Nombre: nombre,
+                Cargo: string.IsNullOrWhiteSpace(cargo) ? "Talento Humano" : cargo,
+                Correo: correo,
+                EsPrincipal: esLiderTh));
+        }
+
+        var ordenada = lista
+            .OrderByDescending(x => x.EsPrincipal)
+            .ThenBy(x => x.Nombre)
+            .ToList();
+
+        if (ordenada.Count > 0 && ordenada.All(x => !x.EsPrincipal))
+        {
+            ordenada[0] = ordenada[0] with { EsPrincipal = true };
+        }
+
+        return ordenada;
+    }
+
     // Helpers de Catálogo Normalizado, Feriados y Fechas
     // =========================================================================
     private static (string EstadoClase, string EstadoTexto, string EstadoRrhh, string EstadoLider) ResolverEstados(
@@ -2065,5 +2242,165 @@ public static class PermisosEndpoints
             siguiente = siguiente.AddDays(1);
         }
         return siguiente;
+    }
+
+    // =========================================================================
+    // Blindaje Post-Commit y Traducción de Mensajes Amigables (UX sin errores 500)
+    // =========================================================================
+    private const string MensajeAvisoNotificacionDiferida =
+        "Tu gestión quedó guardada correctamente. El aviso automático por correo puede tardar unos minutos en llegar.";
+
+    private static IResult ResponderPostCommit(
+        PermisoItemDto dto,
+        string mensajeExito,
+        bool notificacionesCompletas)
+    {
+        if (notificacionesCompletas)
+            return Results.Ok(ApiResponse<PermisoItemDto>.Ok(dto, mensajeExito));
+
+        var dtoConAviso = dto with { AvisoNotificacion = MensajeAvisoNotificacionDiferida };
+        return Results.Ok(ApiResponse<PermisoItemDto>.Ok(dtoConAviso, MensajeAvisoNotificacionDiferida));
+    }
+
+    private static async Task<bool> EmitirNotificacionesInternasPaso1SeguraAsync(
+        ApplicationDbContext db,
+        INotificacionInternaNotifier sseNotifier,
+        TblTimeReportSolicitud solicitud,
+        PermisoItemDto dto,
+        CancellationToken ct,
+        int? idUsuarioRrhhElegido = null)
+    {
+        try
+        {
+            await EmitirNotificacionesInternasPaso1Async(db, sseNotifier, solicitud, dto, ct, idUsuarioRrhhElegido);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            db.ChangeTracker.Clear();
+            RegistrarAdvertenciaPostCommit(db, ex, $"campana interna Paso 1 ({dto.Codigo})");
+            return false;
+        }
+    }
+
+    private static async Task<bool> EmitirNotificacionesInternasPaso2SeguraAsync(
+        ApplicationDbContext db,
+        INotificacionInternaNotifier sseNotifier,
+        TblTimeReportSolicitud solicitud,
+        PermisoItemDto dto,
+        string decision,
+        CancellationToken ct)
+    {
+        try
+        {
+            await EmitirNotificacionesInternasPaso2Async(db, sseNotifier, solicitud, dto, decision, ct);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            db.ChangeTracker.Clear();
+            RegistrarAdvertenciaPostCommit(db, ex, $"campana interna Paso 2 ({dto.Codigo})");
+            return false;
+        }
+    }
+
+    private static async Task<bool> EmitirNotificacionesInternasPaso3SeguraAsync(
+        ApplicationDbContext db,
+        INotificacionInternaNotifier sseNotifier,
+        TblTimeReportSolicitud solicitud,
+        PermisoItemDto dto,
+        bool confirmada,
+        CancellationToken ct)
+    {
+        try
+        {
+            await EmitirNotificacionesInternasPaso3Async(db, sseNotifier, solicitud, dto, confirmada, ct);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            db.ChangeTracker.Clear();
+            RegistrarAdvertenciaPostCommit(db, ex, $"campana interna Paso 3 ({dto.Codigo})");
+            return false;
+        }
+    }
+
+    private static async Task<bool> NotificarCorreoSeguroAsync(
+        ApplicationDbContext db,
+        IPermisosNotificacionService notificacionService,
+        PermisoItemDto dto,
+        string? correoColab,
+        EventoNotificacionPermiso evento,
+        int? idUsuarioRrhhElegido,
+        CancellationToken ct) =>
+        await NotificarCorreoSeguroAsync(db, notificacionService, dto, correoColab, evento, ct, idUsuarioRrhhElegido);
+
+    private static async Task<bool> NotificarCorreoSeguroAsync(
+        ApplicationDbContext db,
+        IPermisosNotificacionService notificacionService,
+        PermisoItemDto dto,
+        string? correoColab,
+        EventoNotificacionPermiso evento,
+        CancellationToken ct,
+        int? idUsuarioRrhhElegido = null)
+    {
+        try
+        {
+            return await notificacionService.NotificarCambioEstadoAsync(dto, correoColab, evento, ct, idUsuarioRrhhElegido);
+        }
+        catch (Exception ex)
+        {
+            db.ChangeTracker.Clear();
+            RegistrarAdvertenciaPostCommit(db, ex, $"encolado de correo Outbox ({dto.Codigo} - {evento})");
+            return false;
+        }
+    }
+
+    private static void RegistrarAdvertenciaPostCommit(ApplicationDbContext db, Exception ex, string etapa)
+    {
+        try
+        {
+            var logger = db.GetService<ILoggerFactory>().CreateLogger("PermisosEndpoints");
+            logger.LogWarning(
+                ex,
+                "La transacción principal se guardó, pero hubo una intermitencia al despachar {Etapa}.",
+                etapa);
+        }
+        catch
+        {
+            // Jamás propagar un error de logging post-commit al usuario
+        }
+    }
+
+    private static void RegistrarErrorInfraestructura(ApplicationDbContext db, Exception ex, string contexto)
+    {
+        try
+        {
+            var logger = db.GetService<ILoggerFactory>().CreateLogger("PermisosEndpoints");
+            logger.LogError(ex, "{Contexto}", contexto);
+        }
+        catch
+        {
+            // Silenciar fallos secundarios de logging
+        }
+    }
+
+    private static string TraducirErrorInfraestructuraAmigable(Exception ex, bool tieneArchivo)
+    {
+        if (ex is InvalidOperationException ioe
+            && !ioe.Message.Contains("MinIO", StringComparison.OrdinalIgnoreCase)
+            && !ioe.Message.Contains("S3", StringComparison.OrdinalIgnoreCase)
+            && !ioe.Message.Contains("Bucket", StringComparison.OrdinalIgnoreCase)
+            && !ioe.Message.Contains("Endpoint", StringComparison.OrdinalIgnoreCase))
+        {
+            return ioe.Message;
+        }
+
+        if (tieneArchivo)
+        {
+            return "En este momento no pudimos guardar el archivo adjunto. Tu información no fue duplicada; por favor inténtalo nuevamente en unos segundos.";
+        }
+
+        return "Tuvimos un inconveniente temporal al procesar tu solicitud. Por favor inténtalo nuevamente en unos segundos.";
     }
 }

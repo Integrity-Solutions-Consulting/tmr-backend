@@ -20,6 +20,13 @@ public sealed record LiderDisponiblePermisoDto(
     int? IdCliente,
     string? ClienteNombre);
 
+public sealed record RrhhDisponiblePermisoDto(
+    int IdUsuario,
+    string Nombre,
+    string? Cargo,
+    string? Correo,
+    bool EsPrincipal = false);
+
 public sealed record TipoPermisoCatalogoDto(
     int Id,
     string Codigo,
@@ -44,7 +51,8 @@ public sealed record ContextoColaboradorPermisoDto(
     IReadOnlyList<LiderDisponiblePermisoDto> LideresDisponibles,
     bool EsNomina = true,
     string TipoContrato = "Nómina",
-    IReadOnlyList<TipoPermisoCatalogoDto>? TiposPermiso = null);
+    IReadOnlyList<TipoPermisoCatalogoDto>? TiposPermiso = null,
+    IReadOnlyList<RrhhDisponiblePermisoDto>? RrhhDisponibles = null);
 
 public sealed record AdjuntoPermisoDto(
     int Id,
@@ -111,7 +119,8 @@ public sealed record PermisoItemDto(
     string? Comentarios,
     string? TraslapeAlerta,
     string? TokenExterno,
-    IReadOnlyList<AdjuntoPermisoDto>? Adjuntos = null);
+    IReadOnlyList<AdjuntoPermisoDto>? Adjuntos = null,
+    string? AvisoNotificacion = null);
 
 public sealed record CrearPermisoRequest(
     int? IdProyecto,
@@ -125,7 +134,8 @@ public sealed record CrearPermisoRequest(
     string? DetalleHorario,
     decimal? TotalDias,
     decimal? TotalHoras,
-    string Motivo);
+    string Motivo,
+    int? IdUsuarioRrhh = null);
 
 public sealed record DecisionLiderRequest(
     string Accion, // "aprobar" | "observar" | "rechazar"

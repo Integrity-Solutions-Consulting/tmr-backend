@@ -94,14 +94,14 @@ public sealed class PermisosStorageService : IPermisosStorageService
         CancellationToken ct = default)
     {
         if (archivo is null || archivo.Length == 0)
-            throw new InvalidOperationException("El archivo adjunto está vacío.");
+            throw new InvalidOperationException("El archivo seleccionado está vacío. Por favor adjunta un documento válido.");
 
         if (archivo.Length > TamanoMaximoBytes)
-            throw new InvalidOperationException("El archivo supera el tamaño máximo permitido de 5 MB (RF-005).");
+            throw new InvalidOperationException("El archivo supera el tamaño máximo permitido de 5 MB.");
 
         var ext = Path.GetExtension(archivo.FileName)?.Trim().ToLowerInvariant();
         if (ext is not (".pdf" or ".png" or ".jpg" or ".jpeg"))
-            throw new InvalidOperationException("Formato no permitido. Solo se aceptan archivos PDF, PNG o JPG.");
+            throw new InvalidOperationException("Formato no compatible. Puedes adjuntar archivos en PDF, PNG o JPG.");
 
         await using var ms = new MemoryStream((int)archivo.Length);
         await archivo.CopyToAsync(ms, ct);
@@ -110,7 +110,7 @@ public sealed class PermisosStorageService : IPermisosStorageService
         // RNF-003: Validación estricta de cabecera binaria real (magic bytes)
         var (esValido, mimeDetectado, extNormalizada) = ValidarCabeceraArchivo(bytes, ext);
         if (!esValido)
-            throw new InvalidOperationException("El contenido binario del archivo no coincide con un PDF, PNG o JPG válido.");
+            throw new InvalidOperationException("El archivo parece estar dañado o no corresponde a un documento PDF, PNG o JPG válido.");
 
         var sha256 = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
         var nombreSeguro = Path.GetFileName(archivo.FileName);

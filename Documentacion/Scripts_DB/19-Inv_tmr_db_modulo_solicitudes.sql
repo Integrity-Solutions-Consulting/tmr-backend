@@ -17,7 +17,7 @@
 -- Garantías:
 --   * Transaccional (BEGIN / COMMIT) e idempotente.
 --   * No altera la estructura (DDL) de los esquemas autenticacion ni administracion.
---   * Reversa disponible en: ROLLBACK_19-Inv_tmr_db_modulo_solicitudes.sql
+--   * No altera la estructura (DDL) de los esquemas autenticacion ni administracion, ni modifica roles existentes.
 -- ============================================================================
 
 BEGIN;

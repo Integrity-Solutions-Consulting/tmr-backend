@@ -1,7 +1,9 @@
 using System.Net;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using tmr_backend.Features.Notificaciones.Infrastructure.Apprise;
 using tmr_backend.Features.Permisos.DTOs;
+using tmr_backend.Features.Permisos.Endpoints;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Messaging;
 using tmr_backend.Infrastructure.Shared;
@@ -19,34 +21,54 @@ public enum EventoNotificacionPermiso
     ReenvioMagicLink
 }
 
-/// <summary>
-/// Evento del Outbox para enviar un correo del módulo de Permisos de forma asíncrona con reintentos automáticos.
-/// </summary>
-public sealed record CorreoPermisoEncolado(
-    string DestinatarioOriginal,
-    string Asunto,
-    string Html,
-    string FolioSolicitud,
-    string Evento) : IEvento;
+public enum RolDestinatarioCorreoPermiso
+{
+    Colaborador,
+    JefeInmediato,
+    TalentoHumano
+}
 
 /// <summary>
-/// Handler del bus de mensajería (Outbox + EventDispatcher) que despacha los correos de Permisos
-/// vía Apprise o SMTP con reintentos automáticos en caso de fallo transitorio.
+/// Evento liviano del Outbox (~180 bytes) para despachar correos de Permisos de forma asíncrona
+/// con reintentos automáticos sin almacenar HTML renderizado en PostgreSQL.
+/// </summary>
+public sealed record CorreoPermisoEncolado(
+    int IdSolicitud,
+    string FolioSolicitud,
+    string DestinatarioOriginal,
+    string NombreDestinatario,
+    RolDestinatarioCorreoPermiso RolDestinatario,
+    EventoNotificacionPermiso Evento,
+    bool IncluirTokenExterno = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? Asunto = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? Html = null) : IEvento;
+
+/// <summary>
+/// Handler del bus de mensajería (Outbox + EventDispatcher) que consulta la solicitud actualizada,
+/// renderiza la plantilla HTML en memoria y despacha el correo vía Apprise o SMTP con reintentos automáticos.
 /// </summary>
 public sealed class EnviarCorreoPermisoHandler : IEventHandler<CorreoPermisoEncolado>
 {
+    private readonly ApplicationDbContext _db;
     private readonly IConfiguration _configuration;
+    private readonly IWebHostEnvironment _env;
     private readonly ILogger<EnviarCorreoPermisoHandler> _logger;
     private readonly IAppriseNotificationService? _appriseService;
     private readonly IEmailService? _emailService;
 
     public EnviarCorreoPermisoHandler(
+        ApplicationDbContext db,
         IConfiguration configuration,
+        IWebHostEnvironment env,
         ILogger<EnviarCorreoPermisoHandler> logger,
         IAppriseNotificationService? appriseService = null,
         IEmailService? emailService = null)
     {
+        _db = db;
         _configuration = configuration;
+        _env = env;
         _logger = logger;
         _appriseService = appriseService;
         _emailService = emailService;
@@ -55,14 +77,60 @@ public sealed class EnviarCorreoPermisoHandler : IEventHandler<CorreoPermisoEnco
     public async Task HandleAsync(CorreoPermisoEncolado evento, CancellationToken ct)
     {
         var destinatario = evento.DestinatarioOriginal.Trim();
-        var asunto = evento.Asunto;
+        if (string.IsNullOrWhiteSpace(destinatario))
+            return;
+
+        string asunto;
+        string html;
+
+        // Compatibilidad hacia atrás por si existiera algún evento histórico con HTML pre-renderizado
+        if (!string.IsNullOrWhiteSpace(evento.Html) && !string.IsNullOrWhiteSpace(evento.Asunto))
+        {
+            asunto = evento.Asunto;
+            html = evento.Html;
+        }
+        else
+        {
+            var solicitud = await PermisosEndpoints.ConsultarSolicitudesBase(_db)
+                .FirstOrDefaultAsync(s => s.Id == evento.IdSolicitud && s.Activo, ct);
+
+            if (solicitud is null)
+            {
+                _logger.LogWarning(
+                    "Solicitud {IdSolicitud} ({Folio}) no encontrada o inactiva al procesar correo del Outbox.",
+                    evento.IdSolicitud,
+                    evento.FolioSolicitud);
+                return;
+            }
+
+            var dto = PermisosEndpoints.MapearSolicitudDto(solicitud, null);
+            if (evento.IncluirTokenExterno)
+            {
+                dto = dto with { TokenExterno = solicitud.TokenExterno };
+            }
+
+            var plantilla = await PermisosNotificacionService.CargarPlantillaHtmlCoreAsync(_env, ct);
+            var frontendUrl = (_configuration["EmailSettings:FrontendUrl"] ?? "http://localhost:4200").TrimEnd('/');
+            var logoUrl = PermisosNotificacionService.ObtenerLogoUrlCore(_configuration, frontendUrl);
+
+            (asunto, html) = PermisosNotificacionService.ConstruirMensajeCorreo(
+                plantilla,
+                dto,
+                evento.RolDestinatario,
+                evento.NombreDestinatario,
+                evento.Evento,
+                frontendUrl,
+                logoUrl);
+        }
 
         var overrideEmail = _configuration["EmailSettings:OverrideEmailRecipient"];
         if (!string.IsNullOrWhiteSpace(overrideEmail))
         {
             _logger.LogInformation(
                 "REDIRECCIÓN DE CORREO PERMISOS ({Folio}): destinatario {Original} reemplazado por {Override}",
-                evento.FolioSolicitud, destinatario, overrideEmail);
+                evento.FolioSolicitud,
+                destinatario,
+                overrideEmail);
             asunto = $"[PRUEBA para: {destinatario}] {asunto}";
             destinatario = overrideEmail;
         }
@@ -71,7 +139,7 @@ public sealed class EnviarCorreoPermisoHandler : IEventHandler<CorreoPermisoEnco
         {
             try
             {
-                await _appriseService.SendEmailAsync(destinatario, asunto, evento.Html, ct);
+                await _appriseService.SendEmailAsync(destinatario, asunto, html, ct);
                 return;
             }
             catch (Exception ex) when (_emailService is not null)
@@ -86,141 +154,91 @@ public sealed class EnviarCorreoPermisoHandler : IEventHandler<CorreoPermisoEnco
 
         if (_emailService is not null)
         {
-            await _emailService.SendEmailAsync(destinatario, asunto, evento.Html);
+            await _emailService.SendEmailAsync(destinatario, asunto, html);
         }
     }
 }
 
 public interface IPermisosNotificacionService
 {
-    Task NotificarCambioEstadoAsync(
+    Task<bool> NotificarCambioEstadoAsync(
         PermisoItemDto permiso,
         string? correoColaborador,
         EventoNotificacionPermiso evento,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        int? idUsuarioRrhhElegido = null);
 }
 
 public sealed class PermisosNotificacionService : IPermisosNotificacionService
 {
     private readonly ApplicationDbContext _db;
-    private readonly IConfiguration _configuration;
-    private readonly IWebHostEnvironment _env;
     private readonly IEventBus _eventBus;
     private readonly ILogger<PermisosNotificacionService> _logger;
 
     public PermisosNotificacionService(
         ApplicationDbContext db,
-        IConfiguration configuration,
-        IWebHostEnvironment env,
         IEventBus eventBus,
         ILogger<PermisosNotificacionService> logger)
     {
         _db = db;
-        _configuration = configuration;
-        _env = env;
         _eventBus = eventBus;
         _logger = logger;
     }
 
-    public async Task NotificarCambioEstadoAsync(
+    public async Task<bool> NotificarCambioEstadoAsync(
         PermisoItemDto permiso,
         string? correoColaborador,
         EventoNotificacionPermiso evento,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        int? idUsuarioRrhhElegido = null)
     {
-        var plantilla = await CargarPlantillaHtmlAsync(ct);
-        var frontendUrl = (_configuration["EmailSettings:FrontendUrl"] ?? "http://localhost:4200").TrimEnd('/');
         var folio = permiso.FolioOrCodigo();
-        var eventoStr = evento.ToString();
+        var todosEncolados = true;
 
-        // Resolver destinatario(s) de Talento Humano priorizando el cargo 'Líder de Talento Humano'
-        var usuariosRrhh = await ObtenerDestinatariosRrhhAsync(ct);
+        // Resolver destinatario(s) de Talento Humano respetando la selección del colaborador (o Líder de TH por defecto)
+        var usuariosRrhh = await ObtenerDestinatariosRrhhAsync(permiso.Id, idUsuarioRrhhElegido, ct);
 
         switch (evento)
         {
             case EventoNotificacionPermiso.SolicitudCreada:
             {
-                // 1. Correo personalizado al Colaborador
                 if (!string.IsNullOrWhiteSpace(correoColaborador))
                 {
-                    var htmlColab = RenderizarCorreo(
-                        plantilla,
-                        permiso,
-                        nombreDestinatario: permiso.Colaborador,
-                        rolDestinatario: "Colaborador Solicitante",
-                        badgeRolBg: "#eff6ff",
-                        badgeRolColor: "#1d4ed8",
-                        subtituloCabecera: "Confirmación de Registro de Solicitud",
-                        mensajePersonalizado: $"Tu solicitud de <strong>{WebUtility.HtmlEncode(permiso.Tipo)}</strong> ({WebUtility.HtmlEncode(folio)}) ha sido registrada exitosamente y se envió a tu Jefe Inmediato (<strong>{WebUtility.HtmlEncode(permiso.LiderNombre)}</strong>) para su revisión.",
-                        ctaUrl: $"{frontendUrl}/permisos",
-                        ctaTexto: "Ver seguimiento en Mis Permisos",
-                        notaPieBoton: "Recibirás un correo personalizado en cada cambio de estado de tu solicitud.");
-
-                    await EncolarCorreoIndividualAsync(
-                        correoColaborador,
-                        $"[Permisos ISC] Solicitud {folio} registrada ({permiso.Tipo})",
-                        htmlColab,
+                    todosEncolados &= await EncolarCorreoIndividualAsync(
+                        permiso.Id,
                         folio,
-                        eventoStr,
+                        correoColaborador,
+                        permiso.Colaborador,
+                        RolDestinatarioCorreoPermiso.Colaborador,
+                        evento,
+                        incluirTokenExterno: false,
                         ct);
                 }
 
-                // 2. Correo personalizado al Jefe Inmediato (Interno o Externo con Magic Link)
                 if (!string.IsNullOrWhiteSpace(permiso.LiderCorreo))
                 {
                     var esExterno = string.Equals(permiso.LiderTipo, "EXT", StringComparison.OrdinalIgnoreCase);
-                    var ctaLiderUrl = esExterno && !string.IsNullOrWhiteSpace(permiso.TokenExterno)
-                        ? $"{frontendUrl}/permisos/revision-externa?token={Uri.EscapeDataString(permiso.TokenExterno)}"
-                        : $"{frontendUrl}/permisos/equipo";
-
-                    var htmlLider = RenderizarCorreo(
-                        plantilla,
-                        permiso,
-                        nombreDestinatario: permiso.LiderNombre,
-                        rolDestinatario: esExterno ? "Jefe Inmediato Externo · Magic Link" : "Jefe Inmediato / Líder TMR",
-                        badgeRolBg: esExterno ? "#f3e8ff" : "#e0f2fe",
-                        badgeRolColor: esExterno ? "#7e22ce" : "#0369a1",
-                        subtituloCabecera: "Nueva Solicitud Pendiente de tu Aprobación",
-                        mensajePersonalizado: esExterno
-                            ? $"El colaborador <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong> asignado a <strong>{WebUtility.HtmlEncode(permiso.Cliente)}</strong> ha registrado una solicitud de <strong>{WebUtility.HtmlEncode(permiso.Tipo)}</strong>. Puedes revisarla y aprobarla o rechazarla directamente mediante el siguiente enlace seguro sin necesidad de iniciar sesión:"
-                            : $"El colaborador <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong> de tu equipo ha registrado una solicitud de <strong>{WebUtility.HtmlEncode(permiso.Tipo)}</strong> que requiere tu revisión y aprobación.",
-                        ctaUrl: ctaLiderUrl,
-                        ctaTexto: esExterno ? "Revisar y Aprobar Solicitud (Magic Link)" : "Revisar Solicitud en Aprobación Líder",
-                        notaPieBoton: esExterno
-                            ? "Enlace único de aprobación externa (válido por 72 horas)."
-                            : "Ingresa a la bandeja de Aprobación Líder en TMR para gestionar la solicitud.");
-
-                    await EncolarCorreoIndividualAsync(
-                        permiso.LiderCorreo,
-                        $"[Acción Requerida] Aprobación de permiso {folio} — {permiso.Colaborador}",
-                        htmlLider,
+                    todosEncolados &= await EncolarCorreoIndividualAsync(
+                        permiso.Id,
                         folio,
-                        eventoStr,
+                        permiso.LiderCorreo,
+                        permiso.LiderNombre,
+                        RolDestinatarioCorreoPermiso.JefeInmediato,
+                        evento,
+                        incluirTokenExterno: esExterno,
                         ct);
                 }
 
-                // 3. Correo personalizado a Talento Humano (RRHH)
                 foreach (var rrhh in usuariosRrhh.Where(u => !string.IsNullOrWhiteSpace(u.Email)))
                 {
-                    var htmlRrhh = RenderizarCorreo(
-                        plantilla,
-                        permiso,
-                        nombreDestinatario: string.IsNullOrWhiteSpace(rrhh.Nombre) ? "Talento Humano ISC" : rrhh.Nombre,
-                        rolDestinatario: "Talento Humano (RRHH)",
-                        badgeRolBg: "#fef3c7",
-                        badgeRolColor: "#b45309",
-                        subtituloCabecera: "Nueva Solicitud en Flujo de Aprobación",
-                        mensajePersonalizado: $"Se ha registrado una nueva solicitud de <strong>{WebUtility.HtmlEncode(permiso.Tipo)}</strong> por parte de <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong>. Actualmente se encuentra en espera de aprobación de su Jefe Inmediato (<strong>{WebUtility.HtmlEncode(permiso.LiderNombre)}</strong>).",
-                        ctaUrl: $"{frontendUrl}/permisos/rrhh",
-                        ctaTexto: "Ver Bandeja de Validación RRHH",
-                        notaPieBoton: "Serás notificado nuevamente apenas el Jefe Inmediato registre su aprobación.");
-
-                    await EncolarCorreoIndividualAsync(
-                        rrhh.Email,
-                        $"[Talento Humano] Nueva solicitud {folio} en curso — {permiso.Colaborador}",
-                        htmlRrhh,
+                    todosEncolados &= await EncolarCorreoIndividualAsync(
+                        permiso.Id,
                         folio,
-                        eventoStr,
+                        rrhh.Email,
+                        string.IsNullOrWhiteSpace(rrhh.Nombre) ? "Talento Humano ISC" : rrhh.Nombre,
+                        RolDestinatarioCorreoPermiso.TalentoHumano,
+                        evento,
+                        incluirTokenExterno: false,
                         ct);
                 }
                 break;
@@ -230,32 +248,187 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
             {
                 if (!string.IsNullOrWhiteSpace(permiso.LiderCorreo))
                 {
-                    var ctaLiderUrl = !string.IsNullOrWhiteSpace(permiso.TokenExterno)
-                        ? $"{frontendUrl}/permisos/revision-externa?token={Uri.EscapeDataString(permiso.TokenExterno)}"
-                        : $"{frontendUrl}/permisos/revision-externa";
-
-                    var htmlLider = RenderizarCorreo(
-                        plantilla,
-                        permiso,
-                        nombreDestinatario: permiso.LiderNombre,
-                        rolDestinatario: "Jefe Inmediato Externo · Magic Link",
-                        badgeRolBg: "#f3e8ff",
-                        badgeRolColor: "#7e22ce",
-                        subtituloCabecera: "Recordatorio de Aprobación Pendiente (Magic Link)",
-                        mensajePersonalizado: $"Talento Humano de Integrity Solutions te reenvía el enlace directo para revisar y confirmar la solicitud de <strong>{WebUtility.HtmlEncode(permiso.Tipo)}</strong> de <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong>.",
-                        ctaUrl: ctaLiderUrl,
-                        ctaTexto: "Abrir Formulario Oficial y Responder",
-                        notaPieBoton: "Enlace renovado por 72 horas. No requiere usuario ni contraseña.");
-
-                    await EncolarCorreoIndividualAsync(
-                        permiso.LiderCorreo,
-                        $"[Recordatorio] Aprobación pendiente {folio} — {permiso.Colaborador}",
-                        htmlLider,
+                    todosEncolados &= await EncolarCorreoIndividualAsync(
+                        permiso.Id,
                         folio,
-                        eventoStr,
+                        permiso.LiderCorreo,
+                        permiso.LiderNombre,
+                        RolDestinatarioCorreoPermiso.JefeInmediato,
+                        evento,
+                        incluirTokenExterno: true,
                         ct);
                 }
                 break;
+            }
+
+            case EventoNotificacionPermiso.AprobadaPorLider:
+            case EventoNotificacionPermiso.ObservadaPorLider:
+            case EventoNotificacionPermiso.RechazadaPorLider:
+            {
+                if (!string.IsNullOrWhiteSpace(correoColaborador))
+                {
+                    todosEncolados &= await EncolarCorreoIndividualAsync(
+                        permiso.Id,
+                        folio,
+                        correoColaborador,
+                        permiso.Colaborador,
+                        RolDestinatarioCorreoPermiso.Colaborador,
+                        evento,
+                        incluirTokenExterno: false,
+                        ct);
+                }
+
+                foreach (var rrhh in usuariosRrhh.Where(u => !string.IsNullOrWhiteSpace(u.Email)))
+                {
+                    todosEncolados &= await EncolarCorreoIndividualAsync(
+                        permiso.Id,
+                        folio,
+                        rrhh.Email,
+                        string.IsNullOrWhiteSpace(rrhh.Nombre) ? "Talento Humano ISC" : rrhh.Nombre,
+                        RolDestinatarioCorreoPermiso.TalentoHumano,
+                        evento,
+                        incluirTokenExterno: false,
+                        ct);
+                }
+                break;
+            }
+
+            case EventoNotificacionPermiso.ConfirmadaPorRrhh:
+            case EventoNotificacionPermiso.DevueltaPorRrhh:
+            {
+                if (!string.IsNullOrWhiteSpace(correoColaborador))
+                {
+                    todosEncolados &= await EncolarCorreoIndividualAsync(
+                        permiso.Id,
+                        folio,
+                        correoColaborador,
+                        permiso.Colaborador,
+                        RolDestinatarioCorreoPermiso.Colaborador,
+                        evento,
+                        incluirTokenExterno: false,
+                        ct);
+                }
+
+                if (!string.IsNullOrWhiteSpace(permiso.LiderCorreo))
+                {
+                    todosEncolados &= await EncolarCorreoIndividualAsync(
+                        permiso.Id,
+                        folio,
+                        permiso.LiderCorreo,
+                        permiso.LiderNombre,
+                        RolDestinatarioCorreoPermiso.JefeInmediato,
+                        evento,
+                        incluirTokenExterno: false,
+                        ct);
+                }
+                break;
+            }
+        }
+
+        return todosEncolados;
+    }
+
+    internal static (string Asunto, string Html) ConstruirMensajeCorreo(
+        string plantilla,
+        PermisoItemDto permiso,
+        RolDestinatarioCorreoPermiso rolDestinatario,
+        string nombreDestinatario,
+        EventoNotificacionPermiso evento,
+        string frontendUrl,
+        string logoUrl)
+    {
+        var folio = permiso.FolioOrCodigo();
+        var nombreEfectivo = string.IsNullOrWhiteSpace(nombreDestinatario) ? "Colaborador" : nombreDestinatario;
+
+        switch (evento)
+        {
+            case EventoNotificacionPermiso.SolicitudCreada:
+            {
+                if (rolDestinatario == RolDestinatarioCorreoPermiso.Colaborador)
+                {
+                    var html = RenderizarCorreo(
+                        plantilla,
+                        permiso,
+                        logoUrl,
+                        nombreDestinatario: nombreEfectivo,
+                        rolDestinatario: "Colaborador Solicitante",
+                        badgeRolBg: "#eff6ff",
+                        badgeRolColor: "#1d4ed8",
+                        subtituloCabecera: "Confirmación de Registro de Solicitud",
+                        mensajePersonalizado: $"Tu solicitud de <strong>{WebUtility.HtmlEncode(permiso.Tipo)}</strong> ({WebUtility.HtmlEncode(folio)}) ha sido registrada exitosamente y se envió a tu Jefe Inmediato (<strong>{WebUtility.HtmlEncode(permiso.LiderNombre)}</strong>) para su revisión.",
+                        ctaUrl: $"{frontendUrl}/permisos",
+                        ctaTexto: "Ver seguimiento en Mis Permisos",
+                        notaPieBoton: "Recibirás un correo personalizado en cada cambio de estado de tu solicitud.");
+
+                    return ($"[Permisos ISC] Solicitud {folio} registrada ({permiso.Tipo})", html);
+                }
+
+                if (rolDestinatario == RolDestinatarioCorreoPermiso.JefeInmediato)
+                {
+                    var esExterno = string.Equals(permiso.LiderTipo, "EXT", StringComparison.OrdinalIgnoreCase);
+                    var ctaLiderUrl = esExterno && !string.IsNullOrWhiteSpace(permiso.TokenExterno)
+                        ? $"{frontendUrl}/permisos/revision-externa?token={Uri.EscapeDataString(permiso.TokenExterno)}"
+                        : $"{frontendUrl}/permisos/equipo";
+
+                    var html = RenderizarCorreo(
+                        plantilla,
+                        permiso,
+                        logoUrl,
+                        nombreDestinatario: nombreEfectivo,
+                        rolDestinatario: esExterno ? "Jefe Inmediato Externo · Enlace Directo" : "Jefe Inmediato / Líder TMR",
+                        badgeRolBg: esExterno ? "#f3e8ff" : "#e0f2fe",
+                        badgeRolColor: esExterno ? "#7e22ce" : "#0369a1",
+                        subtituloCabecera: "Nueva Solicitud Pendiente de tu Aprobación",
+                        mensajePersonalizado: esExterno
+                            ? $"El colaborador <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong> asignado a <strong>{WebUtility.HtmlEncode(permiso.Cliente)}</strong> ha registrado una solicitud de <strong>{WebUtility.HtmlEncode(permiso.Tipo)}</strong>. Puedes revisarla y aprobarla o rechazarla directamente mediante el siguiente enlace seguro sin necesidad de iniciar sesión:"
+                            : $"El colaborador <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong> de tu equipo ha registrado una solicitud de <strong>{WebUtility.HtmlEncode(permiso.Tipo)}</strong> que requiere tu revisión y aprobación.",
+                        ctaUrl: ctaLiderUrl,
+                        ctaTexto: esExterno ? "Revisar y Aprobar Solicitud" : "Revisar Solicitud en Aprobación Líder",
+                        notaPieBoton: esExterno
+                            ? "Enlace único de aprobación externa (válido por 72 horas)."
+                            : "Ingresa a la bandeja de Aprobación Líder en TMR para gestionar la solicitud.");
+
+                    return ($"[Acción Requerida] Aprobación de permiso {folio} — {permiso.Colaborador}", html);
+                }
+
+                var htmlRrhh = RenderizarCorreo(
+                    plantilla,
+                    permiso,
+                    logoUrl,
+                    nombreDestinatario: nombreEfectivo,
+                    rolDestinatario: "Talento Humano (RRHH)",
+                    badgeRolBg: "#fef3c7",
+                    badgeRolColor: "#b45309",
+                    subtituloCabecera: "Nueva Solicitud en Flujo de Aprobación",
+                    mensajePersonalizado: $"Se ha registrado una nueva solicitud de <strong>{WebUtility.HtmlEncode(permiso.Tipo)}</strong> por parte de <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong>. Actualmente se encuentra en espera de aprobación de su Jefe Inmediato (<strong>{WebUtility.HtmlEncode(permiso.LiderNombre)}</strong>).",
+                    ctaUrl: $"{frontendUrl}/permisos/rrhh",
+                    ctaTexto: "Ver Bandeja de Validación RRHH",
+                    notaPieBoton: "Serás notificado nuevamente apenas el Jefe Inmediato registre su aprobación.");
+
+                return ($"[Talento Humano] Nueva solicitud {folio} en curso — {permiso.Colaborador}", htmlRrhh);
+            }
+
+            case EventoNotificacionPermiso.ReenvioMagicLink:
+            {
+                var ctaLiderUrl = !string.IsNullOrWhiteSpace(permiso.TokenExterno)
+                    ? $"{frontendUrl}/permisos/revision-externa?token={Uri.EscapeDataString(permiso.TokenExterno)}"
+                    : $"{frontendUrl}/permisos/revision-externa";
+
+                var html = RenderizarCorreo(
+                    plantilla,
+                    permiso,
+                    logoUrl,
+                    nombreDestinatario: nombreEfectivo,
+                    rolDestinatario: "Jefe Inmediato Externo · Enlace Directo",
+                    badgeRolBg: "#f3e8ff",
+                    badgeRolColor: "#7e22ce",
+                    subtituloCabecera: "Recordatorio de Aprobación Pendiente",
+                    mensajePersonalizado: $"Talento Humano de Integrity Solutions te reenvía el enlace directo para revisar y confirmar la solicitud de <strong>{WebUtility.HtmlEncode(permiso.Tipo)}</strong> de <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong>.",
+                    ctaUrl: ctaLiderUrl,
+                    ctaTexto: "Abrir Formulario Oficial y Responder",
+                    notaPieBoton: "Enlace renovado por 72 horas. No requiere usuario ni contraseña.");
+
+                return ($"[Recordatorio] Aprobación pendiente {folio} — {permiso.Colaborador}", html);
             }
 
             case EventoNotificacionPermiso.AprobadaPorLider:
@@ -269,13 +442,13 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
                     _ => "rechazada por tu Jefe Inmediato"
                 };
 
-                // 1. Notificar al Colaborador
-                if (!string.IsNullOrWhiteSpace(correoColaborador))
+                if (rolDestinatario == RolDestinatarioCorreoPermiso.Colaborador)
                 {
-                    var htmlColab = RenderizarCorreo(
+                    var html = RenderizarCorreo(
                         plantilla,
                         permiso,
-                        nombreDestinatario: permiso.Colaborador,
+                        logoUrl,
+                        nombreDestinatario: nombreEfectivo,
                         rolDestinatario: "Colaborador Solicitante",
                         badgeRolBg: "#eff6ff",
                         badgeRolColor: "#1d4ed8",
@@ -288,60 +461,45 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
                         ctaTexto: "Consultar mi Solicitud y PDF",
                         notaPieBoton: "Puedes visualizar el documento oficial actualizado desde tu bandeja Mis Permisos.");
 
-                    await EncolarCorreoIndividualAsync(
-                        correoColaborador,
-                        $"[Permisos ISC] Solicitud {folio} {accionTexto}",
-                        htmlColab,
-                        folio,
-                        eventoStr,
-                        ct);
+                    return ($"[Permisos ISC] Solicitud {folio} {accionTexto}", html);
                 }
 
-                // 2. Notificar a Talento Humano (RRHH) para que confirme
-                foreach (var rrhh in usuariosRrhh.Where(u => !string.IsNullOrWhiteSpace(u.Email)))
-                {
-                    var htmlRrhh = RenderizarCorreo(
-                        plantilla,
-                        permiso,
-                        nombreDestinatario: string.IsNullOrWhiteSpace(rrhh.Nombre) ? "Talento Humano ISC" : rrhh.Nombre,
-                        rolDestinatario: "Talento Humano (RRHH)",
-                        badgeRolBg: "#fef3c7",
-                        badgeRolColor: "#b45309",
-                        subtituloCabecera: evento == EventoNotificacionPermiso.AprobadaPorLider
-                            ? "Solicitud Lista para Confirmación de RRHH"
-                            : "Actualización de Solicitud por Jefe Inmediato",
-                        mensajePersonalizado: evento == EventoNotificacionPermiso.AprobadaPorLider
-                            ? $"El Jefe Inmediato (<strong>{WebUtility.HtmlEncode(permiso.LiderNombre)}</strong>) aprobó la solicitud <strong>{WebUtility.HtmlEncode(folio)}</strong> de <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong> ({WebUtility.HtmlEncode(permiso.MetodoLider)}). Ya puedes revisarla y dar la confirmación definitiva de Talento Humano."
-                            : $"El Jefe Inmediato (<strong>{WebUtility.HtmlEncode(permiso.LiderNombre)}</strong>) marcó la solicitud <strong>{WebUtility.HtmlEncode(folio)}</strong> de <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong> como <strong>{WebUtility.HtmlEncode(permiso.EstadoTexto)}</strong>.",
-                        ctaUrl: $"{frontendUrl}/permisos/rrhh",
-                        ctaTexto: "Revisar Solicitud en Validación RRHH",
-                        notaPieBoton: "Al confirmar se actualizará el formulario oficial PDF y su impacto en Time Report.");
+                var htmlRrhh = RenderizarCorreo(
+                    plantilla,
+                    permiso,
+                    logoUrl,
+                    nombreDestinatario: nombreEfectivo,
+                    rolDestinatario: "Talento Humano (RRHH)",
+                    badgeRolBg: "#fef3c7",
+                    badgeRolColor: "#b45309",
+                    subtituloCabecera: evento == EventoNotificacionPermiso.AprobadaPorLider
+                        ? "Solicitud Lista para Confirmación de RRHH"
+                        : "Actualización de Solicitud por Jefe Inmediato",
+                    mensajePersonalizado: evento == EventoNotificacionPermiso.AprobadaPorLider
+                        ? $"El Jefe Inmediato (<strong>{WebUtility.HtmlEncode(permiso.LiderNombre)}</strong>) aprobó la solicitud <strong>{WebUtility.HtmlEncode(folio)}</strong> de <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong> ({WebUtility.HtmlEncode(permiso.MetodoLider)}). Ya puedes revisarla y dar la confirmación definitiva de Talento Humano."
+                        : $"El Jefe Inmediato (<strong>{WebUtility.HtmlEncode(permiso.LiderNombre)}</strong>) marcó la solicitud <strong>{WebUtility.HtmlEncode(folio)}</strong> de <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong> como <strong>{WebUtility.HtmlEncode(permiso.EstadoTexto)}</strong>.",
+                    ctaUrl: $"{frontendUrl}/permisos/rrhh",
+                    ctaTexto: "Revisar Solicitud en Validación RRHH",
+                    notaPieBoton: "Al confirmar se actualizará el formulario oficial PDF y su impacto en Time Report.");
 
-                    await EncolarCorreoIndividualAsync(
-                        rrhh.Email,
-                        evento == EventoNotificacionPermiso.AprobadaPorLider
-                            ? $"[Confirmación RRHH Requerida] Solicitud {folio} — {permiso.Colaborador}"
-                            : $"[Talento Humano] Solicitud {folio} {permiso.EstadoTexto} — {permiso.Colaborador}",
-                        htmlRrhh,
-                        folio,
-                        eventoStr,
-                        ct);
-                }
-                break;
+                var asuntoRrhh = evento == EventoNotificacionPermiso.AprobadaPorLider
+                    ? $"[Confirmación RRHH Requerida] Solicitud {folio} — {permiso.Colaborador}"
+                    : $"[Talento Humano] Solicitud {folio} {permiso.EstadoTexto} — {permiso.Colaborador}";
+
+                return (asuntoRrhh, htmlRrhh);
             }
 
-            case EventoNotificacionPermiso.ConfirmadaPorRrhh:
-            case EventoNotificacionPermiso.DevueltaPorRrhh:
+            default:
             {
                 var confirmada = evento == EventoNotificacionPermiso.ConfirmadaPorRrhh;
 
-                // 1. Notificar al Colaborador
-                if (!string.IsNullOrWhiteSpace(correoColaborador))
+                if (rolDestinatario == RolDestinatarioCorreoPermiso.Colaborador)
                 {
-                    var htmlColab = RenderizarCorreo(
+                    var html = RenderizarCorreo(
                         plantilla,
                         permiso,
-                        nombreDestinatario: permiso.Colaborador,
+                        logoUrl,
+                        nombreDestinatario: nombreEfectivo,
                         rolDestinatario: "Colaborador Solicitante",
                         badgeRolBg: "#eff6ff",
                         badgeRolColor: "#1d4ed8",
@@ -355,53 +513,40 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
                         ctaTexto: confirmada ? "Descargar PDF Oficial en Mis Permisos" : "Revisar Observación en Mis Permisos",
                         notaPieBoton: "El seguimiento de tu solicitud ha concluido en el flujo de aprobaciones.");
 
-                    await EncolarCorreoIndividualAsync(
-                        correoColaborador,
-                        confirmada
-                            ? $"[Confirmado] Solicitud {folio} aprobada por Talento Humano"
-                            : $"[Observado] Solicitud {folio} devuelta por Talento Humano",
-                        htmlColab,
-                        folio,
-                        eventoStr,
-                        ct);
+                    var asuntoColab = confirmada
+                        ? $"[Confirmado] Solicitud {folio} aprobada por Talento Humano"
+                        : $"[Observado] Solicitud {folio} devuelta por Talento Humano";
+
+                    return (asuntoColab, html);
                 }
 
-                // 2. Notificar también al Jefe Inmediato para constancia
-                if (!string.IsNullOrWhiteSpace(permiso.LiderCorreo))
-                {
-                    var htmlLider = RenderizarCorreo(
-                        plantilla,
-                        permiso,
-                        nombreDestinatario: permiso.LiderNombre,
-                        rolDestinatario: "Jefe Inmediato / Líder",
-                        badgeRolBg: "#e0f2fe",
-                        badgeRolColor: "#0369a1",
-                        subtituloCabecera: confirmada
-                            ? "Constancia de Confirmación RRHH"
-                            : "Aviso de Devolución por RRHH",
-                        mensajePersonalizado: confirmada
-                            ? $"Te informamos que Talento Humano ha confirmado definitivamente la solicitud <strong>{WebUtility.HtmlEncode(folio)}</strong> del colaborador <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong> para el período <strong>{WebUtility.HtmlEncode(permiso.Fechas)}</strong>."
-                            : $"Talento Humano devolvió con observaciones la solicitud <strong>{WebUtility.HtmlEncode(folio)}</strong> del colaborador <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong>.",
-                        ctaUrl: $"{frontendUrl}/permisos/equipo",
-                        ctaTexto: "Ver en TMR",
-                        notaPieBoton: "Notificación de seguimiento para coordinación del equipo.");
+                var htmlLider = RenderizarCorreo(
+                    plantilla,
+                    permiso,
+                    logoUrl,
+                    nombreDestinatario: nombreEfectivo,
+                    rolDestinatario: "Jefe Inmediato / Líder",
+                    badgeRolBg: "#e0f2fe",
+                    badgeRolColor: "#0369a1",
+                    subtituloCabecera: confirmada
+                        ? "Constancia de Confirmación RRHH"
+                        : "Aviso de Devolución por RRHH",
+                    mensajePersonalizado: confirmada
+                        ? $"Te informamos que Talento Humano ha confirmado definitivamente la solicitud <strong>{WebUtility.HtmlEncode(folio)}</strong> del colaborador <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong> para el período <strong>{WebUtility.HtmlEncode(permiso.Fechas)}</strong>."
+                        : $"Talento Humano devolvió con observaciones la solicitud <strong>{WebUtility.HtmlEncode(folio)}</strong> del colaborador <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong>.",
+                    ctaUrl: $"{frontendUrl}/permisos/equipo",
+                    ctaTexto: "Ver en TMR",
+                    notaPieBoton: "Notificación de seguimiento para coordinación del equipo.");
 
-                    await EncolarCorreoIndividualAsync(
-                        permiso.LiderCorreo,
-                        $"[Seguimiento Equipo] Solicitud {folio} ({permiso.Colaborador}) — {permiso.EstadoTexto}",
-                        htmlLider,
-                        folio,
-                        eventoStr,
-                        ct);
-                }
-                break;
+                return ($"[Seguimiento Equipo] Solicitud {folio} ({permiso.Colaborador}) — {permiso.EstadoTexto}", htmlLider);
             }
         }
     }
 
-    private string RenderizarCorreo(
+    private static string RenderizarCorreo(
         string plantilla,
         PermisoItemDto p,
+        string logoUrl,
         string nombreDestinatario,
         string rolDestinatario,
         string badgeRolBg,
@@ -492,7 +637,7 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
 
         return plantilla
             .Replace("{{TITULO_CORREO}}", WebUtility.HtmlEncode(subtituloCabecera))
-            .Replace("{{LOGO_URL}}", ObtenerLogoUrl())
+            .Replace("{{LOGO_URL}}", logoUrl)
             .Replace("{{SUBTITULO_CABECERA}}", WebUtility.HtmlEncode(subtituloCabecera))
             .Replace("{{FOLIO}}", WebUtility.HtmlEncode(p.FolioOrCodigo()))
             .Replace("{{ROL_DESTINATARIO}}", WebUtility.HtmlEncode(rolDestinatario))
@@ -533,12 +678,57 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
 
     private sealed record DestinatarioRrhh(string Email, string Nombre);
 
-    /// <summary>
-    /// Resuelve al responsable de Talento Humano buscando primero al colaborador activo con cargo
-    /// 'Líder de Talento Humano'. Si no hubiera ninguno asignado, usa como respaldo los usuarios con rol RECURSOS HUMANOS.
-    /// </summary>
-    private async Task<List<DestinatarioRrhh>> ObtenerDestinatariosRrhhAsync(CancellationToken ct)
+    private async Task<List<DestinatarioRrhh>> ObtenerDestinatariosRrhhAsync(
+        int idSolicitud,
+        int? idUsuarioRrhhElegido,
+        CancellationToken ct)
     {
+        var idTarget = idUsuarioRrhhElegido;
+        if (idTarget is null or <= 0 && idSolicitud > 0)
+        {
+            idTarget = await _db.NotificacionesUsuario
+                .AsNoTracking()
+                .Where(n => n.IdSolicitud == idSolicitud && n.UrlDestino == "/permisos/rrhh")
+                .OrderBy(n => n.Id)
+                .Select(n => (int?)n.IdUsuarioDestino)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        if (idTarget is > 0)
+        {
+            var usuarioElegido = await _db.TblAutenticacionUsuarios
+                .AsNoTracking()
+                .Include(u => u.IdpersonaNavigation)
+                .FirstOrDefaultAsync(u => u.Id == idTarget.Value && u.Activo, ct);
+
+            if (usuarioElegido is not null)
+            {
+                string? emailCorp = null;
+                if (usuarioElegido.Idpersona.HasValue)
+                {
+                    emailCorp = await _db.TblAdministracionEmpleados
+                        .AsNoTracking()
+                        .Where(e => e.Idpersona == usuarioElegido.Idpersona.Value && e.Activo)
+                        .Select(e => e.Emailcorporativo)
+                        .FirstOrDefaultAsync(ct);
+                }
+
+                var emailFinal = !string.IsNullOrWhiteSpace(emailCorp)
+                    ? emailCorp.Trim()
+                    : !string.IsNullOrWhiteSpace(usuarioElegido.Email)
+                        ? usuarioElegido.Email.Trim()
+                        : usuarioElegido.IdpersonaNavigation?.Email?.Trim() ?? "";
+
+                if (!string.IsNullOrWhiteSpace(emailFinal))
+                {
+                    var nombreFinal = usuarioElegido.IdpersonaNavigation is { } p
+                        ? $"{p.Nombres} {p.Apellidos}".Trim()
+                        : "Talento Humano ISC";
+                    return [new DestinatarioRrhh(emailFinal, nombreFinal)];
+                }
+            }
+        }
+
         var lideresTh = await _db.TblAdministracionEmpleados
             .AsNoTracking()
             .Include(e => e.IdpersonaNavigation)
@@ -589,40 +779,56 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
             .ToListAsync(ct);
     }
 
-    private async Task EncolarCorreoIndividualAsync(
-        string destinatarioOriginal,
-        string asunto,
-        string html,
+    private async Task<bool> EncolarCorreoIndividualAsync(
+        int idSolicitud,
         string folio,
-        string evento,
+        string destinatarioOriginal,
+        string nombreDestinatario,
+        RolDestinatarioCorreoPermiso rolDestinatario,
+        EventoNotificacionPermiso evento,
+        bool incluirTokenExterno,
         CancellationToken ct)
     {
         try
         {
             await _eventBus.PublishAsync(
-                new CorreoPermisoEncolado(destinatarioOriginal.Trim(), asunto, html, folio, evento),
+                new CorreoPermisoEncolado(
+                    IdSolicitud: idSolicitud,
+                    FolioSolicitud: folio,
+                    DestinatarioOriginal: destinatarioOriginal.Trim(),
+                    NombreDestinatario: nombreDestinatario,
+                    RolDestinatario: rolDestinatario,
+                    Evento: evento,
+                    IncluirTokenExterno: incluirTokenExterno),
                 ct);
+            return true;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "No se pudo encolar notificación de permiso a {Destinatario} (Asunto: {Asunto})", destinatarioOriginal, asunto);
+            _logger.LogWarning(
+                ex,
+                "No se pudo encolar notificación de permiso {Folio} ({Evento}) para {Destinatario}",
+                folio,
+                evento,
+                destinatarioOriginal);
+            return false;
         }
     }
 
-    private string ObtenerLogoUrl()
+    internal static string ObtenerLogoUrlCore(IConfiguration configuration, string frontendUrl)
     {
-        var configurada = _configuration["Apprise:LogoUrl"];
+        var configurada = configuration["Apprise:LogoUrl"];
         var url = string.IsNullOrWhiteSpace(configurada)
-            ? $"{(_configuration["EmailSettings:FrontendUrl"] ?? "http://localhost:4200").TrimEnd('/')}/assets/img/logo-isc.png"
+            ? $"{frontendUrl}/assets/img/logo-isc.png"
             : configurada;
         return WebUtility.HtmlEncode(url);
     }
 
-    private async Task<string> CargarPlantillaHtmlAsync(CancellationToken ct)
+    internal static async Task<string> CargarPlantillaHtmlCoreAsync(IWebHostEnvironment env, CancellationToken ct)
     {
         var candidatos = new[]
         {
-            Path.Combine(_env.ContentRootPath, "Features", "Permisos", "Templates", "notificacion-permiso.html"),
+            Path.Combine(env.ContentRootPath, "Features", "Permisos", "Templates", "notificacion-permiso.html"),
             Path.Combine(AppContext.BaseDirectory, "Features", "Permisos", "Templates", "notificacion-permiso.html")
         };
 
