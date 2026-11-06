@@ -253,7 +253,6 @@ public sealed class AuthService(
 
         // sm - También colaboradores con salida registrada: siguen completando sus actividades hasta la salida (EmpleadoSesion).
         var idEmpleado = await db.TblAdministracionEmpleados
-            // .Where(e => e.Idpersona == usuario.Idpersona && e.Activo)
             .DeLaPersona(usuario.Idpersona)
             .Select(e => (int?)e.Id)
             .FirstOrDefaultAsync(ct);
@@ -387,7 +386,6 @@ public sealed class AuthService(
 
         // sm - También colaboradores con salida registrada: siguen completando sus actividades hasta la salida (EmpleadoSesion).
         var idEmpleado = await db.TblAdministracionEmpleados
-            // .Where(e => e.Idpersona == usuario.Idpersona && e.Activo)
             .DeLaPersona(usuario.Idpersona)
             .Select(e => (int?)e.Id)
             .FirstOrDefaultAsync(ct);

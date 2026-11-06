@@ -148,7 +148,6 @@ public static class CalculoHorasPeriodo
         }
 
         var diasACompletar = diasLaborables - diasConReporte;
-        // var horasEsperadas = diasLaborables * horasJornada; // sm - ahora se suma la jornada de cada día
         var horasPorRegistrar = Math.Max(0m, horasEsperadas - horasRegistradas);
 
         var estado = diasLaborables == 0 ? "-"

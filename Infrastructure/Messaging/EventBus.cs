@@ -1,7 +1,6 @@
 using System.Text.Json;
 using System.Threading.Channels;
 using tmr_backend.Infrastructure.Database;
-using tmr_backend.Infrastructure.Messaging;
 
 namespace tmr_backend.Infrastructure.Messaging;
 

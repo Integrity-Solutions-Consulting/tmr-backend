@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 
 namespace tmr_backend.Features.TimeReport.DTOs;
 
@@ -15,19 +14,8 @@ public record CrearActividadDto(
     bool? EsBillable
 );
 
-public record ActividadDiaDto(
-    DateOnly Fecha,
-    decimal TotalHoras
-);
-
-// sm - Se comenta el resumen anterior (horas de hoy, semana y mes): Actividades ahora muestra las mismas métricas
-// que Seguimiento, calculadas para el mes del calendario.
-// public record ResumenHorasDto(
-//     decimal HorasPorRegistrar,
-//     decimal HorasRegistradas,
-//     decimal HorasSemana,
-//     decimal HorasMes
-// );
+// sm - Actividades muestra las mismas métricas que Seguimiento (antes mostraba horas de hoy, semana y mes),
+// calculadas para el mes del calendario.
 public record ResumenHorasDto(
     decimal HorasPorRegistrar,
     decimal HorasRegistradas,

@@ -113,7 +113,6 @@ public partial class ApplicationDbContext : DbContext
             // También debes asegurarte de que el tipo en PostgreSQL tenga estos valores.
             // Si la columna revocadorazon en PG es de tipo "autenticacion.revocacion_razon_enum",
             // la alternativa más simple y robusta es eliminar esa restricción de tipo y usar TEXT.
-            // Ver comentario al final de este archivo.
             .HasPostgresEnum("autenticacion", "audit_evento_enum", new[]
             {
                 "LOGIN_OK", "LOGIN_FAIL", "LOGOUT", "REFRESH_OK", "REFRESH_FAIL",
