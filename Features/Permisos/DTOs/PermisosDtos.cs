@@ -147,5 +147,5 @@ public sealed record DecisionRrhhRequest(
     string? Observacion);
 
 public sealed record DecisionExternaRequest(
-    string Accion, // "aprobar" | "rechazar"
+    string Accion, // "aprobar" | "observar" | "rechazar"
     string? Comentario);

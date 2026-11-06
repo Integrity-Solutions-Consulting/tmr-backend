@@ -50,6 +50,10 @@ public static class NotificacionesEndpoints
             [FromServices] ICurrentUserService currentUserService,
             CancellationToken ct) =>
         {
+            var idsLimpiados = request.EmpleadoIds?.Where(id => id > 0).Distinct().ToList() ?? [];
+            if (idsLimpiados.Count > MaxEmpleadosEstado)
+                return Results.BadRequest(new { Mensaje = $"Máximo {MaxEmpleadosEstado} empleados por solicitud." });
+            request.EmpleadoIds = idsLimpiados;
             if (request.EmpleadoIds == null || !request.EmpleadoIds.Any())
                 return Results.BadRequest(new { Mensaje = "Debe seleccionar al menos un empleado para notificar." });
 
@@ -109,7 +113,7 @@ public static class NotificacionesEndpoints
             [FromServices] ICurrentUserService currentUserService,
             CancellationToken ct) =>
         {
-            var error = ValidarEmpleados(empleadoIds);
+            var error = ValidarEmpleados(empleadoIds, desdeMs);
             if (error is not null)
                 return error;
 
@@ -138,7 +142,7 @@ public static class NotificacionesEndpoints
             HttpContext http,
             CancellationToken ct) =>
         {
-            var error = ValidarEmpleados(empleadoIds);
+            var error = ValidarEmpleados(empleadoIds, desdeMs);
             if (error is not null)
                 return error;
 
@@ -387,12 +391,14 @@ public static class NotificacionesEndpoints
 
     private const string Pendiente = "Pendiente";
 
-    private static IResult? ValidarEmpleados(int[]? empleadoIds)
+    private static IResult? ValidarEmpleados(int[]? empleadoIds, long desdeMs = 0)
     {
         if (empleadoIds is null || empleadoIds.Length == 0)
             return Results.BadRequest(new { Mensaje = "Debe indicar al menos un empleado." });
         if (empleadoIds.Length > MaxEmpleadosEstado)
             return Results.BadRequest(new { Mensaje = $"Máximo {MaxEmpleadosEstado} empleados por consulta." });
+        if (empleadoIds.Any(id => id <= 0)) return Results.BadRequest(new { Mensaje = "Los identificadores de empleado deben ser mayores a cero." });
+        if (desdeMs < 0 || desdeMs > 253402300799999L) return Results.BadRequest(new { Mensaje = "La marca de tiempo indicada no es válida." });
         return null;
     }
 

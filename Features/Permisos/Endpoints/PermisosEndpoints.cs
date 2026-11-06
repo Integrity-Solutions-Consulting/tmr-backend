@@ -464,7 +464,7 @@ public static class PermisosEndpoints
 
             var solicitud = await db.TblTimeReportSolicitudes
                 .AsNoTracking()
-                .Include(s => s.Adjuntos)
+                .Include(s => s.Adjuntos).Include(s => s.Lider).ThenInclude(l => l!.IdtipoNavigation)
                 .FirstOrDefaultAsync(s => s.Id == id && s.Activo, ct);
 
             if (solicitud is null)
@@ -595,7 +595,7 @@ public static class PermisosEndpoints
             if (accion is not ("aprobar" or "observar" or "rechazar"))
                 return Results.BadRequest(ApiResponse<object>.Fail(400, "Acción inválida. Use 'aprobar', 'observar' o 'rechazar'.", []));
 
-            var comentario = request.Comentario?.Trim();
+            var comentario = request.Comentario?.Replace("\0", "").Trim(); if (comentario?.Length > 2000) return Results.BadRequest(ApiResponse<object>.Fail(400, "El comentario no puede superar los 2000 caracteres.", []));
             // RF-007: Comentario obligatorio en caso de rechazo u observación
             if (accion != "aprobar" && string.IsNullOrWhiteSpace(comentario))
                 return Results.BadRequest(ApiResponse<object>.Fail(400, "Por favor ingresa el motivo en los comentarios para continuar.", []));
@@ -701,7 +701,7 @@ public static class PermisosEndpoints
                 return Results.BadRequest(ApiResponse<object>.Fail(400, "Acción inválida. Use 'confirmar' o 'devolver'.", []));
 
             var confirmar = accion == "confirmar";
-            var observacion = request.Observacion?.Trim();
+            var observacion = request.Observacion?.Replace("\0", "").Trim(); if (observacion?.Length > 2000) return Results.BadRequest(ApiResponse<object>.Fail(400, "La observación no puede superar los 2000 caracteres.", []));
 
             if (!confirmar && string.IsNullOrWhiteSpace(observacion))
                 return Results.BadRequest(ApiResponse<object>.Fail(400, "Por favor escribe la observación antes de devolver la solicitud.", []));
@@ -850,18 +850,19 @@ public static class PermisosEndpoints
             ApplicationDbContext db,
             CancellationToken ct) =>
         {
+            if (!EsTokenExternoValido(token)) return Results.NotFound(ApiResponse<object>.Fail(404, "El enlace de revisión no existe o ha expirado.", []));
             var solicitud = await ConsultarSolicitudesBase(db)
                 .FirstOrDefaultAsync(s => s.TokenExterno == token && s.Activo, ct);
 
-            if (solicitud is null || (solicitud.TokenExternoExpira.HasValue && solicitud.TokenExternoExpira.Value < DateTime.UtcNow))
+            if (!EsTokenExternoValido(token) || solicitud is null || !EsLiderExterno(solicitud.Lider) || (solicitud.TokenExternoExpira.HasValue && solicitud.TokenExternoExpira.Value < DateTime.UtcNow))
                 return Results.NotFound(ApiResponse<object>.Fail(404, "El enlace de revisión no existe o ha expirado.", []));
 
             return Results.Ok(ApiResponse<PermisoItemDto>.Ok(MapearSolicitudDto(solicitud, null)));
-        }).AllowAnonymous();
+        }).AllowAnonymous().RequireRateLimiting("magic-link");
 
         group.MapPost("/externo/{token}/decision", async (
             string token,
-            [FromBody] DecisionExternaRequest request,
+            [FromBody] DecisionExternaRequest request, HttpContext httpContext,
             ApplicationDbContext db,
             INotificacionInternaNotifier sseNotifier,
             IPermisosNotificacionService notificacionService,
@@ -873,7 +874,7 @@ public static class PermisosEndpoints
                     .ThenInclude(l => l!.IdtipoNavigation)
                 .FirstOrDefaultAsync(s => s.TokenExterno == token && s.Activo, ct);
 
-            if (solicitud is null || (solicitud.TokenExternoExpira.HasValue && solicitud.TokenExternoExpira.Value < DateTime.UtcNow))
+            if (!EsTokenExternoValido(token) || solicitud is null || !EsLiderExterno(solicitud.Lider) || (solicitud.TokenExternoExpira.HasValue && solicitud.TokenExternoExpira.Value < DateTime.UtcNow))
                 return Results.NotFound(ApiResponse<object>.Fail(404, "El enlace de revisión no existe o ha expirado.", []));
 
             if (solicitud.TokenExternoUsadoEn.HasValue)
@@ -887,17 +888,17 @@ public static class PermisosEndpoints
                 return Results.BadRequest(ApiResponse<object>.Fail(400, $"La solicitud ya no está pendiente del Jefe Inmediato (estado actual: '{solicitud.Estado.Nombre}').", []));
 
             var accion = (request.Accion ?? "aprobar").Trim().ToLowerInvariant();
-            if (accion is not ("aprobar" or "rechazar"))
-                return Results.BadRequest(ApiResponse<object>.Fail(400, "Acción inválida. Use 'aprobar' o 'rechazar'.", []));
+            if (accion is not ("aprobar" or "observar" or "rechazar"))
+                return Results.BadRequest(ApiResponse<object>.Fail(400, "Acción inválida. Use 'aprobar', 'observar' o 'rechazar'.", []));
 
             var aprobar = accion == "aprobar";
-            var comentario = request.Comentario?.Trim();
+            var comentario = request.Comentario?.Replace("\0", "").Trim(); if (comentario?.Length > 2000) return Results.BadRequest(ApiResponse<object>.Fail(400, "El comentario no puede superar los 2000 caracteres.", []));
             if (!aprobar && string.IsNullOrWhiteSpace(comentario))
-                return Results.BadRequest(ApiResponse<object>.Fail(400, "Por favor indica el motivo por el cual rechazas la solicitud.", []));
+                return Results.BadRequest(ApiResponse<object>.Fail(400, "Por favor indica el motivo en los comentarios para continuar.", []));
 
-            var codigoEstadoDestino = aprobar ? "PENDIENTE_TH" : "RECHAZADA";
+            var codigoEstadoDestino = accion switch { "aprobar" => "PENDIENTE_TH", "observar" => "OBSERVADA", _ => "RECHAZADA" }; var decisionExterna = accion switch { "aprobar" => "APROBADO", "observar" => "OBSERVADO", _ => "RECHAZADO" };
             solicitud.IdEstado = await ObtenerIdEstadoSolicitudAsync(db, codigoEstadoDestino, ct);
-            solicitud.TokenExternoUsadoEn = DateTime.UtcNow;
+            solicitud.TokenExternoUsadoEn = DateTime.UtcNow; solicitud.UsuarioModificacion = "MAGIC_LINK_EXTERNO"; solicitud.IpModificacion = ObtenerIpCliente(httpContext);
             solicitud.FechaModificacion = DateTime.UtcNow;
 
             db.TblTimeReportSolicitudRevisiones.Add(new TblTimeReportSolicitudRevision
@@ -906,7 +907,7 @@ public static class PermisosEndpoints
                 EtapaRevision = "JEFE_INMEDIATO",
                 IdUsuarioRevisor = null,
                 MetodoRevision = "MAGIC_LINK_EXTERNO",
-                Decision = aprobar ? "APROBADO" : "RECHAZADO",
+                Decision = decisionExterna,
                 FechaRevision = DateTime.UtcNow,
                 Comentario = string.IsNullOrWhiteSpace(comentario) ? null : comentario
             });
@@ -916,13 +917,13 @@ public static class PermisosEndpoints
             var recargada = await ConsultarSolicitudesBase(db).FirstAsync(s => s.Id == solicitud.Id, ct);
             var dto = MapearSolicitudDto(recargada, null);
 
-            var campanaOk = await EmitirNotificacionesInternasPaso2SeguraAsync(db, sseNotifier, recargada, dto, aprobar ? "APROBADO" : "RECHAZADO", ct);
+            var campanaOk = await EmitirNotificacionesInternasPaso2SeguraAsync(db, sseNotifier, recargada, dto, decisionExterna, ct);
 
             var correoColab = recargada.Empleado.Emailcorporativo ?? recargada.Empleado.IdpersonaNavigation.Email;
             var correoOk = await NotificarCorreoSeguroAsync(db, notificacionService,
                 dto,
                 correoColab,
-                aprobar ? EventoNotificacionPermiso.AprobadaPorLider : EventoNotificacionPermiso.RechazadaPorLider,
+                accion switch { "aprobar" => EventoNotificacionPermiso.AprobadaPorLider, "observar" => EventoNotificacionPermiso.ObservadaPorLider, _ => EventoNotificacionPermiso.RechazadaPorLider },
                 ct);
 
             return ResponderPostCommit(
@@ -930,7 +931,7 @@ public static class PermisosEndpoints
                 aprobar
                     ? "¡Gracias! Tu aprobación quedó registrada correctamente."
                     : "Tu decisión quedó registrada correctamente.", campanaOk && correoOk);
-        }).AllowAnonymous();
+        }).AllowAnonymous().RequireRateLimiting("magic-link");
 
         group.MapGet("/externo/{token}/pdf", async (
             string token,
@@ -938,16 +939,17 @@ public static class PermisosEndpoints
             IPermisosPdfService pdfService,
             CancellationToken ct) =>
         {
+            if (!EsTokenExternoValido(token)) return Results.NotFound(ApiResponse<object>.Fail(404, "El enlace de revisión no existe o ha expirado.", []));
             var solicitud = await ConsultarSolicitudesBase(db)
                 .FirstOrDefaultAsync(s => s.TokenExterno == token && s.Activo, ct);
 
-            if (solicitud is null || (solicitud.TokenExternoExpira.HasValue && solicitud.TokenExternoExpira.Value < DateTime.UtcNow))
+            if (!EsTokenExternoValido(token) || solicitud is null || !EsLiderExterno(solicitud.Lider) || (solicitud.TokenExternoExpira.HasValue && solicitud.TokenExternoExpira.Value < DateTime.UtcNow))
                 return Results.NotFound(ApiResponse<object>.Fail(404, "El enlace de revisión no existe o ha expirado.", []));
 
             var dto = MapearSolicitudDto(solicitud, null);
             var pdfBytes = pdfService.GenerarFormularioOficialPdf(dto);
             return Results.File(pdfBytes, "application/pdf", $"Formulario_Permiso_{dto.FolioOrCodigo()}.pdf");
-        }).AllowAnonymous();
+        }).AllowAnonymous().RequireRateLimiting("magic-link");
 
         group.MapGet("/externo/{token}/evidencia", async (
             string token,
@@ -957,10 +959,10 @@ public static class PermisosEndpoints
         {
             var solicitud = await db.TblTimeReportSolicitudes
                 .AsNoTracking()
-                .Include(s => s.Adjuntos)
+                .Include(s => s.Adjuntos).Include(s => s.Lider).ThenInclude(l => l!.IdtipoNavigation)
                 .FirstOrDefaultAsync(s => s.TokenExterno == token && s.Activo, ct);
 
-            if (solicitud is null || (solicitud.TokenExternoExpira.HasValue && solicitud.TokenExternoExpira.Value < DateTime.UtcNow))
+            if (!EsTokenExternoValido(token) || solicitud is null || !EsLiderExterno(solicitud.Lider) || (solicitud.TokenExternoExpira.HasValue && solicitud.TokenExternoExpira.Value < DateTime.UtcNow))
                 return Results.NotFound(ApiResponse<object>.Fail(404, "El enlace de revisión no existe o ha expirado.", []));
 
             var adjunto = solicitud.Adjuntos.Where(a => a.Activo).OrderByDescending(a => a.FechaCreacion).FirstOrDefault();
@@ -977,7 +979,7 @@ public static class PermisosEndpoints
             return descarga is null
                 ? Results.NotFound(ApiResponse<object>.Fail(404, "El archivo adjunto no se encuentra disponible en este momento.", []))
                 : Results.File(descarga.Contenido, descarga.MimeType, descarga.NombreArchivo);
-        }).AllowAnonymous();
+        }).AllowAnonymous().RequireRateLimiting("magic-link");
     }
 
     // =========================================================================
@@ -1032,7 +1034,15 @@ public static class PermisosEndpoints
                 []));
         }
 
-        if (string.IsNullOrWhiteSpace(request.Motivo))
+        var motivoLimpio = request.Motivo?.Replace("\0", "").Trim();
+        if (string.IsNullOrWhiteSpace(motivoLimpio))
+            return Results.BadRequest(ApiResponse<object>.Fail(400, "Por favor escribe el motivo de tu solicitud.", []));
+        if (motivoLimpio.Length > 2000)
+            return Results.BadRequest(ApiResponse<object>.Fail(400, "El motivo no puede superar los 2000 caracteres.", []));
+        var detalleHorarioLimpio = string.IsNullOrWhiteSpace(request.DetalleHorario) ? null : request.DetalleHorario.Replace("\0", "").Trim();
+        if (detalleHorarioLimpio?.Length > 120)
+            return Results.BadRequest(ApiResponse<object>.Fail(400, "El detalle del horario no puede superar los 120 caracteres.", []));
+        if (false)
             return Results.BadRequest(ApiResponse<object>.Fail(400, "Por favor escribe el motivo de tu solicitud.", []));
 
         var fechaInicio = ParsearFecha(request.FechaInicio);
@@ -1051,6 +1061,8 @@ public static class PermisosEndpoints
         var feriados = await CargarFeriadosRangoAsync(db, fechaInicio.Value, fechaFin.Value.AddDays(15), ct);
 
         var diasLaborablesRango = CalcularDiasLaborablesSinMinimo(fechaInicio.Value, fechaFin.Value, feriados);
+        if (diasLaborablesRango > 90)
+            return Results.BadRequest(ApiResponse<object>.Fail(400, "El período solicitado no puede superar los 90 días hábiles.", []));
         if (diasLaborablesRango <= 0)
         {
             return Results.BadRequest(ApiResponse<object>.Fail(
@@ -1070,12 +1082,17 @@ public static class PermisosEndpoints
         decimal horasTotales;
         if (horario is "MANANA" or "TARDE")
         {
+            if (fechaInicio.Value != fechaFin.Value) return Results.BadRequest(ApiResponse<object>.Fail(400, "Los permisos de media jornada (mañana o tarde) deben solicitarse para un único día.", []));
             diasHabiles = 0.5m;
             horasTotales = 4m;
         }
         else if (horario == "OTROS" && request.TotalHoras is > 0)
         {
-            horasTotales = request.TotalHoras.Value;
+            horasTotales = Math.Round(request.TotalHoras.Value, 2);
+            if (horasTotales < 0.5m || horasTotales > diasLaborablesRango * 8m)
+                return Results.BadRequest(ApiResponse<object>.Fail(400, $"El total de horas solicitadas debe estar entre 0.5 y {diasLaborablesRango * 8m:0.##} horas para el rango seleccionado.", []));
+            diasHabiles = Math.Round(horasTotales / 8m, 2);
+            if (false)
             diasHabiles = request.TotalDias is > 0
                 ? request.TotalDias.Value
                 : Math.Round(horasTotales / 8m, 2);
@@ -1215,6 +1232,7 @@ public static class PermisosEndpoints
             idLider = idLiderSolicitado;
         }
 
+        var esLiderExternoAsignado = idLider.HasValue && await db.TblAdministracionLiders.AsNoTracking().Include(l => l.IdtipoNavigation).FirstOrDefaultAsync(l => l.Id == idLider.Value && l.Activo, ct) is { } liderEnt && EsLiderExterno(liderEnt);
         var anio = fechaInicio.Value.Year;
         int nuevaSolicitudId = 0;
         var objetosSubidos = new List<ArchivoAdjuntoSubido>();
@@ -1238,17 +1256,17 @@ public static class PermisosEndpoints
                         IdTipoPermiso = tipoPermiso.Id,
                         IdEstado = idEstadoPendiente,
                         FechaSolicitud = CalculoHorasPeriodo.HoyEcuador(),
-                        Motivo = request.Motivo.Trim(),
+                        Motivo = motivoLimpio,
                         FechaInicio = fechaInicio.Value,
                         FechaFin = fechaFin.Value,
                         FechaRegreso = fechaRegreso,
                         DiasSolicitados = diasHabiles,
                         Horario = horario,
-                        DetalleHorario = string.IsNullOrWhiteSpace(request.DetalleHorario) ? null : request.DetalleHorario.Trim(),
+                        DetalleHorario = detalleHorarioLimpio,
                         HorasSolicitadas = horasTotales,
                         ImpactoTimeReport = "RESTA_META",
-                        TokenExterno = Guid.NewGuid().ToString("N"),
-                        TokenExternoExpira = DateTime.UtcNow.AddHours(72),
+                        TokenExterno = esLiderExternoAsignado ? Guid.NewGuid().ToString("N") : null,
+                        TokenExternoExpira = esLiderExternoAsignado ? DateTime.UtcNow.AddHours(72) : null,
                         Activo = true,
                         UsuarioCreacion = usuario.Email,
                         FechaCreacion = DateTime.UtcNow,
@@ -1745,7 +1763,7 @@ public static class PermisosEndpoints
         }
 
         if (idUsuarioRrhhElegido is > 0
-            && await db.TblAutenticacionUsuarios.AnyAsync(u => u.Id == idUsuarioRrhhElegido.Value && u.Activo, ct))
+            && await EsUsuarioRrhhValidoAsync(db, idUsuarioRrhhElegido.Value, ct))
         {
             destinatarios.TryAdd(idUsuarioRrhhElegido.Value, "/permisos/rrhh");
         }
@@ -1893,7 +1911,7 @@ public static class PermisosEndpoints
                 : $"Solicitud {dto.Codigo} observada por TH",
             Mensaje = confirmada
                 ? $"Talento Humano registró y confirmó tu solicitud de {dto.Tipo} ({dto.Fechas})."
-                : $"Talento Humano devolvió tu solicitud con observaciones: {dto.ObservacionRrhh}",
+                : TruncarTexto($"Talento Humano devolvió tu solicitud con observaciones: {dto.ObservacionRrhh}", 500),
             UrlDestino = "/permisos",
             Leida = false,
             FechaCreacion = DateTime.UtcNow
@@ -2101,6 +2119,20 @@ public static class PermisosEndpoints
         if (lider is null) return false;
         var codigo = lider.IdtipoNavigation?.Codigovalor?.Trim().ToUpperInvariant();
         return codigo == "EXT" || (lider.IdtipoNavigation?.Valor?.Contains("Extern", StringComparison.OrdinalIgnoreCase) ?? false);
+    }
+
+    private static bool EsTokenExternoValido(string? token) =>
+        !string.IsNullOrWhiteSpace(token)
+        && token.Length == 32
+        && Guid.TryParseExact(token, "N", out _);
+
+    private static string TruncarTexto(string texto, int maxLen) =>
+        texto.Length <= maxLen ? texto : string.Concat(texto.AsSpan(0, maxLen - 3), "...");
+
+    internal static async Task<bool> EsUsuarioRrhhValidoAsync(ApplicationDbContext db, int idUsuario, CancellationToken ct)
+    {
+        var catalogo = await ObtenerCatalogoUsuariosRrhhAsync(db, ct);
+        return catalogo.Any(x => x.IdUsuario == idUsuario);
     }
 
     private static string? CalcularAlertaTraslape(TblTimeReportSolicitud actual, IReadOnlyList<TblTimeReportSolicitud> todos)

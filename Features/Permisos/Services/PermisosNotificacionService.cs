@@ -701,7 +701,7 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
                 .Include(u => u.IdpersonaNavigation)
                 .FirstOrDefaultAsync(u => u.Id == idTarget.Value && u.Activo, ct);
 
-            if (usuarioElegido is not null)
+            if (usuarioElegido is not null && await PermisosEndpoints.EsUsuarioRrhhValidoAsync(_db, usuarioElegido.Id, ct))
             {
                 string? emailCorp = null;
                 if (usuarioElegido.Idpersona.HasValue)

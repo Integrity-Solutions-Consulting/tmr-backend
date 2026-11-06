@@ -113,7 +113,7 @@ public sealed class PermisosStorageService : IPermisosStorageService
             throw new InvalidOperationException("El archivo parece estar dañado o no corresponde a un documento PDF, PNG o JPG válido.");
 
         var sha256 = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-        var nombreSeguro = Path.GetFileName(archivo.FileName);
+        var nombreSeguro = string.Concat(Path.GetFileName(archivo.FileName).Where(c => !Path.GetInvalidFileNameChars().Contains(c) && c is not ('<' or '>' or '"' or '\'' or ';' or '\r' or '\n' or '\0'))).Trim();
         if (string.IsNullOrWhiteSpace(nombreSeguro))
             nombreSeguro = $"respaldo{extNormalizada}";
 
@@ -202,7 +202,7 @@ public sealed class PermisosStorageService : IPermisosStorageService
                 ? Path.Combine(AppContext.BaseDirectory, "wwwroot")
                 : _env.WebRootPath;
 
-            var fullPath = Path.Combine(rootPath, "uploads", objectKey.Replace('/', Path.DirectorySeparatorChar));
+            var uploadsDir = Path.GetFullPath(Path.Combine(rootPath, "uploads")); var fullPath = Path.GetFullPath(Path.Combine(uploadsDir, objectKey.Replace('/', Path.DirectorySeparatorChar))); if (!fullPath.StartsWith(uploadsDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) return null;
             if (!File.Exists(fullPath)) return null;
 
             var localBytes = await File.ReadAllBytesAsync(fullPath, ct);
@@ -238,7 +238,7 @@ public sealed class PermisosStorageService : IPermisosStorageService
                     ? Path.Combine(AppContext.BaseDirectory, "wwwroot")
                     : _env.WebRootPath;
 
-                var fullPath = Path.Combine(rootPath, "uploads", objectKey.Replace('/', Path.DirectorySeparatorChar));
+                var uploadsDir = Path.GetFullPath(Path.Combine(rootPath, "uploads")); var fullPath = Path.GetFullPath(Path.Combine(uploadsDir, objectKey.Replace('/', Path.DirectorySeparatorChar))); if (!fullPath.StartsWith(uploadsDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) return;
                 if (File.Exists(fullPath))
                     File.Delete(fullPath);
                 return;
