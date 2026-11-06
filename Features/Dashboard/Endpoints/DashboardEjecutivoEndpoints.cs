@@ -526,8 +526,6 @@ public static class DashboardEjecutivoEndpoints
 
         // sm - Recurrencia (confirmada 2026-10-02): ocasiones = cortes (15 y fin de mes) con más de
         // MaxDiasIncompletosPorCorte días hábiles incompletos. Recurrente con umbral o más ocasiones en la ventana.
-        // sm - Regla anterior (meses Incumplido/Regularizado) reemplazada:
-        // var mesesConAtraso = kv.Value.Count(m => m.Estado is "Incumplido" or "Regularizado");
         var colaboradores = estadosPorEmpleado
             .Where(kv => datos.EmpleadosPorId.ContainsKey(kv.Key))
             .Select(kv =>

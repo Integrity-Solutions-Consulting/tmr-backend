@@ -94,9 +94,7 @@ public class CrearColaboradorRequestValidator : AbstractValidator<CrearColaborad
             .LessThanOrEqualTo(50).WithMessage("Los años de experiencia no pueden superar 50 años.")
             .When(x => x.AniosExperiencia.HasValue);
 
-        // ================================================================
-        // NUEVO: Validar reemplazo (si se envía, debe existir)
-        // ================================================================
+        // Validar reemplazo (si se envía, debe existir).
         RuleFor(x => x.IdEmpleadoReemplazo)
             .GreaterThan(0)
             .When(x => x.IdEmpleadoReemplazo.HasValue)

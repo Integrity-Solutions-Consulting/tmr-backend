@@ -64,8 +64,3 @@ public record SeguimientoColaboradorDto(
     string? MotivoSalida = null,
     DateOnly? SalidaProyecto = null
 );
-
-// sm - Se comenta: la funcionalidad de aprobar horas se retira de Seguimiento (endpoint /aprobar comentado).
-// public record AprobarHorasRequest(
-//     List<int> Ids
-// );
