@@ -153,17 +153,8 @@ public static class TimeReportEndpoints
             // sm - Se agrega la vigencia (entrada/salida) de la asignación y la salida del colaborador, para que Agregar
             // actividad avise al elegir una fecha fuera de ella. Con varias filas del mismo proyecto se toma la entrada
             // más temprana y la salida más tardía (sin salida en alguna = sin límite); el backend valida exacto al guardar.
-<<<<<<< Updated upstream
-=======
-            // var proyectosAsignados = await db.TblTimeReportAsignacionProyectos
-            //     .AsNoTracking()
-            //     .Where(ep => ep.Idempleado == empleado.Id && ep.Activo && ep.IdproyectoNavigation.Activo)
-            //     .Select(ep => new ProyectoLookupDto(ep.Idproyecto, ep.IdproyectoNavigation.Nombre, ep.IdproyectoNavigation.Codigo))
-            //     .Distinct()
-            //     .ToListAsync();
             // sm - TR-004: también los proyectos Inactivos, para registrar horas atrasadas dentro de la vigencia de la
             // asignación (la fecha la valida ValidarAsignacionAsync). Antes: ... && ep.IdproyectoNavigation.Activo
->>>>>>> Stashed changes
             var asignacionesEmpleado = await db.TblTimeReportAsignacionProyectos
                 .AsNoTracking()
                 .Where(ep => ep.Idempleado == empleado.Id && ep.Activo)
@@ -423,12 +414,20 @@ public static class TimeReportEndpoints
             // sm - Se quita el filtro de búsqueda del backend: la búsqueda (solo colaborador y proyecto) se hace en el
             // frontend sobre los datos ya cargados, sin volver a llamar al servidor en cada tecla.
             // sm - El filtro de cliente usa las mismas asignaciones del rango que se muestran en la tabla.
-            if (!string.IsNullOrEmpty(filtro.ClienteSeleccionado))
+            // sm - Antes solo filtraba qué colaboradores aparecían, pero luego se armaban filas con TODOS sus proyectos
+            // (de cualquier cliente). Ahora también se descartan las filas de proyectos de otros clientes (ver el foreach).
+            var clienteFiltro = filtro.ClienteSeleccionado?.Trim();
+            var filtrarPorCliente = !string.IsNullOrEmpty(clienteFiltro);
+            bool EsDelCliente(tmr_backend.Infrastructure.Database.Entities.TblTimeReportAsignacionProyecto ep)
             {
-                employees = employees.Where(e => e.TblTimeReportAsignacionProyectos.Any(ep =>
-                    ep.IdproyectoNavigation.IdclienteNavigation != null &&
-                    (ep.IdproyectoNavigation.IdclienteNavigation.Nombrecomercial == filtro.ClienteSeleccionado ||
-                     ep.IdproyectoNavigation.IdclienteNavigation.Razonsocial == filtro.ClienteSeleccionado))).ToList();
+                var c = ep.IdproyectoNavigation?.IdclienteNavigation;
+                return c != null
+                    && (string.Equals(c.Nombrecomercial?.Trim(), clienteFiltro, StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(c.Razonsocial?.Trim(), clienteFiltro, StringComparison.OrdinalIgnoreCase));
+            }
+            if (filtrarPorCliente)
+            {
+                employees = employees.Where(e => e.TblTimeReportAsignacionProyectos.Any(EsDelCliente)).ToList();
             }
 
             // Fetch feriados in the range
@@ -466,7 +465,10 @@ public static class TimeReportEndpoints
                 var motivoSalida = e.Activo ? null : e.ComentarioSalida;
 
                 // Project details (sm - asignaciones ya filtradas a las activas del rango en el Include)
-                var empProys = e.TblTimeReportAsignacionProyectos.ToList();
+                // sm - Con filtro de cliente solo quedan los proyectos de ese cliente.
+                var empProys = e.TblTimeReportAsignacionProyectos
+                    .Where(ep => !filtrarPorCliente || EsDelCliente(ep))
+                    .ToList();
 
                 // sm - Sin proyecto asignado en el rango: una única fila "Sin Proyecto" con todas sus actividades
                 // (no hay un proyecto específico contra el cual separar horas/días).
