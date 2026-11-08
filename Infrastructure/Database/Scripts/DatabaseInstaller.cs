@@ -78,8 +78,8 @@ public static class DatabaseInstaller
             .Where(x => x.Contains(".Scripts_DB.") && x.EndsWith(".sql", StringComparison.Ordinal))
             .Where(x => Regex.IsMatch(x[(x.IndexOf(".Scripts_DB.", StringComparison.Ordinal) + 12)..], @"^\d{2}-"))
             .Order(StringComparer.Ordinal).ToArray();
-        if (resources.Length != 17)
-            throw new InvalidOperationException("El paquete debe contener los scripts 01–18, excluyendo 06.");
+        if (resources.Length != 18)
+            throw new InvalidOperationException("El paquete debe contener los scripts 01–19, excluyendo 06.");
 
         foreach (var resource in resources)
         {
