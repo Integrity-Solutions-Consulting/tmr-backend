@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.4](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.7.3...v1.7.4) (2026-11-08)
+
+
+### Bug Fixes
+
+* Cambios de tipo de contrato ([6c28121](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/6c281212339e5f9f606a799677ed4903a31b9890))
+* Cambios de tipo de contrato ([b5f9c33](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/b5f9c33029fb47a5edaa57bd5868d9420df74fd0))
+
 ## [1.7.3](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.7.2...v1.7.3) (2026-11-06)
 
 
