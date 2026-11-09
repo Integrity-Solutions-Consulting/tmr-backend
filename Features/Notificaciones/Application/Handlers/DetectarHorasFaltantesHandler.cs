@@ -72,7 +72,10 @@ public sealed class DetectarHorasFaltantesHandler :
                 OrigenNotificacion.Automatico,
                 evento.FechaCorte,
                 IdUsuarioEjecutor: null,
-                Proyectos: empleado.Proyectos), ct);
+                ProyectosColaborador: empleado.ProyectosColaborador,
+                HorasEsperadas: empleado.Calculo.HorasEsperadas,
+                HorasRegistradas: empleado.Calculo.HorasRegistradas,
+                JornadaDiaria: empleado.JornadaDiaria), ct);
             publicados++;
         }
 
@@ -92,7 +95,7 @@ public sealed class DetectarHorasFaltantesHandler :
 
         var finPeriodo = FinManualEfectivo(evento.FinPeriodo, CalculoHorasPeriodo.HoyEcuador());
 
-        // Como la fila de Seguimiento: solo las horas de ese proyecto, y también a quien ya salió
+        // Jornada total: cuentan las horas de todos sus proyectos, y también a quien ya salió
         // (debe completar hasta su fecha de salida)
         var conDeficit = await _consulta.CalcularAsync(
             evento.InicioPeriodo, finPeriodo, ids, ct, evento.IdProyecto, incluirInactivos: true);
@@ -106,9 +109,8 @@ public sealed class DetectarHorasFaltantesHandler :
 
         // Los que se pidieron pero no deben horas: se registra el motivo para que el líder lo vea
         var idsConDeficit = conDeficit.Select(e => e.IdEmpleado).ToHashSet();
-        var sinPendientes = nombreProyecto is null
-            ? "No tiene horas pendientes en el período"
-            : $"No tiene horas pendientes en el proyecto {nombreProyecto} en el período";
+        // La jornada se exige por persona: completó sus horas sumando todos sus proyectos
+        const string sinPendientes = "No tiene horas pendientes en el período (sumando todos sus proyectos)";
         foreach (var idSinDeficit in ids.Where(id => !idsConDeficit.Contains(id)))
         {
             await PublicarOmitidaAsync(evento, finPeriodo, idSinDeficit, sinPendientes, ahora, ct);
@@ -146,7 +148,11 @@ public sealed class DetectarHorasFaltantesHandler :
                 FechaCorte: null,
                 evento.IdUsuarioEjecutor,
                 evento.IdProyecto,
-                nombreProyecto), ct);
+                nombreProyecto,
+                ProyectosColaborador: empleado.ProyectosColaborador,
+                HorasEsperadas: empleado.Calculo.HorasEsperadas,
+                HorasRegistradas: empleado.Calculo.HorasRegistradas,
+                JornadaDiaria: empleado.JornadaDiaria), ct);
             publicados++;
         }
 

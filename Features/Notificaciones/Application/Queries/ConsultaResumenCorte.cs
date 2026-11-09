@@ -212,7 +212,8 @@ public sealed class ConsultaResumenCorte : IConsultaResumenCorte
                     new EventoEnCola(c.FechaCorte, null, null, 0m, null, null, null),
                 nameof(HorasFaltantesDetectadas) when JsonSerializer.Deserialize<HorasFaltantesDetectadas>(payload) is
                     { Origen: OrigenNotificacion.Automatico, FechaCorte: { } corte } d =>
-                    new EventoEnCola(corte, d.IdEmpleado, Pendiente, d.HorasFaltantes, HorasProyecto.Describir(d.Proyectos), null, d.Nombre),
+                    new EventoEnCola(corte, d.IdEmpleado, Pendiente, d.HorasFaltantes,
+                        ProyectoColaborador.Describir(d.ProyectosColaborador) ?? HorasProyecto.Describir(d.Proyectos), null, d.Nombre),
                 nameof(NotificacionEnviada) when JsonSerializer.Deserialize<NotificacionEnviada>(payload) is
                     { Origen: OrigenNotificacion.Automatico, FechaCorte: { } corte } e =>
                     new EventoEnCola(corte, e.IdEmpleado, Enviado, e.HorasFaltantes, null, e.FechaEnvio, null),
