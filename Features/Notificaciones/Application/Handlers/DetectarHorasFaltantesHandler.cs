@@ -72,10 +72,7 @@ public sealed class DetectarHorasFaltantesHandler :
                 OrigenNotificacion.Automatico,
                 evento.FechaCorte,
                 IdUsuarioEjecutor: null,
-                ProyectosColaborador: empleado.ProyectosColaborador,
-                HorasEsperadas: empleado.Calculo.HorasEsperadas,
-                HorasRegistradas: empleado.Calculo.HorasRegistradas,
-                JornadaDiaria: empleado.JornadaDiaria), ct);
+                Proyectos: empleado.Proyectos), ct);
             publicados++;
         }
 
@@ -95,7 +92,7 @@ public sealed class DetectarHorasFaltantesHandler :
 
         var finPeriodo = FinManualEfectivo(evento.FinPeriodo, CalculoHorasPeriodo.HoyEcuador());
 
-        // Jornada total: cuentan las horas de todos sus proyectos, y también a quien ya salió
+        // Como la fila de Seguimiento: solo las horas de ese proyecto, y también a quien ya salió
         // (debe completar hasta su fecha de salida)
         var conDeficit = await _consulta.CalcularAsync(
             evento.InicioPeriodo, finPeriodo, ids, ct, evento.IdProyecto, incluirInactivos: true);
@@ -109,8 +106,9 @@ public sealed class DetectarHorasFaltantesHandler :
 
         // Los que se pidieron pero no deben horas: se registra el motivo para que el líder lo vea
         var idsConDeficit = conDeficit.Select(e => e.IdEmpleado).ToHashSet();
-        // La jornada se exige por persona: completó sus horas sumando todos sus proyectos
-        const string sinPendientes = "No tiene horas pendientes en el período (sumando todos sus proyectos)";
+        var sinPendientes = nombreProyecto is null
+            ? "No tiene horas pendientes en el período"
+            : $"No tiene horas pendientes en el proyecto {nombreProyecto} en el período";
         foreach (var idSinDeficit in ids.Where(id => !idsConDeficit.Contains(id)))
         {
             await PublicarOmitidaAsync(evento, finPeriodo, idSinDeficit, sinPendientes, ahora, ct);
@@ -149,10 +147,8 @@ public sealed class DetectarHorasFaltantesHandler :
                 evento.IdUsuarioEjecutor,
                 evento.IdProyecto,
                 nombreProyecto,
-                ProyectosColaborador: empleado.ProyectosColaborador,
-                HorasEsperadas: empleado.Calculo.HorasEsperadas,
-                HorasRegistradas: empleado.Calculo.HorasRegistradas,
-                JornadaDiaria: empleado.JornadaDiaria), ct);
+                // El correo detalla lo que le falta en todos sus proyectos, no solo en el de la fila
+                Proyectos: empleado.Proyectos), ct);
             publicados++;
         }
 

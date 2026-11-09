@@ -11,9 +11,7 @@ public sealed record EmpleadoConHorasFaltantes(
     string Nombre,
     string? Email,
     ResultadoHorasFaltantes Calculo,
-    IReadOnlyList<HorasProyecto>? Proyectos = null,    // ya no se llena: la jornada se exige por persona, no por proyecto
-    IReadOnlyList<ProyectoColaborador>? ProyectosColaborador = null,   // todos sus proyectos del período con sus horas
-    decimal JornadaDiaria = 0m);                       // 8 h, 6 h pasante; 0 si cambió de contrato en el período
+    IReadOnlyList<HorasProyecto>? Proyectos = null);   // proyectos en los que le faltan horas (detalle del correo)
 
 public sealed record EmpleadoPendienteDto(
     int IdEmpleado,
@@ -31,12 +29,9 @@ public sealed record PendientesNotificacionResponse(
 
 public interface IConsultaHorasFaltantes
 {
-    /// <summary>
-    /// Horas faltantes con jornada total por persona: 8 h por día laborable (6 h si es pasante),
-    /// contra la suma de horas de todos sus proyectos.
-    /// </summary>
     /// <param name="idProyecto">
-    /// Fila de Seguimiento desde la que se avisa. No recorta el cálculo: cuentan las horas de todos los proyectos.
+    /// Solo las horas de ese proyecto, igual que la fila de Seguimiento (cada proyecto exige su propia jornada).
+    /// Null = todas las horas del colaborador.
     /// </param>
     /// <param name="incluirInactivos">
     /// Aviso manual: también a quien ya salió, para que complete hasta su fecha de salida (Seguimiento lo muestra).
@@ -50,8 +45,8 @@ public interface IConsultaHorasFaltantes
         bool incluirInactivos = false);
 
     /// <summary>
-    /// Corte automático: mismos colaboradores que Seguimiento, con jornada total por persona (8 h, o 6 h si es
-    /// pasante, por día laborable dentro de sus asignaciones) contra la suma de horas de todos sus proyectos.
+    /// Corte automático: mismos colaboradores y proyectos que Seguimiento. Cada proyecto asignado en el período
+    /// exige su propia jornada; el colaborador sin proyecto se evalúa con todas sus horas.
     /// Incluye a quien salió dentro del período (debe completar hasta su fecha de salida), no a quien salió antes.
     /// </summary>
     Task<IReadOnlyList<EmpleadoConHorasFaltantes>> CalcularPorProyectoAsync(
@@ -94,12 +89,31 @@ public sealed class ConsultaHorasFaltantes : IConsultaHorasFaltantes
         if (finPeriodo < inicioPeriodo || idsEmpleados is { Count: 0 })
             return [];
 
-        // idProyecto ya no recorta el cálculo: la jornada se exige una sola vez por persona y cuentan
-        // las horas de todos sus proyectos. Solo identifica la fila de Seguimiento desde la que se avisa.
-        var empleados = _db.TblAdministracionEmpleados
-            .Where(e => (e.Activo || incluirInactivos) && (idsEmpleados == null || idsEmpleados.Contains(e.Id)));
+        var datos = await CargarDatosAsync(
+            _db.TblAdministracionEmpleados
+                .Where(e => (e.Activo || incluirInactivos) && (idsEmpleados == null || idsEmpleados.Contains(e.Id))),
+            inicioPeriodo, finPeriodo, ct);
 
-        return await CalcularJornadaTotalAsync(empleados, inicioPeriodo, finPeriodo, ct);
+        var resultado = new List<EmpleadoConHorasFaltantes>();
+        foreach (var empleado in datos.Empleados)
+        {
+            var actividades = datos.Actividades[empleado.Id].ToList();
+            var jornadas = datos.Jornadas[empleado.Id];
+
+            // Lo que decide si se avisa: la fila de Seguimiento desde la que se pidió (ese proyecto, o "Sin Proyecto")
+            var calculo = CalcularFila(
+                empleado, inicioPeriodo, finPeriodo, actividades, datos.Feriados, datos.Hoy, jornadas, idProyecto);
+            if (!calculo.DebeHoras)
+                continue;
+
+            // El correo detalla lo que le falta en cada uno de sus proyectos, no solo en el de la fila
+            var desglose = DesglosePorProyecto(
+                empleado, inicioPeriodo, finPeriodo, actividades, datos.Feriados, datos.Hoy, jornadas);
+
+            resultado.Add(Crear(empleado, calculo, ConFaltantes(desglose)));
+        }
+
+        return resultado;
     }
 
     public async Task<IReadOnlyList<EmpleadoConHorasFaltantes>> CalcularPorProyectoAsync(
@@ -110,61 +124,84 @@ public sealed class ConsultaHorasFaltantes : IConsultaHorasFaltantes
         if (finPeriodo < inicioPeriodo)
             return [];
 
-        // Mismos colaboradores que Seguimiento: activos + los que salieron dentro del período
-        var empleados = _db.TblAdministracionEmpleados
-            .Where(e => e.Activo
-                || (e.Fechaterminacion.HasValue
-                    && e.Fechaterminacion.Value >= inicioPeriodo
-                    && e.Fechaterminacion.Value <= finPeriodo));
+        // Mismo filtro que Seguimiento (TimeReportEndpoints): activos + los que salieron dentro del período
+        var datos = await CargarDatosAsync(
+            _db.TblAdministracionEmpleados
+                .Where(e => e.Activo
+                    || (e.Fechaterminacion.HasValue
+                        && e.Fechaterminacion.Value >= inicioPeriodo
+                        && e.Fechaterminacion.Value <= finPeriodo)),
+            inicioPeriodo, finPeriodo, ct);
 
-        return await CalcularJornadaTotalAsync(empleados, inicioPeriodo, finPeriodo, ct);
+        var resultado = new List<EmpleadoConHorasFaltantes>();
+        foreach (var empleado in datos.Empleados)
+        {
+            var desglose = DesglosePorProyecto(
+                empleado, inicioPeriodo, finPeriodo, datos.Actividades[empleado.Id].ToList(),
+                datos.Feriados, datos.Hoy, datos.Jornadas[empleado.Id]);
+
+            var faltantes = desglose.Sum(d => d.Calculo.HorasFaltantes);
+            if (faltantes <= 0)
+                continue;
+
+            // Total del corte: la suma de lo que falta en cada proyecto
+            var total = new ResultadoHorasFaltantes(
+                empleado.Id,
+                inicioPeriodo,
+                finPeriodo,
+                desglose.Max(d => d.Calculo.DiasLaborables),
+                desglose.Sum(d => d.Calculo.HorasEsperadas),
+                desglose.Sum(d => d.Calculo.HorasRegistradas),
+                faltantes);
+
+            resultado.Add(Crear(empleado, total, ConFaltantes(desglose)));
+        }
+
+        return resultado;
     }
 
-    /// <summary>
-    /// Regla de horas faltantes de las notificaciones: una sola jornada por día laborable y por persona,
-    /// sin importar en cuántos proyectos esté. Antes cada proyecto exigía su propia jornada completa, así que
-    /// quien tenía dos proyectos debía registrar 16 h diarias y recibía el correo aunque hubiera cumplido.
-    /// <list type="bullet">
-    /// <item>Jornada diaria: 6 h si es pasante (tipo de contrato PAS) y 8 h para el resto, según el contrato
-    /// vigente cada día (historial de contratos; sin historial, el tipo de contrato actual).</item>
-    /// <item>Días exigidos: lunes a viernes sin feriados (los recurrentes se repiten cada año), entre ingreso y salida, dentro de alguna de sus
-    /// asignaciones del período (si no tiene ninguna, todo el período) y nunca después de hoy.</item>
-    /// <item>Horas registradas: la suma de todos sus proyectos en esos días.</item>
-    /// <item>Horas faltantes: max(0, horas esperadas − horas registradas).</item>
-    /// </list>
-    /// </summary>
-    private async Task<IReadOnlyList<EmpleadoConHorasFaltantes>> CalcularJornadaTotalAsync(
+    // ---------------------------------------------------------------------
+    // Regla por proyecto (igual que Seguimiento)
+    // ---------------------------------------------------------------------
+
+    /// <summary>Lo que le falta al colaborador en un proyecto (o en "Sin proyecto" si no tiene asignaciones).</summary>
+    internal sealed record DesgloseProyecto(int? IdProyecto, string Nombre, ResultadoHorasFaltantes Calculo);
+
+    private sealed record DatosCalculo(
+        List<TblAdministracionEmpleado> Empleados,
+        ILookup<int, TblTimeReportActividadDiarium> Actividades,
+        HashSet<DateOnly> Feriados,
+        ILookup<int, PeriodoJornada> Jornadas,
+        DateOnly Hoy);
+
+    private async Task<DatosCalculo> CargarDatosAsync(
         IQueryable<TblAdministracionEmpleado> filtroEmpleados,
         DateOnly inicioPeriodo,
         DateOnly finPeriodo,
         CancellationToken ct)
     {
+        // Asignaciones activas que se cruzan con el período, con el nombre del proyecto para el correo
         var empleados = await filtroEmpleados
             .AsNoTracking()
             .Include(e => e.IdpersonaNavigation)
-            .Include(e => e.IdtipocontratoNavigation)   // necesario para saber si es pasante
+            .Include(e => e.IdtipocontratoNavigation)   // jornada: 6 h si es pasante (PAS), 8 h el resto
             .Include(e => e.TblTimeReportAsignacionProyectos.Where(ep => ep.Activo
                     && (ep.Fechaasignacion == null || ep.Fechaasignacion <= finPeriodo)
                     && (ep.Fechafinasignacion == null || ep.Fechafinasignacion >= inicioPeriodo)))
-                .ThenInclude(ep => ep.IdproyectoNavigation)   // nombre del proyecto para el correo
+                .ThenInclude(ep => ep.IdproyectoNavigation)
             .ToListAsync(ct);
-
-        if (empleados.Count == 0)
-            return [];
 
         var empIds = empleados.Select(e => e.Id).ToList();
 
-        // Los del período y todos los recurrentes (se proyectan al año del período más abajo)
+        // Los del período y todos los recurrentes (se proyectan al año del período)
         var feriadosDb = await _db.TblTimeReportFeriados
             .AsNoTracking()
             .Where(f => f.Activo
                 && ((f.Fechaferiado >= inicioPeriodo && f.Fechaferiado <= finPeriodo) || f.Esrecurrente == true))
             .Select(f => new FeriadoRegistrado(f.Fechaferiado, f.Esrecurrente == true))
             .ToListAsync(ct);
-        var feriados = FeriadosDelPeriodo(feriadosDb, inicioPeriodo, finPeriodo);
 
-        // Todas las actividades del período, de cualquier proyecto
-        var actividadesPorEmpleado = (await _db.TblTimeReportActividadDiaria
+        var actividades = (await _db.TblTimeReportActividadDiaria
                 .AsNoTracking()
                 .Where(a => a.Activo
                     && empIds.Contains(a.Idempleado)
@@ -173,69 +210,86 @@ public sealed class ConsultaHorasFaltantes : IConsultaHorasFaltantes
                 .ToListAsync(ct))
             .ToLookup(a => a.Idempleado);
 
-        // Nombres de los proyectos con horas registradas, aunque el colaborador ya no esté asignado a ellos
-        var idsProyectosConHoras = actividadesPorEmpleado
-            .SelectMany(g => g)
-            .Where(a => a.Idproyecto.HasValue)
-            .Select(a => a.Idproyecto!.Value)
-            .Distinct()
-            .ToList();
-        var nombresProyectos = await _db.TblTimeReportProyectos
-            .AsNoTracking()
-            .Where(p => idsProyectosConHoras.Contains(p.Id))
-            .ToDictionaryAsync(p => p.Id, p => p.Nombre, ct);
+        // Jornada por contrato vigente cada día (8 h / 6 h pasante), por si cambió de contrato en el período
+        var jornadas = empIds.Count == 0
+            ? Array.Empty<PeriodoJornada>().ToLookup(_ => 0)
+            : await CalculoHorasPeriodo.CargarJornadasAsync(_db, empIds);
 
-        // Jornada por contrato vigente (8 h / 6 h pasante), por si cambió de tipo de contrato en el período
-        var jornadas = await CalculoHorasPeriodo.CargarJornadasAsync(_db, empIds);
-        var hoy = CalculoHorasPeriodo.HoyEcuador();
-
-        var resultado = new List<EmpleadoConHorasFaltantes>();
-        foreach (var empleado in empleados)
-        {
-            var actividades = actividadesPorEmpleado[empleado.Id].ToList();
-            var calculo = CalcularJornadaTotal(
-                empleado, inicioPeriodo, finPeriodo, actividades, feriados, hoy, jornadas[empleado.Id]);
-
-            if (!calculo.DebeHoras)
-                continue;
-
-            var persona = empleado.IdpersonaNavigation;
-            var nombre = $"{persona?.Nombres} {persona?.Apellidos}".Trim();
-            var email = string.IsNullOrWhiteSpace(empleado.Emailcorporativo) ? persona?.Email : empleado.Emailcorporativo;
-
-            // Todos sus proyectos con las horas que lleva en cada uno (solo informativo para el correo)
-            var proyectos = ProyectosDelColaborador(
-                empleado, inicioPeriodo, finPeriodo, actividades, feriados, hoy, jornadas[empleado.Id], nombresProyectos);
-
-            resultado.Add(new EmpleadoConHorasFaltantes(
-                empleado.Id, nombre, email, calculo,
-                ProyectosColaborador: proyectos,
-                JornadaDiaria: JornadaUniforme(calculo)));
-        }
-
-        return resultado;
+        return new DatosCalculo(
+            empleados,
+            actividades,
+            FeriadosDelPeriodo(feriadosDb, inicioPeriodo, finPeriodo),
+            jornadas,
+            CalculoHorasPeriodo.HoyEcuador());
     }
 
     /// <summary>
-    /// Horas faltantes de una persona con jornada total (ver <see cref="CalcularJornadaTotalAsync"/>).
-    /// Requiere el empleado con IdtipocontratoNavigation y sus asignaciones del período cargadas.
+    /// Cada proyecto asignado en el período exige su propia jornada (8 h, o 6 h si es pasante) contra las horas de
+    /// ese proyecto, solo entre la entrada y la salida del colaborador en él, como las filas de Seguimiento.
+    /// Sin proyectos asignados: una fila "Sin proyecto" con todas sus horas contra una jornada.
     /// </summary>
-    internal static ResultadoHorasFaltantes CalcularJornadaTotal(
+    internal static IReadOnlyList<DesgloseProyecto> DesglosePorProyecto(
+        TblAdministracionEmpleado empleado,
+        DateOnly inicioPeriodo,
+        DateOnly finPeriodo,
+        IReadOnlyCollection<TblTimeReportActividadDiarium> actividades,
+        ICollection<DateOnly> feriados,
+        DateOnly hoy,
+        IEnumerable<PeriodoJornada>? jornadas)
+    {
+        var asignaciones = empleado.TblTimeReportAsignacionProyectos.GroupBy(ep => ep.Idproyecto).ToList();
+
+        if (asignaciones.Count == 0)
+            return [new DesgloseProyecto(null, "Sin proyecto",
+                CalcularFila(empleado, inicioPeriodo, finPeriodo, actividades, feriados, hoy, jornadas, idProyecto: null))];
+
+        return asignaciones
+            .Select(g => new DesgloseProyecto(
+                g.Key,
+                g.First().IdproyectoNavigation?.Nombre ?? $"Proyecto {g.Key}",
+                Calcular(empleado, inicioPeriodo, finPeriodo,
+                    actividades.Where(a => a.Idproyecto == g.Key), feriados, hoy, jornadas,
+                    g.Select(ep => new VigenciaAsignacion(ep.Fechaasignacion, ep.Fechafinasignacion)).ToList())))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Fila de Seguimiento: con idProyecto, solo las horas de ese proyecto y los días de su asignación (si la tiene
+    /// en el período); sin idProyecto, todas sus horas contra una jornada (fila "Sin Proyecto").
+    /// </summary>
+    internal static ResultadoHorasFaltantes CalcularFila(
         TblAdministracionEmpleado empleado,
         DateOnly inicioPeriodo,
         DateOnly finPeriodo,
         IEnumerable<TblTimeReportActividadDiarium> actividades,
         ICollection<DateOnly> feriados,
         DateOnly hoy,
-        IEnumerable<PeriodoJornada>? jornadas)
+        IEnumerable<PeriodoJornada>? jornadas,
+        int? idProyecto)
     {
-        // Unión de las vigencias de todas sus asignaciones: un día cuenta una sola vez aunque
-        // esté en varios proyectos. Sin asignaciones (lista vacía) se evalúa todo el período.
+        if (idProyecto is null)
+            return Calcular(empleado, inicioPeriodo, finPeriodo, actividades, feriados, hoy, jornadas, vigencias: null);
+
         var vigencias = empleado.TblTimeReportAsignacionProyectos
+            .Where(ep => ep.Idproyecto == idProyecto)
             .Select(ep => new VigenciaAsignacion(ep.Fechaasignacion, ep.Fechafinasignacion))
             .ToList();
 
-        // Calcular aplica 6 h por día si el contrato vigente es pasantía (PAS) y 8 h en cualquier otro caso
+        return Calcular(empleado, inicioPeriodo, finPeriodo,
+            actividades.Where(a => a.Idproyecto == idProyecto), feriados, hoy, jornadas, vigencias);
+    }
+
+    private static ResultadoHorasFaltantes Calcular(
+        TblAdministracionEmpleado empleado,
+        DateOnly inicioPeriodo,
+        DateOnly finPeriodo,
+        IEnumerable<TblTimeReportActividadDiarium> actividades,
+        ICollection<DateOnly> feriados,
+        DateOnly hoy,
+        IEnumerable<PeriodoJornada>? jornadas,
+        IReadOnlyCollection<VigenciaAsignacion>? vigencias)
+    {
+        // CalculoHorasPeriodo aplica 6 h por día si el contrato vigente es pasantía (PAS) y 8 h en otro caso
         var horas = CalculoHorasPeriodo.Calcular(
             empleado, inicioPeriodo, finPeriodo, actividades, feriados, hoy, jornadas, vigencias);
 
@@ -249,50 +303,23 @@ public sealed class ConsultaHorasFaltantes : IConsultaHorasFaltantes
             horas.HorasPorRegistrar);
     }
 
-    /// <summary>
-    /// Proyectos asignados en el período (aunque no tengan horas) y proyectos con horas registradas, cada uno con
-    /// las horas que cuentan para la jornada (mismos días que el cálculo total, así la suma coincide con el total).
-    /// </summary>
-    internal static IReadOnlyList<ProyectoColaborador> ProyectosDelColaborador(
-        TblAdministracionEmpleado empleado,
-        DateOnly inicioPeriodo,
-        DateOnly finPeriodo,
-        IReadOnlyCollection<TblTimeReportActividadDiarium> actividades,
-        ICollection<DateOnly> feriados,
-        DateOnly hoy,
-        IEnumerable<PeriodoJornada>? jornadas,
-        IReadOnlyDictionary<int, string> nombresProyectos)
-    {
-        var nombres = new Dictionary<int, string>();
-        foreach (var asignacion in empleado.TblTimeReportAsignacionProyectos)
-            nombres.TryAdd(asignacion.Idproyecto, asignacion.IdproyectoNavigation?.Nombre ?? $"Proyecto {asignacion.Idproyecto}");
-        foreach (var id in actividades.Where(a => a.Idproyecto.HasValue).Select(a => a.Idproyecto!.Value))
-            nombres.TryAdd(id, nombresProyectos.TryGetValue(id, out var n) ? n : $"Proyecto {id}");
-
-        var proyectos = nombres
-            .Select(p => new ProyectoColaborador(
-                p.Key,
-                p.Value,
-                CalcularJornadaTotal(empleado, inicioPeriodo, finPeriodo,
-                    actividades.Where(a => a.Idproyecto == p.Key), feriados, hoy, jornadas).HorasRegistradas))
-            .OrderByDescending(p => p.HorasRegistradas)
-            .ThenBy(p => p.Nombre)
+    // Proyectos en los que le faltan horas, del que más debe al que menos (para el correo y el resumen del corte)
+    private static IReadOnlyList<HorasProyecto> ConFaltantes(IReadOnlyList<DesgloseProyecto> desglose) =>
+        desglose
+            .Where(d => d.Calculo.DebeHoras)
+            .OrderByDescending(d => d.Calculo.HorasFaltantes)
+            .ThenBy(d => d.Nombre)
+            .Select(d => new HorasProyecto(d.IdProyecto, d.Nombre, d.Calculo.HorasFaltantes))
             .ToList();
 
-        // Horas cargadas sin proyecto: se muestran aparte solo si hay
-        var sinProyecto = CalcularJornadaTotal(empleado, inicioPeriodo, finPeriodo,
-            actividades.Where(a => a.Idproyecto is null), feriados, hoy, jornadas).HorasRegistradas;
-        if (sinProyecto > 0)
-            proyectos.Add(new ProyectoColaborador(null, "Sin proyecto", sinProyecto));
-
-        return proyectos;
+    private static EmpleadoConHorasFaltantes Crear(
+        TblAdministracionEmpleado empleado, ResultadoHorasFaltantes calculo, IReadOnlyList<HorasProyecto> proyectos)
+    {
+        var persona = empleado.IdpersonaNavigation;
+        var nombre = $"{persona?.Nombres} {persona?.Apellidos}".Trim();
+        var email = string.IsNullOrWhiteSpace(empleado.Emailcorporativo) ? persona?.Email : empleado.Emailcorporativo;
+        return new EmpleadoConHorasFaltantes(empleado.Id, nombre, email, calculo, proyectos);
     }
-
-    /// <summary>Jornada diaria si fue la misma todo el período (8 h o 6 h); 0 si cambió de contrato a mitad.</summary>
-    internal static decimal JornadaUniforme(ResultadoHorasFaltantes calculo) =>
-        calculo.DiasLaborables > 0 && calculo.HorasEsperadas % calculo.DiasLaborables == 0
-            ? calculo.HorasEsperadas / calculo.DiasLaborables
-            : 0m;
 
     internal sealed record FeriadoRegistrado(DateOnly Fecha, bool EsRecurrente);
 

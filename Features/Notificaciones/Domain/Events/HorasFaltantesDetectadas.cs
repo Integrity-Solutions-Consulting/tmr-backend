@@ -14,8 +14,4 @@ public record HorasFaltantesDetectadas(
     int? IdUsuarioEjecutor,
     int? IdProyecto = null,                 // solo avisos manuales por proyecto
     string? NombreProyecto = null,
-    IReadOnlyList<HorasProyecto>? Proyectos = null,              // formato anterior (faltantes por proyecto), ya no se llena
-    IReadOnlyList<ProyectoColaborador>? ProyectosColaborador = null,   // todos sus proyectos del período con sus horas
-    decimal HorasEsperadas = 0m,
-    decimal HorasRegistradas = 0m,
-    decimal JornadaDiaria = 0m) : IEvento;
+    IReadOnlyList<HorasProyecto>? Proyectos = null) : IEvento;   // horas que le faltan en cada proyecto (8 h o 6 h pasante cada uno)

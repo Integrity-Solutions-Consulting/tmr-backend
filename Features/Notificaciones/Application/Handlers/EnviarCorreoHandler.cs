@@ -137,7 +137,7 @@ public sealed class EnviarCorreoHandler : IEventHandler<HorasFaltantesDetectadas
             evento.IdUsuarioEjecutor,
             ahora,
             evento.IdProyecto,
-            ProyectoColaborador.Describir(evento.ProyectosColaborador) ?? HorasProyecto.Describir(evento.Proyectos)), ct);
+            HorasProyecto.Describir(evento.Proyectos)), ct);
     }
 
     // ---------------------------------------------------------------------
@@ -242,21 +242,27 @@ public sealed class EnviarCorreoHandler : IEventHandler<HorasFaltantesDetectadas
     internal static (string Asunto, string Html) ConstruirCorreo(HorasFaltantesDetectadas evento)
     {
         var nombre = WebUtility.HtmlEncode(evento.Nombre);
-        var horas = Horas(evento.HorasFaltantes);
         var inicio = evento.InicioPeriodo.ToString("dd/MM/yyyy", CulturaEc);
         var fin = evento.FinPeriodo.ToString("dd/MM/yyyy", CulturaEc);
         var enlace = WebUtility.HtmlEncode(UrlRegistrarHoras);
 
-        // La jornada se exige por persona: el asunto y el mensaje no nombran un proyecto en concreto
+        // Con desglose, el total es lo que le falta en todos sus proyectos (en el aviso manual, el evento solo
+        // trae lo del proyecto de la fila); sin desglose (eventos viejos o "Sin proyecto"), lo que trae el evento
+        var proyectos = ProyectosConNombre(evento.Proyectos);
+        var totalFaltantes = proyectos.Count > 0 ? proyectos.Sum(p => p.HorasFaltantes) : evento.HorasFaltantes;
+        var horas = Horas(totalFaltantes);
+
         var asunto = $"Recordatorio: tienes {horas} horas pendientes de registrar " +
                      $"({evento.InicioPeriodo:dd/MM} - {evento.FinPeriodo:dd/MM})";
 
+        var proyectoFila = string.IsNullOrWhiteSpace(evento.NombreProyecto) ? null : evento.NombreProyecto.Trim();
+        var delProyecto = proyectoFila is null ? "" : $" del proyecto <strong>{WebUtility.HtmlEncode(proyectoFila)}</strong>";
         var mensaje = evento.Origen == OrigenNotificacion.Manual
-            ? $"Tu líder técnico te recuerda que tienes horas pendientes de registrar en el período del <strong>{inicio}</strong> al <strong>{fin}</strong>."
+            ? $"Tu líder técnico{delProyecto} te recuerda que tienes horas pendientes de registrar en el período del <strong>{inicio}</strong> al <strong>{fin}</strong>."
             : $"Se realizó el {DescribirCorte(evento)} y detectamos que tienes horas pendientes de registrar en el período del <strong>{inicio}</strong> al <strong>{fin}</strong>.";
 
-        var resumen = ConstruirResumenHoras(evento);
-        var detalleProyectos = ConstruirDetalleProyectos(evento.ProyectosColaborador);
+        // Cada proyecto exige su propia jornada: se detalla lo que falta en cada uno
+        var detalleProyectos = ConstruirDetalleProyectos(proyectos);
 
         var html = $@"
                 <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;'>
@@ -270,7 +276,6 @@ public sealed class EnviarCorreoHandler : IEventHandler<HorasFaltantesDetectadas
                         <p style='margin: 12px 0 0 0; font-size: 14px; color: #475569; line-height: 1.5;'>
                             {mensaje}
                         </p>
-                        {resumen}
                         <p style='margin: 12px 0 0 0; font-size: 14px; color: #475569;'>
                             Horas faltantes: <strong style='color: #ef4444; font-size: 16px;'>{horas} horas</strong>
                         </p>
@@ -291,21 +296,9 @@ public sealed class EnviarCorreoHandler : IEventHandler<HorasFaltantesDetectadas
 
     private static string Horas(decimal valor) => valor.ToString("0.##", CulturaEc);
 
-    // "Debes registrar 88 h (8 h por día laborable, sumando todos tus proyectos) y llevas 66 h."
-    // Vacío en eventos encolados antes de este cambio, que no traen los totales.
-    private static string ConstruirResumenHoras(HorasFaltantesDetectadas evento)
-    {
-        if (evento.HorasEsperadas <= 0)
-            return "";
-
-        var jornada = evento.JornadaDiaria > 0
-            ? $"{Horas(evento.JornadaDiaria)} h por día laborable, sumando todos tus proyectos"
-            : "según tu jornada diaria, sumando todos tus proyectos";
-
-        return $@"<p style='margin: 12px 0 0 0; font-size: 14px; color: #475569; line-height: 1.5;'>
-                            Debes registrar <strong>{Horas(evento.HorasEsperadas)} h</strong> en el período ({jornada}) y llevas <strong>{Horas(evento.HorasRegistradas)} h</strong>.
-                        </p>";
-    }
+    // Solo proyectos reales: la fila "Sin proyecto" no lleva tabla (todas sus horas van contra una jornada)
+    private static IReadOnlyList<HorasProyecto> ProyectosConNombre(IReadOnlyList<HorasProyecto>? proyectos) =>
+        proyectos is null || proyectos.All(p => p.IdProyecto is null) ? [] : proyectos;
 
     // Logo: Apprise:LogoUrl si está configurado; si no, el que publica el frontend de producción en /assets/img
     private string UrlLogoPublica()
@@ -317,28 +310,25 @@ public sealed class EnviarCorreoHandler : IEventHandler<HorasFaltantesDetectadas
         return WebUtility.HtmlEncode(url);
     }
 
-    // Tabla "Proyecto | Horas registradas" con todos los proyectos del colaborador en el período y el total.
-    // Vacía si no tiene proyectos ni horas cargadas.
-    private static string ConstruirDetalleProyectos(IReadOnlyList<ProyectoColaborador>? proyectos)
+    // Tabla "Proyecto | Horas faltantes" con todos los proyectos en los que le faltan horas y el total
+    private static string ConstruirDetalleProyectos(IReadOnlyList<HorasProyecto> proyectos)
     {
-        if (proyectos is null || proyectos.Count == 0)
+        if (proyectos.Count == 0)
             return "";
 
         const string celda = "padding: 6px 8px; border-top: 1px solid #e5e7eb;";
         var filas = string.Concat(proyectos.Select(p =>
             $"<tr><td style='{celda} color: #1e293b;'>{WebUtility.HtmlEncode(p.Nombre)}</td>" +
-            $"<td style='{celda} color: #1e293b; text-align: right;'>{Horas(p.HorasRegistradas)} h</td></tr>"));
-        var total = proyectos.Sum(p => p.HorasRegistradas);
+            $"<td style='{celda} color: #ef4444; text-align: right; font-weight: bold;'>{Horas(p.HorasFaltantes)} h</td></tr>"));
 
-        return $@"<p style='margin: 16px 0 0 0; font-size: 13px; color: #475569; font-weight: bold;'>Tus proyectos en el período</p>
-                        <table style='width: 100%; margin-top: 6px; border-collapse: collapse; font-size: 13px;'>
+        return $@"<table style='width: 100%; margin-top: 12px; border-collapse: collapse; font-size: 13px;'>
                             <tr><th style='padding: 6px 8px; text-align: left; color: #64748b;'>Proyecto</th>
-                                <th style='padding: 6px 8px; text-align: right; color: #64748b;'>Horas registradas</th></tr>
+                                <th style='padding: 6px 8px; text-align: right; color: #64748b;'>Horas faltantes</th></tr>
                             {filas}
                             <tr><td style='{celda} color: #1e293b; font-weight: bold;'>Total</td>
-                                <td style='{celda} color: #1e293b; text-align: right; font-weight: bold;'>{Horas(total)} h</td></tr>
+                                <td style='{celda} color: #ef4444; text-align: right; font-weight: bold;'>{Horas(proyectos.Sum(p => p.HorasFaltantes))} h</td></tr>
                         </table>
-                        <p style='margin: 8px 0 0 0; font-size: 12px; color: #64748b;'>Las horas se cuentan sumando todos tus proyectos.</p>";
+                        <p style='margin: 8px 0 0 0; font-size: 12px; color: #64748b;'>Cada proyecto requiere su propia jornada diaria.</p>";
     }
 
     private static string DescribirCorte(HorasFaltantesDetectadas evento) =>
