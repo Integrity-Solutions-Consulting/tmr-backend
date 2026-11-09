@@ -125,7 +125,7 @@ public sealed class ConsultaHorasFaltantes : IConsultaHorasFaltantes
     /// <list type="bullet">
     /// <item>Jornada diaria: 6 h si es pasante (tipo de contrato PAS) y 8 h para el resto, según el contrato
     /// vigente cada día (historial de contratos; sin historial, el tipo de contrato actual).</item>
-    /// <item>Días exigidos: lunes a viernes sin feriados, entre ingreso y salida, dentro de alguna de sus
+    /// <item>Días exigidos: lunes a viernes sin feriados (los recurrentes se repiten cada año), entre ingreso y salida, dentro de alguna de sus
     /// asignaciones del período (si no tiene ninguna, todo el período) y nunca después de hoy.</item>
     /// <item>Horas registradas: la suma de todos sus proyectos en esos días.</item>
     /// <item>Horas faltantes: max(0, horas esperadas − horas registradas).</item>
@@ -151,11 +151,14 @@ public sealed class ConsultaHorasFaltantes : IConsultaHorasFaltantes
 
         var empIds = empleados.Select(e => e.Id).ToList();
 
-        var feriados = await _db.TblTimeReportFeriados
+        // Los del período y todos los recurrentes (se proyectan al año del período más abajo)
+        var feriadosDb = await _db.TblTimeReportFeriados
             .AsNoTracking()
-            .Where(f => f.Activo && f.Fechaferiado >= inicioPeriodo && f.Fechaferiado <= finPeriodo)
-            .Select(f => f.Fechaferiado)
+            .Where(f => f.Activo
+                && ((f.Fechaferiado >= inicioPeriodo && f.Fechaferiado <= finPeriodo) || f.Esrecurrente == true))
+            .Select(f => new FeriadoRegistrado(f.Fechaferiado, f.Esrecurrente == true))
             .ToListAsync(ct);
+        var feriados = FeriadosDelPeriodo(feriadosDb, inicioPeriodo, finPeriodo);
 
         // Todas las actividades del período, de cualquier proyecto
         var actividadesPorEmpleado = (await _db.TblTimeReportActividadDiaria
@@ -222,6 +225,39 @@ public sealed class ConsultaHorasFaltantes : IConsultaHorasFaltantes
             horas.HorasEsperadas,
             horas.HorasRegistradas,
             horas.HorasPorRegistrar);
+    }
+
+    internal sealed record FeriadoRegistrado(DateOnly Fecha, bool EsRecurrente);
+
+    /// <summary>
+    /// Días feriados que caen en el período. Un feriado recurrente se repite el mismo día y mes de cada año del
+    /// período, aunque solo esté registrado en otro año (misma regla que el módulo de Permisos). Si el día no existe
+    /// ese año (29 de febrero), se usa el último día del mes.
+    /// </summary>
+    internal static HashSet<DateOnly> FeriadosDelPeriodo(
+        IEnumerable<FeriadoRegistrado> feriados,
+        DateOnly inicioPeriodo,
+        DateOnly finPeriodo)
+    {
+        var resultado = new HashSet<DateOnly>();
+        foreach (var feriado in feriados)
+        {
+            if (feriado.Fecha >= inicioPeriodo && feriado.Fecha <= finPeriodo)
+                resultado.Add(feriado.Fecha);
+
+            if (!feriado.EsRecurrente)
+                continue;
+
+            for (var anio = inicioPeriodo.Year; anio <= finPeriodo.Year; anio++)
+            {
+                var dia = Math.Min(feriado.Fecha.Day, DateTime.DaysInMonth(anio, feriado.Fecha.Month));
+                var proyectado = new DateOnly(anio, feriado.Fecha.Month, dia);
+                if (proyectado >= inicioPeriodo && proyectado <= finPeriodo)
+                    resultado.Add(proyectado);
+            }
+        }
+
+        return resultado;
     }
 
     public async Task<PendientesNotificacionResponse> ObtenerPendientesAsync(CancellationToken ct)
