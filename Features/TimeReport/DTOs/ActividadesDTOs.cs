@@ -48,7 +48,17 @@ public record CalendarioActividadDto(
     DateOnly FechaActividad,
     string DescripcionActividad,
     string? Notas,
-    bool? EsBillable
+    bool? EsBillable,
+    // sm - Líder que la cargó a nombre del colaborador; null si la registró el propio colaborador.
+    int? IdLiderRegistro
+);
+
+// sm - Si el usuario de la sesión puede completar actividades de un colaborador en un proyecto, por ser su líder ahí.
+// Proyecto lleva la vigencia del colaborador, para validar la fecha igual que cuando él mismo registra.
+public record CompletarLiderDto(
+    bool PuedeCompletar,
+    int? IdLider = null,
+    ProyectoLookupDto? Proyecto = null
 );
 
 public record ActualizarActividadDto(

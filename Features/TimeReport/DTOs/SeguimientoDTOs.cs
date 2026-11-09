@@ -62,5 +62,7 @@ public record SeguimientoColaboradorDto(
     string? TipoSalida = null,
     string? CausaSalida = null,
     string? MotivoSalida = null,
-    DateOnly? SalidaProyecto = null
+    DateOnly? SalidaProyecto = null,
+    // sm - "Activo"/"Inactivo" en el proyecto de esta fila dentro del rango filtrado (null si la fila es "Sin Proyecto").
+    string? EstadoEnProyecto = null
 );
