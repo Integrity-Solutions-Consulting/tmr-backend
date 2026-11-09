@@ -255,10 +255,9 @@ public sealed class EnviarCorreoHandler : IEventHandler<HorasFaltantesDetectadas
         var asunto = $"Recordatorio: tienes {horas} horas pendientes de registrar " +
                      $"({evento.InicioPeriodo:dd/MM} - {evento.FinPeriodo:dd/MM})";
 
-        var proyectoFila = string.IsNullOrWhiteSpace(evento.NombreProyecto) ? null : evento.NombreProyecto.Trim();
-        var delProyecto = proyectoFila is null ? "" : $" del proyecto <strong>{WebUtility.HtmlEncode(proyectoFila)}</strong>";
+        // El proyecto no se nombra: la tabla de abajo ya detalla lo que falta en cada uno
         var mensaje = evento.Origen == OrigenNotificacion.Manual
-            ? $"Tu líder técnico{delProyecto} te recuerda que tienes horas pendientes de registrar en el período del <strong>{inicio}</strong> al <strong>{fin}</strong>."
+            ? $"Tu líder técnico te recuerda que tienes horas pendientes de registrar en el período del <strong>{inicio}</strong> al <strong>{fin}</strong>."
             : $"Se realizó el {DescribirCorte(evento)} y detectamos que tienes horas pendientes de registrar en el período del <strong>{inicio}</strong> al <strong>{fin}</strong>.";
 
         // Cada proyecto exige su propia jornada: se detalla lo que falta en cada uno
