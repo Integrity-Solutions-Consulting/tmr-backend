@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.8.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.7.5...v1.8.0) (2026-11-09)
+
+
+### Features
+
+* Botón para registrar actividades para los líderes ([4603fee](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/4603fee7d0cce269f815867158d2a06622892d8b))
+* Botón para registrar actividades para los líderes ([681cdb9](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/681cdb95361a0f17c496ddff0ed5b75072b276d6))
+* **notificaciones:** enlace a produccion y detalle de todos los proyectos en el correo ([df41778](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/df41778ec5f6f9c2749bf177b8afa75ed5d3d8bb))
+
+
+### Bug Fixes
+
+* **notificaciones:** exigir una sola jornada por persona en horas faltantes ([bb4c029](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/bb4c0294525703d8b033d4bef9d250a476b08dcf))
+* **notificaciones:** no nombrar el proyecto en el mensaje del aviso manual ([e8ba958](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/e8ba9586e7f867397cec28530260fb6cd653d745))
+* **notificaciones:** proyectar feriados recurrentes al año del período ([466fbba](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/466fbba555fb0d93a26c68209da54a6d018fa1ff))
+* **notificaciones:** volver a la jornada por proyecto y detallar todos los faltantes en el correo ([951d0ec](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/951d0ecfd5a8823742c1a5d7138d4817d88e7dac))
+
 ## [1.7.5](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.7.4...v1.7.5) (2026-11-09)
 
 
