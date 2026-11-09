@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.5](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.7.4...v1.7.5) (2026-11-09)
+
+
+### Bug Fixes
+
+* Agregar cargos al departamento administrativo ([a59b374](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/a59b374fbeffa5aa3b4fc8aa0aad2f42d652c6d6))
+
 ## [1.7.4](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.7.3...v1.7.4) (2026-11-08)
 
 
