@@ -1,7 +1,6 @@
 namespace tmr_backend.Features.Proyectos.DTOs;
 
 public record CrearProyectoRequest(
-    string? Codigo,
     string Nombre,
     string? Descripcion,
     int? IdCliente,
@@ -28,7 +27,6 @@ public record CrearProyectoRequest(
 );
 
 public record ActualizarProyectoRequest(
-    string? Codigo,
     string Nombre,
     string? Descripcion,
     int? IdCliente,

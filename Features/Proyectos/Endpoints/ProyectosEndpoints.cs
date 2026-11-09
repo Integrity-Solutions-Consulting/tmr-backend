@@ -116,7 +116,7 @@ public static class ProyectosEndpoints
 
             var proyecto = new TblTimeReportProyecto
             {
-                Codigo = request.Codigo,
+                Codigo = await GenerarCodigoProyectoAsync(db),
                 Nombre = request.Nombre.Trim(),
                 Descripcion = request.Descripcion,
                 Idcliente = ids.IdCliente,
@@ -184,7 +184,7 @@ public static class ProyectosEndpoints
             if (!request.IdEstadoProyecto.HasValue)
                 idEstadoProyectoActivo = await ObtenerOCrearEstadoProyectoActivoAsync(db);
 
-            proyecto.Codigo = request.Codigo?.Trim();
+            // sm - El código no se modifica al editar: lo asigna el servidor al crear el proyecto.
             proyecto.Nombre = request.Nombre.Trim();
             proyecto.Descripcion = request.Descripcion;
             proyecto.Idcliente = ids.IdCliente;
@@ -559,6 +559,16 @@ public static class ProyectosEndpoints
         return sinSalida is null
             ? null
             : $"El recurso {sinSalida.Nombre} está Inactivo: debe registrar la fecha de salida.";
+    }
+
+    // sm - La secuencia de BD (script 21) no entrega dos veces el mismo número, aunque se creen proyectos a la vez.
+    private static async Task<string> GenerarCodigoProyectoAsync(ApplicationDbContext db)
+    {
+        var numero = await db.Database
+            .SqlQuery<long>($"SELECT nextval('time_report.seq_proyecto_codigo') AS \"Value\"")
+            .SingleAsync();
+
+        return $"PR-{numero:0000}";
     }
 
     private static List<ProyectoLiderRequest> NormalizarLideres(CrearProyectoRequest request)
