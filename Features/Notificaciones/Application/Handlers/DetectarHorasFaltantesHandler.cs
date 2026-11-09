@@ -146,7 +146,9 @@ public sealed class DetectarHorasFaltantesHandler :
                 FechaCorte: null,
                 evento.IdUsuarioEjecutor,
                 evento.IdProyecto,
-                nombreProyecto), ct);
+                nombreProyecto,
+                // El correo detalla lo que le falta en todos sus proyectos, no solo en el de la fila
+                Proyectos: empleado.Proyectos), ct);
             publicados++;
         }
 

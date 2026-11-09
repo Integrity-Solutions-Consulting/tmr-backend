@@ -1869,6 +1869,7 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Idempleado).HasColumnName("idempleado");
             entity.Property(e => e.Idproyecto).HasColumnName("idproyecto");
             entity.Property(e => e.Idtipoactividad).HasColumnName("idtipoactividad");
+            entity.Property(e => e.Idliderregistro).HasColumnName("idliderregistro");
             entity.Property(e => e.Ipcreacion)
                 .HasMaxLength(45)
                 .HasColumnName("ipcreacion");
