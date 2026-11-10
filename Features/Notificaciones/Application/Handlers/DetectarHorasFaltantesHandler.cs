@@ -92,6 +92,21 @@ public sealed class DetectarHorasFaltantesHandler :
 
         var finPeriodo = FinManualEfectivo(evento.FinPeriodo, CalculoHorasPeriodo.HoyEcuador());
 
+        // Fila de un proyecto inactivo, completado o cancelado: no se avisa y el líder ve el motivo
+        if (evento.IdProyecto is { } idFila && !await _consulta.ProyectoVigenteAsync(idFila, ct))
+        {
+            var nombre = await _consulta.NombreProyectoAsync(idFila, ct) ?? $"Proyecto {idFila}";
+            var ahoraOmitido = DateTimeOffset.UtcNow;
+            foreach (var id in ids)
+                await PublicarOmitidaAsync(
+                    evento, finPeriodo, id, $"El proyecto {nombre} ya no está activo", ahoraOmitido, ct);
+
+            _logger.LogInformation(
+                "Aviso manual del usuario {IdUsuario} omitido: el proyecto {IdProyecto} ya no está activo ({Solicitados} solicitados).",
+                evento.IdUsuarioEjecutor, idFila, ids.Count);
+            return;
+        }
+
         // Como la fila de Seguimiento: solo las horas de ese proyecto, y también a quien ya salió
         // (debe completar hasta su fecha de salida)
         var conDeficit = await _consulta.CalcularAsync(

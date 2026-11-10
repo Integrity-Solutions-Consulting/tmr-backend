@@ -64,6 +64,9 @@ public interface IConsultaHorasFaltantes
 
     Task<string?> NombreProyectoAsync(int idProyecto, CancellationToken ct);
 
+    /// <summary>False si el proyecto está Inactivo, Completado o Cancelado: ya no se avisa por sus horas.</summary>
+    Task<bool> ProyectoVigenteAsync(int idProyecto, CancellationToken ct);
+
     Task<IReadOnlySet<int>> NotificadosEnCorteAsync(DateTimeOffset fechaCorte, CancellationToken ct);
 }
 
@@ -89,6 +92,10 @@ public sealed class ConsultaHorasFaltantes : IConsultaHorasFaltantes
         if (finPeriodo < inicioPeriodo || idsEmpleados is { Count: 0 })
             return [];
 
+        // Fila de un proyecto inactivo o cerrado: ya no se avisa por sus horas
+        if (idProyecto is { } proyectoFila && !await ProyectoVigenteAsync(proyectoFila, ct))
+            return [];
+
         var datos = await CargarDatosAsync(
             _db.TblAdministracionEmpleados
                 .Where(e => (e.Activo || incluirInactivos) && (idsEmpleados == null || idsEmpleados.Contains(e.Id))),
@@ -99,6 +106,11 @@ public sealed class ConsultaHorasFaltantes : IConsultaHorasFaltantes
         {
             var actividades = datos.Actividades[empleado.Id].ToList();
             var jornadas = datos.Jornadas[empleado.Id];
+
+            // Fila "Sin Proyecto" de quien solo tuvo proyectos inactivos o cerrados en el período: no se le exige nada
+            var asignaciones = empleado.TblTimeReportAsignacionProyectos;
+            if (idProyecto is null && asignaciones.Count > 0 && !asignaciones.Any(ep => ProyectoVigente(ep.IdproyectoNavigation)))
+                continue;
 
             // Lo que decide si se avisa: la fila de Seguimiento desde la que se pidió (ese proyecto, o "Sin Proyecto")
             var calculo = CalcularFila(
@@ -189,6 +201,7 @@ public sealed class ConsultaHorasFaltantes : IConsultaHorasFaltantes
                     && (ep.Fechaasignacion == null || ep.Fechaasignacion <= finPeriodo)
                     && (ep.Fechafinasignacion == null || ep.Fechafinasignacion >= inicioPeriodo)))
                 .ThenInclude(ep => ep.IdproyectoNavigation)
+                    .ThenInclude(p => p.IdestadoproyectoNavigation)   // para descartar proyectos cerrados
             .ToListAsync(ct);
 
         var empIds = empleados.Select(e => e.Id).ToList();
@@ -227,6 +240,8 @@ public sealed class ConsultaHorasFaltantes : IConsultaHorasFaltantes
     /// Cada proyecto asignado en el período exige su propia jornada (8 h, o 6 h si es pasante) contra las horas de
     /// ese proyecto, solo entre la entrada y la salida del colaborador en él, como las filas de Seguimiento.
     /// Sin proyectos asignados: una fila "Sin proyecto" con todas sus horas contra una jornada.
+    /// Los proyectos que ya no están activos (ver <see cref="ProyectoVigente"/>) no exigen horas ni se avisan; si todos
+    /// sus proyectos del período están en ese caso, no se le exige nada (no pasa a "Sin proyecto").
     /// </summary>
     internal static IReadOnlyList<DesgloseProyecto> DesglosePorProyecto(
         TblAdministracionEmpleado empleado,
@@ -237,7 +252,15 @@ public sealed class ConsultaHorasFaltantes : IConsultaHorasFaltantes
         DateOnly hoy,
         IEnumerable<PeriodoJornada>? jornadas)
     {
-        var asignaciones = empleado.TblTimeReportAsignacionProyectos.GroupBy(ep => ep.Idproyecto).ToList();
+        var todas = empleado.TblTimeReportAsignacionProyectos;
+        var asignaciones = todas
+            .Where(ep => ProyectoVigente(ep.IdproyectoNavigation))
+            .GroupBy(ep => ep.Idproyecto)
+            .ToList();
+
+        // Solo tenía proyectos inactivos o cerrados en el período: no hay nada que avisarle
+        if (asignaciones.Count == 0 && todas.Count > 0)
+            return [];
 
         if (asignaciones.Count == 0)
             return [new DesgloseProyecto(null, "Sin proyecto",
@@ -407,6 +430,26 @@ public sealed class ConsultaHorasFaltantes : IConsultaHorasFaltantes
             .Where(p => p.Id == idProyecto)
             .Select(p => (string?)p.Nombre)
             .FirstOrDefaultAsync(ct);
+
+    public async Task<bool> ProyectoVigenteAsync(int idProyecto, CancellationToken ct)
+    {
+        var proyecto = await _db.TblTimeReportProyectos
+            .AsNoTracking()
+            .Include(p => p.IdestadoproyectoNavigation)
+            .FirstOrDefaultAsync(p => p.Id == idProyecto, ct);
+        return ProyectoVigente(proyecto);
+    }
+
+    /// <summary>
+    /// Proyecto que todavía exige horas en las notificaciones: no está marcado Inactivo y su estado no es Completado
+    /// ni Cancelado (los estados cerrados del Dashboard). Registrar horas atrasadas en un proyecto cerrado sigue
+    /// permitido (TR-004); solo deja de avisarse.
+    /// </summary>
+    internal static bool ProyectoVigente(TblTimeReportProyecto? proyecto) =>
+        proyecto is not null
+        && proyecto.Activo
+        && !tmr_backend.Features.Dashboard.Services.ParametrosDashboard.EstadosCerrados.Contains(
+            proyecto.IdestadoproyectoNavigation?.Codigovalor?.Trim().ToUpperInvariant() ?? "");
 
     public async Task<IReadOnlySet<int>> NotificadosEnCorteAsync(DateTimeOffset fechaCorte, CancellationToken ct)
     {
