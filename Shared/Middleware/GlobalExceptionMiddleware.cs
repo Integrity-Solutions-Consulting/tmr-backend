@@ -53,7 +53,7 @@ public class GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExcep
             Exceptions.UnauthorizedException      => (HttpStatusCode.Unauthorized,    "No autorizado"),
             UsuarioEmailYaExisteException         => (HttpStatusCode.Conflict,        "Conflicto con un recurso existente"),
             UsuarioIdentificacionYaExisteException => (HttpStatusCode.Conflict,       "Conflicto con un recurso existente"),
-            UsuariosConfigDomainException         => (HttpStatusCode.BadRequest,      "Solicitud invÃ¡lida"),
+            UsuariosConfigDomainException         => (HttpStatusCode.BadRequest,      "Solicitud inválida"),
 
             KeyNotFoundException                  => (HttpStatusCode.NotFound,        "Recurso no encontrado"),
             UnauthorizedAccessException           => (HttpStatusCode.Unauthorized,    "No autorizado"),

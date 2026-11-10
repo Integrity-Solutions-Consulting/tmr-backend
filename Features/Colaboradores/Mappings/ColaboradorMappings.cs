@@ -24,6 +24,7 @@ public static class ColaboradorMappings
             // Nombre completo = nombres + apellidos.
             NombreCompleto: $"{persona?.Nombres} {persona?.Apellidos}".Trim(),
             Email: persona?.Email ?? "",
+            EmailCorporativo: e.Emailcorporativo ?? "",
             Cargo: e.IdcargoNavigation?.Nombrecargo ?? "",
             NumProyectos: numProyectos,
             Activo: e.Activo
@@ -78,6 +79,7 @@ public static class ColaboradorMappings
 
             // ── Datos de contacto ──
             Email: persona?.Email ?? "",
+            EmailCorporativo: e.Emailcorporativo ?? "",
             Telefono: persona?.Telefono ?? "",
             Direccion: persona?.Direccion ?? "",
 

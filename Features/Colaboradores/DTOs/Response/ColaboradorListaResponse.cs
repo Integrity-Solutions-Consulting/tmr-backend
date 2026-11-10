@@ -10,7 +10,8 @@ public record ColaboradorListaResponse(
     string NumeroIdentificacion,
     string Asociacion,            // Valor del catálogo EMP (RPS / ISC / RPS E ISC)
     string NombreCompleto,        // Nombres + Apellidos
-    string Email,
+    string Email,                 // Correo personal
+    string EmailCorporativo,      // Correo institucional
     string Cargo,                 // NombreCargo
     int NumProyectos,             // Conteo de proyectos activos
     bool Activo                   // Estado

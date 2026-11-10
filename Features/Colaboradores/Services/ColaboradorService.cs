@@ -1,5 +1,6 @@
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
+using tmr_backend.Features.Colaboradores.Domain;
 using tmr_backend.Features.Colaboradores.DTOs.Request;
 using tmr_backend.Features.Colaboradores.DTOs.Response;
 using tmr_backend.Features.Colaboradores.Mappings;
@@ -225,6 +226,9 @@ public sealed class ColaboradorService(
             {
                 Idpersona = persona.Id,
                 Codigoempleado = codigoEmpleado,
+                Emailcorporativo = string.IsNullOrWhiteSpace(request.EmailCorporativo)
+                    ? null
+                    : request.EmailCorporativo.Trim().ToLowerInvariant(),
                 Idcargo = request.IdCargo,
                 Idmodotrabajo = request.IdModoTrabajo,
                 Idcategoriaempleado = request.IdCategoriaEmpleado,
@@ -245,9 +249,7 @@ public sealed class ColaboradorService(
                 request.FechaIngreso ?? CalculoHorasPeriodo.HoyEcuador(), request.FechaIngreso, ct);
             await db.SaveChangesAsync(ct);
 
-            // ================================================================
-            // NUEVO: Si se envió un reemplazo, actualizar el inactivo
-            // ================================================================
+            // Si se envió un reemplazo, actualizar el inactivo.
             if (request.IdEmpleadoReemplazo.HasValue)
             {
                 var inactivo = await db.TblAdministracionEmpleados
@@ -324,9 +326,28 @@ public sealed class ColaboradorService(
         persona.Idgenero = request.IdGenero;
         persona.Idnacionalidad = request.IdNacionalidad;
 
-        persona.Email = string.IsNullOrWhiteSpace(request.Email)
+        var emailPersonal = string.IsNullOrWhiteSpace(request.Email)
             ? null
             : request.Email.Trim();
+        var emailCorporativo = string.IsNullOrWhiteSpace(request.EmailCorporativo)
+            ? null
+            : request.EmailCorporativo.Trim().ToLowerInvariant();
+
+        // Solo se valida lo que cambia: los datos antiguos sin corregir no bloquean otras ediciones ni "Activar".
+        var cambioPersonal = !string.Equals(emailPersonal, persona.Email, StringComparison.OrdinalIgnoreCase);
+        var cambioCorporativo = !string.Equals(emailCorporativo, empleado.Emailcorporativo, StringComparison.OrdinalIgnoreCase);
+
+        if (cambioPersonal && CorreoInstitucional.EsInstitucional(emailPersonal))
+            throw new InvalidOperationException($"El correo personal no puede ser {CorreoInstitucional.Dominio}.");
+
+        if (cambioCorporativo && emailCorporativo is not null && !CorreoInstitucional.EsInstitucional(emailCorporativo))
+            throw new InvalidOperationException($"El correo institucional debe ser {CorreoInstitucional.Dominio}.");
+
+        if ((cambioPersonal || cambioCorporativo) && emailPersonal is null && emailCorporativo is null)
+            throw new InvalidOperationException("El colaborador debe tener al menos un correo.");
+
+        persona.Email = emailPersonal;
+        empleado.Emailcorporativo = emailCorporativo;
 
         persona.Telefono = string.IsNullOrWhiteSpace(request.Telefono)
             ? null
@@ -371,9 +392,7 @@ public sealed class ColaboradorService(
         empleado.Fechamodificacion = DateTime.UtcNow;
         empleado.Ipmodificacion = IpSistema;
 
-        // ================================================================
-        // NUEVO: Manejar el reemplazo en edición
-        // ================================================================
+        // Manejar el reemplazo en edición.
         // Buscar el reemplazo actual (el inactivo que tiene este empleado como reemplazo)
         var reemplazoActual = await db.TblAdministracionEmpleados
             .FirstOrDefaultAsync(e => e.IdEmpleadoReemplazo == id && e.Activo == false, ct);

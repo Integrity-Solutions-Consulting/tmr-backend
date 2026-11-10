@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using tmr_backend.Features.Colaboradores.Domain;
 using tmr_backend.Features.Dashboard.Domain;
 using tmr_backend.Features.Dashboard.DTOs;
 using tmr_backend.Features.TimeReport.Services;
@@ -14,7 +15,6 @@ public static class DashboardEndpoints
         // sm - Se exige sesión (JWT) en TODO el grupo: antes GET /, GET /proyectos/{id}/horas-incompletas (con nombres y
         // correos), GET/POST/PUT/DELETE de DashboardItems respondían sin token. Las rutas que ya tenían
         // RequireAuthorization (mis-horas-incompletas y notificar-faltantes-email) siguen igual.
-        // var group = app.MapGroup("/api/dashboard").WithTags("Dashboard");
         var group = app.MapGroup("/api/dashboard").WithTags("Dashboard").RequireAuthorization();
 
         group.MapGet("/", async (string? rango, ApplicationDbContext db) =>
@@ -268,7 +268,7 @@ public static class DashboardEndpoints
                 return Results.BadRequest(new { Mensaje = "Empleado no encontrado o inactivo" });
             }
 
-            var emailDestino = empleado.Emailcorporativo ?? empleado.IdpersonaNavigation?.Email;
+            var emailDestino = CorreoInstitucional.Principal(empleado.Emailcorporativo, empleado.IdpersonaNavigation?.Email);
             if (string.IsNullOrEmpty(emailDestino))
             {
                 return Results.BadRequest(new { Mensaje = "El empleado no tiene una dirección de correo configurada" });
@@ -432,7 +432,7 @@ public static class DashboardEndpoints
                         resultado.Add(new CollaboratorMissingHoursResponse(
                             empId,
                             $"{persona.Nombres} {persona.Apellidos}".Trim(),
-                            persona.Email ?? empleado.Emailcorporativo ?? string.Empty,
+                            CorreoInstitucional.Principal(empleado.Emailcorporativo, persona.Email) ?? string.Empty,
                             totalExpected,
                             totalRegistered,
                             totalExpected - totalRegistered,

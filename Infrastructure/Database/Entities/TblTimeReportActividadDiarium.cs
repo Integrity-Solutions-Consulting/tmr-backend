@@ -27,6 +27,9 @@ public partial class TblTimeReportActividadDiarium
 
     public int? Aprobadopor { get; set; }
 
+    // sm - Líder que la cargó a nombre del colaborador desde Seguimiento; null si la registró el propio colaborador.
+    public int? Idliderregistro { get; set; }
+
     public DateTime? Fechaaprobacion { get; set; }
 
     public bool Activo { get; set; }

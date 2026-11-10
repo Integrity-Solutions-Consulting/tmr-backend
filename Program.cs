@@ -61,6 +61,7 @@ using tmr_backend.Infrastructure.Extensions;
 using tmr_backend.Infrastructure.BackgroundServices;
 using tmr_backend.Features.Notificaciones;
 using tmr_backend.Features.Notificaciones.Presentation.Endpoint;
+using tmr_backend.Features.IntegracionRps;
 using Serilog;
 using tmr_backend.Infrastructure.Logging;
 
@@ -400,6 +401,7 @@ app.MapCatalogosConfigEndpoints();
 app.MapProveedoresEndpoints();
 app.MapNotificacionesEndpoints();
 app.MapPermisosEndpoints();
+app.MapIntegracionRpsEndpoints();
 app.Run();
 
 Log.CloseAndFlush();

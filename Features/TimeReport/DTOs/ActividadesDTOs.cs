@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 
 namespace tmr_backend.Features.TimeReport.DTOs;
 
@@ -15,19 +14,8 @@ public record CrearActividadDto(
     bool? EsBillable
 );
 
-public record ActividadDiaDto(
-    DateOnly Fecha,
-    decimal TotalHoras
-);
-
-// sm - Se comenta el resumen anterior (horas de hoy, semana y mes): Actividades ahora muestra las mismas métricas
-// que Seguimiento, calculadas para el mes del calendario.
-// public record ResumenHorasDto(
-//     decimal HorasPorRegistrar,
-//     decimal HorasRegistradas,
-//     decimal HorasSemana,
-//     decimal HorasMes
-// );
+// sm - Actividades muestra las mismas métricas que Seguimiento (antes mostraba horas de hoy, semana y mes),
+// calculadas para el mes del calendario.
 public record ResumenHorasDto(
     decimal HorasPorRegistrar,
     decimal HorasRegistradas,
@@ -60,7 +48,17 @@ public record CalendarioActividadDto(
     DateOnly FechaActividad,
     string DescripcionActividad,
     string? Notas,
-    bool? EsBillable
+    bool? EsBillable,
+    // sm - Líder que la cargó a nombre del colaborador; null si la registró el propio colaborador.
+    int? IdLiderRegistro
+);
+
+// sm - Si el usuario de la sesión puede completar actividades de un colaborador en un proyecto, por ser su líder ahí.
+// Proyecto lleva la vigencia del colaborador, para validar la fecha igual que cuando él mismo registra.
+public record CompletarLiderDto(
+    bool PuedeCompletar,
+    int? IdLider = null,
+    ProyectoLookupDto? Proyecto = null
 );
 
 public record ActualizarActividadDto(

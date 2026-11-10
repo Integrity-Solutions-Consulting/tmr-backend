@@ -23,6 +23,11 @@ public sealed class EnviarCorreoHandler : IEventHandler<HorasFaltantesDetectadas
 {
     private static readonly CultureInfo CulturaEc = CultureInfo.GetCultureInfo("es-EC");
 
+    // Dominio de producción del TMR: el botón del correo siempre lleva aquí, aunque el backend corra en otro ambiente
+    internal const string UrlProduccion = "https://tmr.integritysolutions.com.ec";
+    // Pantalla de Actividades, donde el colaborador agrega sus horas
+    internal const string UrlRegistrarHoras = UrlProduccion + "/time-report/actividades";
+
     private readonly ApplicationDbContext _db;
     private readonly IEmailService _emailService;
     private readonly IEventBus _bus;
@@ -234,29 +239,29 @@ public sealed class EnviarCorreoHandler : IEventHandler<HorasFaltantesDetectadas
     // Plantilla del correo
     // ---------------------------------------------------------------------
 
-    private (string Asunto, string Html) ConstruirCorreo(HorasFaltantesDetectadas evento)
+    internal static (string Asunto, string Html) ConstruirCorreo(HorasFaltantesDetectadas evento)
     {
         var nombre = WebUtility.HtmlEncode(evento.Nombre);
-        var horas = evento.HorasFaltantes.ToString("0.##", CulturaEc);
         var inicio = evento.InicioPeriodo.ToString("dd/MM/yyyy", CulturaEc);
         var fin = evento.FinPeriodo.ToString("dd/MM/yyyy", CulturaEc);
-        var frontendUrl = (_configuration["EmailSettings:FrontendUrl"] ?? "http://localhost:3000").TrimEnd('/');
-        var enlace = WebUtility.HtmlEncode($"{frontendUrl}/time-report/actividades");
+        var enlace = WebUtility.HtmlEncode(UrlRegistrarHoras);
 
-        var proyecto = string.IsNullOrWhiteSpace(evento.NombreProyecto) ? null : evento.NombreProyecto.Trim();
+        // Con desglose, el total es lo que le falta en todos sus proyectos (en el aviso manual, el evento solo
+        // trae lo del proyecto de la fila); sin desglose (eventos viejos o "Sin proyecto"), lo que trae el evento
+        var proyectos = ProyectosConNombre(evento.Proyectos);
+        var totalFaltantes = proyectos.Count > 0 ? proyectos.Sum(p => p.HorasFaltantes) : evento.HorasFaltantes;
+        var horas = Horas(totalFaltantes);
 
-        var asunto = $"Recordatorio: tienes {horas} horas pendientes de registrar" +
-                     (proyecto is null ? " " : $" en {proyecto} ") +
+        var asunto = $"Recordatorio: tienes {horas} horas pendientes de registrar " +
                      $"({evento.InicioPeriodo:dd/MM} - {evento.FinPeriodo:dd/MM})";
 
-        // Cada proyecto exige su propia jornada: el aviso manual de una fila de Seguimiento nombra el proyecto
-        var enProyecto = proyecto is null ? "" : $" en el proyecto <strong>{WebUtility.HtmlEncode(proyecto)}</strong>";
+        // El proyecto no se nombra: la tabla de abajo ya detalla lo que falta en cada uno
         var mensaje = evento.Origen == OrigenNotificacion.Manual
-            ? $"Tu líder técnico te recuerda que tienes horas pendientes de registrar{enProyecto} en el período del <strong>{inicio}</strong> al <strong>{fin}</strong>."
+            ? $"Tu líder técnico te recuerda que tienes horas pendientes de registrar en el período del <strong>{inicio}</strong> al <strong>{fin}</strong>."
             : $"Se realizó el {DescribirCorte(evento)} y detectamos que tienes horas pendientes de registrar en el período del <strong>{inicio}</strong> al <strong>{fin}</strong>.";
 
-        // Corte: cada proyecto exige su propia jornada, así que se detalla lo que falta en cada uno
-        var detalleProyectos = ConstruirDetalleProyectos(evento.Proyectos);
+        // Cada proyecto exige su propia jornada: se detalla lo que falta en cada uno
+        var detalleProyectos = ConstruirDetalleProyectos(proyectos);
 
         var html = $@"
                 <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;'>
@@ -288,32 +293,41 @@ public sealed class EnviarCorreoHandler : IEventHandler<HorasFaltantesDetectadas
         return (asunto, html);
     }
 
-    // Apprise:LogoUrl si está configurado; si no, el logo que publica el frontend en /assets/img
+    private static string Horas(decimal valor) => valor.ToString("0.##", CulturaEc);
+
+    // Solo proyectos reales: la fila "Sin proyecto" no lleva tabla (todas sus horas van contra una jornada)
+    private static IReadOnlyList<HorasProyecto> ProyectosConNombre(IReadOnlyList<HorasProyecto>? proyectos) =>
+        proyectos is null || proyectos.All(p => p.IdProyecto is null) ? [] : proyectos;
+
+    // Logo: Apprise:LogoUrl si está configurado; si no, el que publica el frontend de producción en /assets/img
     private string UrlLogoPublica()
     {
         var configurada = _configuration["Apprise:LogoUrl"];
         var url = string.IsNullOrWhiteSpace(configurada)
-            ? $"{(_configuration["EmailSettings:FrontendUrl"] ?? "http://localhost:3000").TrimEnd('/')}/assets/img/logo-isc.png"
+            ? $"{UrlProduccion}/assets/img/logo-isc.png"
             : configurada;
         return WebUtility.HtmlEncode(url);
     }
 
-    // Tabla "Proyecto | Horas faltantes"; vacía si no hay proyectos (colaborador sin proyecto asignado)
-    private static string ConstruirDetalleProyectos(IReadOnlyList<HorasProyecto>? proyectos)
+    // Tabla "Proyecto | Horas faltantes" con todos los proyectos en los que le faltan horas y el total
+    private static string ConstruirDetalleProyectos(IReadOnlyList<HorasProyecto> proyectos)
     {
-        if (proyectos is null || proyectos.Count == 0 || proyectos.All(p => p.IdProyecto is null))
+        if (proyectos.Count == 0)
             return "";
 
+        const string celda = "padding: 6px 8px; border-top: 1px solid #e5e7eb;";
         var filas = string.Concat(proyectos.Select(p =>
-            $"<tr><td style='padding: 6px 8px; border-top: 1px solid #e5e7eb; color: #1e293b;'>{WebUtility.HtmlEncode(p.Nombre)}</td>" +
-            $"<td style='padding: 6px 8px; border-top: 1px solid #e5e7eb; color: #ef4444; text-align: right; font-weight: bold;'>" +
-            $"{p.HorasFaltantes.ToString("0.##", CulturaEc)} h</td></tr>"));
+            $"<tr><td style='{celda} color: #1e293b;'>{WebUtility.HtmlEncode(p.Nombre)}</td>" +
+            $"<td style='{celda} color: #ef4444; text-align: right; font-weight: bold;'>{Horas(p.HorasFaltantes)} h</td></tr>"));
 
         return $@"<table style='width: 100%; margin-top: 12px; border-collapse: collapse; font-size: 13px;'>
                             <tr><th style='padding: 6px 8px; text-align: left; color: #64748b;'>Proyecto</th>
                                 <th style='padding: 6px 8px; text-align: right; color: #64748b;'>Horas faltantes</th></tr>
                             {filas}
-                        </table>";
+                            <tr><td style='{celda} color: #1e293b; font-weight: bold;'>Total</td>
+                                <td style='{celda} color: #ef4444; text-align: right; font-weight: bold;'>{Horas(proyectos.Sum(p => p.HorasFaltantes))} h</td></tr>
+                        </table>
+                        <p style='margin: 8px 0 0 0; font-size: 12px; color: #64748b;'>Cada proyecto requiere su propia jornada diaria.</p>";
     }
 
     private static string DescribirCorte(HorasFaltantesDetectadas evento) =>
