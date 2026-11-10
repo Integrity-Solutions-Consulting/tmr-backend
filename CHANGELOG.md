@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.8.0...v1.8.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* **notificaciones:** no avisar por proyectos inactivos, completados o cancelados ([98358e1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/98358e19c3b5130fb945c798b08fb99d9caaba98))
+
 ## [1.8.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.7.5...v1.8.0) (2026-11-09)
 
 
