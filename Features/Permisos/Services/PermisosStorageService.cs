@@ -67,7 +67,7 @@ public interface IPermisosStorageService
 /// </summary>
 public sealed class PermisosStorageService : IPermisosStorageService
 {
-    public const long TamanoMaximoBytes = 5 * 1024 * 1024; // 5 MB exactos (RF-005 / RNF-003)
+    public const long TamanoMaximoBytes = 15 * 1024 * 1024; // 15 MB por archivo (certificados médicos, radiografías de alta resolución, etc.)
     private const string LocalBucketMarker = "__local__";
 
     private static readonly ConcurrentDictionary<string, bool> BucketsVerificados = new(StringComparer.Ordinal);
@@ -97,7 +97,7 @@ public sealed class PermisosStorageService : IPermisosStorageService
             throw new InvalidOperationException("El archivo seleccionado está vacío. Por favor adjunta un documento válido.");
 
         if (archivo.Length > TamanoMaximoBytes)
-            throw new InvalidOperationException("El archivo supera el tamaño máximo permitido de 5 MB.");
+            throw new InvalidOperationException("El archivo supera el tamaño máximo permitido de 15 MB por documento.");
 
         var ext = Path.GetExtension(archivo.FileName)?.Trim().ToLowerInvariant();
         if (ext is not (".pdf" or ".png" or ".jpg" or ".jpeg"))

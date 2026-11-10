@@ -178,7 +178,7 @@ public sealed class PermisosPdfService : IPermisosPdfService
                                 if (!string.IsNullOrWhiteSpace(d.EvidenciaNombre))
                                 {
                                     motCol.Item().PaddingTop(4)
-                                        .Text($"Evidencia adjunta: {d.EvidenciaNombre}")
+                                        .Text($"Respaldo cargado en la solicitud (disponible desde el portal TMR): {d.EvidenciaNombre}")
                                         .FontSize(7.5f).Bold().FontColor(ColorCorporativo);
                                 }
                             });

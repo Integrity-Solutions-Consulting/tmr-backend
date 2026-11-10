@@ -252,7 +252,9 @@ public static class PermisosEndpoints
             var enProceso = misSolicitudes.Count(s => s.Estado.Semaforo == "AMARILLO");
             var aprobados = misSolicitudes.Count(s => s.Estado.Codigo == "APROBADA");
             var horasAcumuladas = misSolicitudes
-                .Where(s => s.Estado.Codigo != "RECHAZADA")
+                .Where(s => s.Estado.Codigo != "RECHAZADA"
+                            && s.Estado.Codigo != "OBSERVADA"
+                            && s.Horario is "MANANA" or "TARDE" or "OTROS")
                 .Sum(s => s.HorasSolicitadas ?? (s.DiasSolicitados * 8m));
 
             var persona = empleado?.IdpersonaNavigation ?? usuario.IdpersonaNavigation;
@@ -953,6 +955,7 @@ public static class PermisosEndpoints
 
         group.MapGet("/externo/{token}/evidencia", async (
             string token,
+            [FromQuery] int? adjuntoId,
             ApplicationDbContext db,
             IPermisosStorageService storageService,
             CancellationToken ct) =>
@@ -965,7 +968,9 @@ public static class PermisosEndpoints
             if (!EsTokenExternoValido(token) || solicitud is null || !EsLiderExterno(solicitud.Lider) || (solicitud.TokenExternoExpira.HasValue && solicitud.TokenExternoExpira.Value < DateTime.UtcNow))
                 return Results.NotFound(ApiResponse<object>.Fail(404, "El enlace de revisión no existe o ha expirado.", []));
 
-            var adjunto = solicitud.Adjuntos.Where(a => a.Activo).OrderByDescending(a => a.FechaCreacion).FirstOrDefault();
+            var adjunto = adjuntoId.HasValue
+                ? solicitud.Adjuntos.FirstOrDefault(a => a.Id == adjuntoId.Value && a.Activo)
+                : solicitud.Adjuntos.Where(a => a.Activo).OrderByDescending(a => a.FechaCreacion).FirstOrDefault();
             if (adjunto is null)
                 return Results.NotFound(ApiResponse<object>.Fail(404, "Sin evidencia adjunta.", []));
 
@@ -1042,8 +1047,6 @@ public static class PermisosEndpoints
         var detalleHorarioLimpio = string.IsNullOrWhiteSpace(request.DetalleHorario) ? null : request.DetalleHorario.Replace("\0", "").Trim();
         if (detalleHorarioLimpio?.Length > 120)
             return Results.BadRequest(ApiResponse<object>.Fail(400, "El detalle del horario no puede superar los 120 caracteres.", []));
-        if (false)
-            return Results.BadRequest(ApiResponse<object>.Fail(400, "Por favor escribe el motivo de tu solicitud.", []));
 
         var fechaInicio = ParsearFecha(request.FechaInicio);
         var fechaFin = ParsearFecha(request.FechaFin);
@@ -1086,16 +1089,27 @@ public static class PermisosEndpoints
             diasHabiles = 0.5m;
             horasTotales = 4m;
         }
-        else if (horario == "OTROS" && request.TotalHoras is > 0)
+        else if (horario == "OTROS")
         {
-            horasTotales = Math.Round(request.TotalHoras.Value, 2);
-            if (horasTotales < 0.5m || horasTotales > diasLaborablesRango * 8m)
-                return Results.BadRequest(ApiResponse<object>.Fail(400, $"El total de horas solicitadas debe estar entre 0.5 y {diasLaborablesRango * 8m:0.##} horas para el rango seleccionado.", []));
+            var horasDesdeDetalle = ExtraerHorasDesdeDetalleHorario(detalleHorarioLimpio);
+            if (horasDesdeDetalle.HasValue)
+            {
+                if (horasDesdeDetalle.Value < 0.5m || horasDesdeDetalle.Value >= 8m)
+                    return Results.BadRequest(ApiResponse<object>.Fail(400, "Para la jornada 'Otros', el rango horario debe comprender entre 0.5 y 7.5 horas por día (con hora de fin posterior a la de inicio).", []));
+                horasTotales = Math.Round(horasDesdeDetalle.Value * diasLaborablesRango, 2);
+            }
+            else if (request.TotalHoras is > 0)
+            {
+                horasTotales = Math.Round(request.TotalHoras.Value, 2);
+                if (horasTotales < 0.5m || horasTotales >= diasLaborablesRango * 8m)
+                    return Results.BadRequest(ApiResponse<object>.Fail(400, $"Para la jornada 'Otros', el total de horas solicitadas debe estar entre 0.5 y {(diasLaborablesRango * 8m) - 0.5m:0.##} horas.", []));
+            }
+            else
+            {
+                return Results.BadRequest(ApiResponse<object>.Fail(400, "Para la jornada 'Otros', debes indicar un rango de horas válido (por ejemplo: 09:00 - 11:00).", []));
+            }
+
             diasHabiles = Math.Round(horasTotales / 8m, 2);
-            if (false)
-            diasHabiles = request.TotalDias is > 0
-                ? request.TotalDias.Value
-                : Math.Round(horasTotales / 8m, 2);
         }
         else
         {
@@ -1111,6 +1125,7 @@ public static class PermisosEndpoints
             .Where(s => s.Activo
                         && s.IdEmpleado == empleado.Id
                         && s.Estado.Codigo != "RECHAZADA"
+                        && s.Estado.Codigo != "OBSERVADA"
                         && s.FechaInicio <= fechaFin.Value
                         && s.FechaFin >= fechaInicio.Value)
             .ToListAsync(ct);
@@ -1132,6 +1147,44 @@ public static class PermisosEndpoints
         if (tipoPermiso is null)
             return Results.BadRequest(ApiResponse<object>.Fail(400, "El catálogo de tipos de permiso no está inicializado.", []));
 
+        var hoyEcuadorValidacion = CalculoHorasPeriodo.HoyEcuador();
+        var esPermisoPlanificado = tipoPermiso.Codigo is "VACACIONES" or "MATRIMONIO" or "MATERNIDAD" or "PERMISO_ESTUDIOS";
+        if (esPermisoPlanificado && fechaInicio.Value < hoyEcuadorValidacion)
+        {
+            return Results.BadRequest(ApiResponse<object>.Fail(
+                400,
+                $"Las solicitudes de {tipoPermiso.Nombre} deben registrarse desde la fecha actual ({hoyEcuadorValidacion:dd/MM/yyyy}) en adelante.",
+                []));
+        }
+
+        if (!esPermisoPlanificado && fechaInicio.Value < hoyEcuadorValidacion.AddDays(-60))
+        {
+            return Results.BadRequest(ApiResponse<object>.Fail(
+                400,
+                "La fecha de inicio para permisos retroactivos o imprevistos no puede superar los 60 días de antigüedad.",
+                []));
+        }
+
+        // Validar saldo anual de vacaciones disponibles (base 15 días/año + antigüedad)
+        if (tipoPermiso.Codigo == "VACACIONES")
+        {
+            var solicitudesAnioEmpleado = await db.TblTimeReportSolicitudes
+                .AsNoTracking()
+                .Include(s => s.Estado)
+                .Include(s => s.TipoPermiso)
+                .Where(s => s.Activo && s.IdEmpleado == empleado.Id)
+                .ToListAsync(ct);
+
+            var diasDisponiblesVacaciones = CalcularDiasVacacionesDisponibles(empleado, solicitudesAnioEmpleado);
+            if (diasHabiles > diasDisponiblesVacaciones)
+            {
+                return Results.BadRequest(ApiResponse<object>.Fail(
+                    400,
+                    $"No cuentas con suficientes días de vacaciones disponibles. Solicitas {diasHabiles:0.##} día(s), pero tu saldo disponible actual es de {diasDisponiblesVacaciones:0.##} día(s).",
+                    []));
+            }
+        }
+
         // RF-004: Certificado médico obligatorio para Nómina en Licencia por enfermedad > 1 día
         var (esNomina, _) = await ResolverRegimenContratoAsync(db, empleado, ct);
         if (esNomina
@@ -1147,6 +1200,13 @@ public static class PermisosEndpoints
 
         // RNF-003: Validar tamaño <= 5 MB, MIME y cabecera binaria ANTES de abrir transacción
         var archivosValidados = new List<ArchivoValidadoPreSubida>();
+        if (archivosAdjuntos.Count > 5)
+        {
+            return Results.BadRequest(ApiResponse<object>.Fail(
+                400,
+                "Puedes adjuntar hasta un máximo de 5 archivos por solicitud (15 MB máximo cada uno).",
+                []));
+        }
         if (archivosAdjuntos.Count > 0)
         {
             if (storageService is null)
@@ -1708,10 +1768,44 @@ public static class PermisosEndpoints
         var diasVacacionesTomadosAnio = misSolicitudes
             .Where(s => s.TipoPermiso.Codigo == "VACACIONES"
                         && s.Estado.Codigo != "RECHAZADA"
+                        && s.Estado.Codigo != "OBSERVADA"
                         && s.FechaInicio.Year == hoy.Year)
             .Sum(s => s.DiasSolicitados);
 
         return Math.Max(0m, diasBaseAnual - diasVacacionesTomadosAnio);
+    }
+
+    private static decimal? ExtraerHorasDesdeDetalleHorario(string? detalleHorario)
+    {
+        if (string.IsNullOrWhiteSpace(detalleHorario))
+            return null;
+
+        var match = System.Text.RegularExpressions.Regex.Match(
+            detalleHorario,
+            @"(\d{1,2}):(\d{2})\s*(?:[-–—]|a)\s*(\d{1,2}):(\d{2})",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        if (!match.Success)
+            return null;
+
+        if (!int.TryParse(match.Groups[1].Value, out var hIni)
+            || !int.TryParse(match.Groups[2].Value, out var mIni)
+            || !int.TryParse(match.Groups[3].Value, out var hFin)
+            || !int.TryParse(match.Groups[4].Value, out var mFin))
+        {
+            return null;
+        }
+
+        var minInicio = (hIni * 60) + mIni;
+        var minFin = (hFin * 60) + mFin;
+        if (minFin <= minInicio)
+            return 0m;
+
+        var minutosEfectivos = minFin - minInicio;
+        if (minInicio <= (12 * 60) + 30 && minFin >= (13 * 60) + 30 && minutosEfectivos > 270)
+            minutosEfectivos -= 60;
+
+        return Math.Round(minutosEfectivos / 60m, 2);
     }
 
     private static async Task EmitirNotificacionesInternasPaso1LegacyUnusedAsync(
@@ -1774,13 +1868,6 @@ public static class PermisosEndpoints
                 destinatarios.TryAdd(idRrhh, "/permisos/rrhh");
         }
 
-        if (false)
-        {
-        var idsRrhh = await ObtenerIdsUsuariosRrhhAsync(db, ct);
-        foreach (var idRrhh in idsRrhh)
-            destinatarios.TryAdd(idRrhh, "/permisos/rrhh");
-
-        }
         if (destinatarios.Count == 0) return;
 
         foreach (var (idUsuarioDestino, ruta) in destinatarios)
