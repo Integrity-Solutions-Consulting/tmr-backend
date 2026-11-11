@@ -573,8 +573,12 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
         var filaComentarios = string.IsNullOrWhiteSpace(comentarios)
             ? ""
             : $@"<tr>
-                  <td style='padding: 5px 0; color: #b45309; vertical-align: top;'>Observaciones</td>
-                  <td style='padding: 5px 0; color: #92400e; font-weight: 500; vertical-align: top;'>{WebUtility.HtmlEncode(comentarios)}</td>
+                  <td colspan='2' style='padding-top: 10px;'>
+                    <div style='background-color: #fffbeb; border-left: 3px solid #d97706; padding: 10px 14px; border-radius: 4px;'>
+                      <div style='font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #92400e; margin-bottom: 2px;'>Comentarios / Observaciones</div>
+                      <div style='font-size: 13px; color: #78350f; line-height: 1.45;'>{WebUtility.HtmlEncode(comentarios)}</div>
+                    </div>
+                  </td>
                 </tr>";
 
         var clienteProyecto = string.IsNullOrWhiteSpace(p.Proyecto) || p.Proyecto == p.Cliente
