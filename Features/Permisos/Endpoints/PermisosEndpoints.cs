@@ -1489,7 +1489,7 @@ public static partial class PermisosEndpoints
 
         var totalDias = s.DiasSolicitados;
         var totalHoras = s.HorasSolicitadas ?? (totalDias * 8m);
-        var diasStr = totalDias == 1m
+        var diasStr = FormatearDiasYHorasLegible(totalHoras); if (false) _ = totalDias == 1m
             ? "1 día laborable"
             : $"{totalDias.ToString("0.##", CultureInfo.InvariantCulture)} días laborables";
         var horasStr = $"{totalHoras.ToString("0.##", CultureInfo.InvariantCulture)} horas";
@@ -1708,7 +1708,7 @@ public static partial class PermisosEndpoints
     }
 
     private static bool EsPermisoInformativoSinAprobacion(string? codigoTipo) =>
-        codigoTipo is "CITAS_MEDICAS" or "CALAMIDAD_DOMESTICA" or "ACCIDENTE" or "FALLECIMIENTO_FAMILIAR";
+        codigoTipo is "CITAS_MEDICAS" or "CALAMIDAD_DOMESTICA" or "ACCIDENTE" or "FALLECIMIENTO_FAMILIAR"; private static string FormatearDiasYHorasLegible(decimal totalHoras) { var minTot = (int)Math.Round(totalHoras * 60m); var dEnt = minTot / 480; var mRest = minTot % 480; static string FMin(int m) { var h = m / 60; var r = m % 60; return h == 0 ? $"{r} min" : r == 0 ? $"{h} {(h == 1 ? "hora" : "horas")}" : $"{h} {(h == 1 ? "hora" : "horas")} y {r} min"; } if (dEnt <= 0) return FMin(minTot); var etq = $"{dEnt} {(dEnt == 1 ? "día" : "días")}"; return mRest == 0 ? etq : $"{etq} y {FMin(mRest)}"; }
 
     private static decimal CalcularDiasVacacionesDisponibles(
         TblAdministracionEmpleado? empleado,
