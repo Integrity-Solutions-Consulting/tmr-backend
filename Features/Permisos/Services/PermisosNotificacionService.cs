@@ -229,7 +229,7 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
 
                 if (!string.IsNullOrWhiteSpace(permiso.LiderCorreo))
                 {
-                    var esExterno = string.Equals(permiso.LiderTipo, "EXT", StringComparison.OrdinalIgnoreCase);
+                    var esExterno = string.Equals(permiso.LiderTipo, "EXT", StringComparison.OrdinalIgnoreCase) && permiso.EstadoClase != "confirmado";
                     todosEncolados &= await EncolarCorreoIndividualAsync(
                         permiso.Id,
                         folio,
@@ -366,8 +366,8 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
                         rolDestinatario: "Colaborador Solicitante",
                         badgeRolBg: "#eff6ff",
                         badgeRolColor: "#1d4ed8",
-                        subtituloCabecera: "Confirmación de Registro de Solicitud",
-                        mensajePersonalizado: $"Tu solicitud de <strong>{WebUtility.HtmlEncode(permiso.Tipo)}</strong> ({WebUtility.HtmlEncode(folio)}) ha sido registrada exitosamente y se envió a tu Jefe Inmediato (<strong>{WebUtility.HtmlEncode(permiso.LiderNombre)}</strong>) para su revisión.",
+                        subtituloCabecera: permiso.EstadoClase == "confirmado" ? "Registro de Permiso Informativo" : "Confirmación de Registro de Solicitud",
+                        mensajePersonalizado: permiso.EstadoClase == "confirmado" ? $"Tu permiso por <strong>{WebUtility.HtmlEncode(permiso.Tipo)}</strong> ({WebUtility.HtmlEncode(folio)}) ha sido registrado automáticamente. Este tipo de permiso no requiere aprobación y se ha enviado una copia informativa a tu Jefe Inmediato (<strong>{WebUtility.HtmlEncode(permiso.LiderNombre)}</strong>) y a <strong>Talento Humano (RRHH)</strong>." : $"Tu solicitud de <strong>{WebUtility.HtmlEncode(permiso.Tipo)}</strong> ({WebUtility.HtmlEncode(folio)}) ha sido registrada exitosamente y se envió a tu Jefe Inmediato (<strong>{WebUtility.HtmlEncode(permiso.LiderNombre)}</strong>) para su revisión.",
                         ctaUrl: $"{frontendUrl}/permisos?solicitud={permiso.Id}",
                         ctaTexto: "Ver seguimiento en Mis Permisos",
                         notaPieBoton: "Recibirás un correo personalizado en cada cambio de estado de tu solicitud.");
@@ -377,7 +377,7 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
 
                 if (rolDestinatario == RolDestinatarioCorreoPermiso.JefeInmediato)
                 {
-                    var esExterno = string.Equals(permiso.LiderTipo, "EXT", StringComparison.OrdinalIgnoreCase);
+                    var esExterno = string.Equals(permiso.LiderTipo, "EXT", StringComparison.OrdinalIgnoreCase) && permiso.EstadoClase != "confirmado";
                     var ctaLiderUrl = esExterno && !string.IsNullOrWhiteSpace(permiso.TokenExterno)
                         ? $"{frontendUrl}/permisos/revision-externa?token={Uri.EscapeDataString(permiso.TokenExterno)}"
                         : $"{frontendUrl}/permisos/equipo?solicitud={permiso.Id}";
@@ -390,17 +390,17 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
                         rolDestinatario: esExterno ? "Jefe Inmediato Externo · Enlace Directo" : "Jefe Inmediato / Líder TMR",
                         badgeRolBg: esExterno ? "#f3e8ff" : "#e0f2fe",
                         badgeRolColor: esExterno ? "#7e22ce" : "#0369a1",
-                        subtituloCabecera: "Nueva Solicitud Pendiente de tu Aprobación",
+                        subtituloCabecera: permiso.EstadoClase == "confirmado" ? "Copia Informativa de Permiso (No requiere aprobación)" : "Nueva Solicitud Pendiente de tu Aprobación",
                         mensajePersonalizado: esExterno
                             ? $"El colaborador <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong> asignado a <strong>{WebUtility.HtmlEncode(permiso.Cliente)}</strong> ha registrado una solicitud de <strong>{WebUtility.HtmlEncode(permiso.Tipo)}</strong>. Puedes revisarla y aprobarla o rechazarla directamente mediante el siguiente enlace seguro sin necesidad de iniciar sesión:"
-                            : $"El colaborador <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong> de tu equipo ha registrado una solicitud de <strong>{WebUtility.HtmlEncode(permiso.Tipo)}</strong> que requiere tu revisión y aprobación.",
+                            : permiso.EstadoClase == "confirmado" ? $"El colaborador <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong> de tu equipo ha registrado un permiso por <strong>{WebUtility.HtmlEncode(permiso.Tipo)}</strong> para el período <strong>{WebUtility.HtmlEncode(permiso.Fechas)}</strong>. Este tipo de permiso no requiere aprobación; se envía esta copia informativa para tu conocimiento." : $"El colaborador <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong> de tu equipo ha registrado una solicitud de <strong>{WebUtility.HtmlEncode(permiso.Tipo)}</strong> que requiere tu revisión y aprobación.",
                         ctaUrl: ctaLiderUrl,
                         ctaTexto: esExterno ? "Revisar y Aprobar Solicitud" : "Revisar Solicitud en Aprobación Líder",
                         notaPieBoton: esExterno
                             ? "Enlace único de aprobación externa (válido por 72 horas)."
                             : "Ingresa a la bandeja de Aprobación Líder en TMR para gestionar la solicitud.");
 
-                    return ($"[Acción Requerida] Aprobación de permiso {folio} — {permiso.Colaborador}", html);
+                    return (permiso.EstadoClase == "confirmado" ? $"[Copia Informativa] Permiso {folio} ({permiso.Tipo}) — {permiso.Colaborador}" : $"[Acción Requerida] Aprobación de permiso {folio} — {permiso.Colaborador}", html);
                 }
 
                 var htmlRrhh = RenderizarCorreo(
@@ -411,13 +411,13 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
                     rolDestinatario: "Talento Humano (RRHH)",
                     badgeRolBg: "#fef3c7",
                     badgeRolColor: "#b45309",
-                    subtituloCabecera: "Nueva Solicitud en Flujo de Aprobación",
-                    mensajePersonalizado: $"Se ha registrado una nueva solicitud de <strong>{WebUtility.HtmlEncode(permiso.Tipo)}</strong> por parte de <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong>. Actualmente se encuentra en espera de aprobación de su Jefe Inmediato (<strong>{WebUtility.HtmlEncode(permiso.LiderNombre)}</strong>).",
+                    subtituloCabecera: permiso.EstadoClase == "confirmado" ? "Copia Informativa para Talento Humano" : "Nueva Solicitud en Flujo de Aprobación",
+                    mensajePersonalizado: permiso.EstadoClase == "confirmado" ? $"Se ha registrado un permiso por <strong>{WebUtility.HtmlEncode(permiso.Tipo)}</strong> por parte de <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong> para el período <strong>{WebUtility.HtmlEncode(permiso.Fechas)}</strong>. Este tipo de permiso no requiere aprobación ni descuenta días de vacaciones; se envía esta copia para registro de Talento Humano." : $"Se ha registrado una nueva solicitud de <strong>{WebUtility.HtmlEncode(permiso.Tipo)}</strong> por parte de <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong>. Actualmente se encuentra en espera de aprobación de su Jefe Inmediato (<strong>{WebUtility.HtmlEncode(permiso.LiderNombre)}</strong>).",
                     ctaUrl: $"{frontendUrl}/permisos/rrhh?solicitud={permiso.Id}",
                     ctaTexto: "Ver Bandeja de Validación RRHH",
                     notaPieBoton: "Serás notificado nuevamente apenas el Jefe Inmediato registre su aprobación.");
 
-                return ($"[Talento Humano] Nueva solicitud {folio} en curso — {permiso.Colaborador}", htmlRrhh);
+                return (permiso.EstadoClase == "confirmado" ? $"[Copia Informativa RRHH] Permiso {folio} ({permiso.Tipo}) — {permiso.Colaborador}" : $"[Talento Humano] Nueva solicitud {folio} en curso — {permiso.Colaborador}", htmlRrhh);
             }
 
             case EventoNotificacionPermiso.ReenvioMagicLink:

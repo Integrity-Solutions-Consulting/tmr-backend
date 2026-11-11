@@ -990,7 +990,7 @@ public static partial class PermisosEndpoints
             return Results.BadRequest(ApiResponse<object>.Fail(400, "Por favor escribe el motivo de tu solicitud.", []));
         if (motivoLimpio.Length > 2000)
             return Results.BadRequest(ApiResponse<object>.Fail(400, "El motivo no puede superar los 2000 caracteres.", []));
-        var detalleHorarioLimpio = string.IsNullOrWhiteSpace(request.DetalleHorario) ? null : request.DetalleHorario.Replace("\0", "").Trim();
+        var detalleHorarioLimpio = string.IsNullOrWhiteSpace(request.DetalleHorario) ? "08:30 - 17:30" : request.DetalleHorario.Replace("\0", "").Trim();
         if (detalleHorarioLimpio?.Length > 120)
             return Results.BadRequest(ApiResponse<object>.Fail(400, "El detalle del horario no puede superar los 120 caracteres.", []));
 
@@ -1035,20 +1035,22 @@ public static partial class PermisosEndpoints
             diasHabiles = 0.5m;
             horasTotales = 4m;
         }
-        else if (horario == "OTROS")
+        else if (horario is "OTROS" or "COMPLETA")
         {
             var horasDesdeDetalle = ExtraerHorasDesdeDetalleHorario(detalleHorarioLimpio);
             if (horasDesdeDetalle.HasValue)
             {
-                if (horasDesdeDetalle.Value < 0.5m || horasDesdeDetalle.Value >= 8m)
-                    return Results.BadRequest(ApiResponse<object>.Fail(400, "Revisa el horario: elige horas dentro de la jornada laboral, con la hora de fin posterior al inicio. El permiso debe durar entre 30 minutos y 7 horas y 30 minutos por día.", []));
+                if (horasDesdeDetalle.Value < 0.5m || horasDesdeDetalle.Value > 8m)
+                    return Results.BadRequest(ApiResponse<object>.Fail(400, "Revisa el horario: elige horas dentro de la jornada laboral, con la hora de fin posterior al inicio. El permiso debe durar entre 30 minutos y 8 horas por día.", []));
+                horario = horasDesdeDetalle.Value >= 8m ? "COMPLETA" : "OTROS";
                 horasTotales = Math.Round(horasDesdeDetalle.Value * diasLaborablesRango, 2);
             }
             else if (request.TotalHoras is > 0)
             {
                 horasTotales = Math.Round(request.TotalHoras.Value, 2);
-                if (horasTotales < 0.5m || horasTotales >= diasLaborablesRango * 8m)
-                    return Results.BadRequest(ApiResponse<object>.Fail(400, "Revisa la duración solicitada: debe ser de al menos 30 minutos y menor al total de horas laborables del período.", []));
+                if (horasTotales < 0.5m || horasTotales > diasLaborablesRango * 8m)
+                    return Results.BadRequest(ApiResponse<object>.Fail(400, "Revisa la duración solicitada: debe ser de al menos 30 minutos y hasta 8 horas por día laborable.", []));
+                horario = horasTotales >= diasLaborablesRango * 8m ? "COMPLETA" : "OTROS";
             }
             else
             {
@@ -1079,7 +1081,7 @@ public static partial class PermisosEndpoints
         var traslapePropio = solicitudesMismoEmpleado.FirstOrDefault(s =>
             !(s.FechaInicio == fechaInicio.Value
               && s.FechaFin == fechaFin.Value
-              && ((s.Horario == "MANANA" && horario == "TARDE") || (s.Horario == "TARDE" && horario == "MANANA"))));
+              && (((s.Horario == "MANANA" && horario == "TARDE") || (s.Horario == "TARDE" && horario == "MANANA")) || (s.DiasSolicitados + diasHabiles <= 1m && !string.Equals(s.DetalleHorario, detalleHorarioLimpio, StringComparison.OrdinalIgnoreCase)))));
 
         if (traslapePropio is not null)
         {
@@ -1122,11 +1124,11 @@ public static partial class PermisosEndpoints
                 .ToListAsync(ct);
 
             var diasDisponiblesVacaciones = CalcularDiasVacacionesDisponibles(empleado, solicitudesAnioEmpleado);
-            if (diasHabiles > diasDisponiblesVacaciones)
+            if (diasHabiles > 15m || horasTotales > 120m || diasHabiles > diasDisponiblesVacaciones)
             {
                 return Results.BadRequest(ApiResponse<object>.Fail(
                     400,
-                    $"No cuentas con suficientes días de vacaciones disponibles. Solicitas {diasHabiles:0.##} día(s), pero tu saldo disponible actual es de {diasDisponiblesVacaciones:0.##} día(s).",
+                    $"Solo se pueden solicitar hasta 15 días (120 horas) de vacaciones al año. Solicitas {diasHabiles:0.##} día(s) ({horasTotales:0.##} h), pero tu saldo disponible actual es de {diasDisponiblesVacaciones:0.##} día(s) ({Math.Round(diasDisponiblesVacaciones * 8m, 2):0.##} h).",
                     []));
             }
         }
@@ -1172,7 +1174,8 @@ public static partial class PermisosEndpoints
             }
         }
 
-        var idEstadoPendiente = await ObtenerIdEstadoSolicitudAsync(db, "PENDIENTE_JEFE", ct);
+        var esInformativo = EsPermisoInformativoSinAprobacion(tipoPermiso.Codigo);
+        var idEstadoPendiente = await ObtenerIdEstadoSolicitudAsync(db, esInformativo ? "APROBADA" : "PENDIENTE_JEFE", ct);
 
         // Resolver asignación de proyecto, cliente y líder (RF-001).
         int? idAsignacion = null;
@@ -1270,9 +1273,9 @@ public static partial class PermisosEndpoints
                         Horario = horario,
                         DetalleHorario = detalleHorarioLimpio,
                         HorasSolicitadas = horasTotales,
-                        ImpactoTimeReport = "RESTA_META",
-                        TokenExterno = esLiderExternoAsignado ? Guid.NewGuid().ToString("N") : null,
-                        TokenExternoExpira = esLiderExternoAsignado ? DateTime.UtcNow.AddHours(72) : null,
+                        ImpactoTimeReport = esInformativo ? "SIN_IMPACTO" : "RESTA_META",
+                        TokenExterno = !esInformativo && esLiderExternoAsignado ? Guid.NewGuid().ToString("N") : null,
+                        TokenExternoExpira = !esInformativo && esLiderExternoAsignado ? DateTime.UtcNow.AddHours(72) : null,
                         Activo = true,
                         UsuarioCreacion = usuario.Email,
                         FechaCreacion = DateTime.UtcNow,
@@ -1472,7 +1475,7 @@ public static partial class PermisosEndpoints
 
         var fechaAprobStr = revTh?.FechaRevision.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)
                             ?? revLider?.FechaRevision.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)
-                            ?? "Pendiente";
+                            ?? (s.Estado.Codigo == "APROBADA" ? fechaSolicitudStr : "Pendiente");
 
         var totalDias = s.DiasSolicitados;
         var totalHoras = s.HorasSolicitadas ?? (totalDias * 8m);
@@ -1494,9 +1497,9 @@ public static partial class PermisosEndpoints
             revLider?.Decision,
             revTh?.Decision);
 
-        var metodoLider = revLider?.MetodoRevision == "MAGIC_LINK_EXTERNO" || (revLider is null && esLiderExt)
+        var metodoLider = EsPermisoInformativoSinAprobacion(s.TipoPermiso.Codigo) ? "Copia informativa" : (revLider?.MetodoRevision == "MAGIC_LINK_EXTERNO" || (revLider is null && esLiderExt)
             ? "Magic Link Externo"
-            : "Cuenta TMR Líder";
+            : "Cuenta TMR Líder");
 
         var responsableRrhh = revTh?.UsuarioRevisor?.IdpersonaNavigation is { } pTh
             ? $"{pTh.Nombres} {pTh.Apellidos}".Trim()
@@ -1694,6 +1697,9 @@ public static partial class PermisosEndpoints
         return (!esServiciosProf, detalle.Valor ?? "Relación de dependencia (Nómina)");
     }
 
+    private static bool EsPermisoInformativoSinAprobacion(string? codigoTipo) =>
+        codigoTipo is "CITAS_MEDICAS" or "CALAMIDAD_DOMESTICA" or "ACCIDENTE" or "FALLECIMIENTO_FAMILIAR";
+
     private static decimal CalcularDiasVacacionesDisponibles(
         TblAdministracionEmpleado? empleado,
         IReadOnlyCollection<TblTimeReportSolicitud> misSolicitudes)
@@ -1709,7 +1715,7 @@ public static partial class PermisosEndpoints
 
             // Código del Trabajo (Art. 69): 1 día adicional por cada año que exceda de 5, hasta 15 adicionales
             if (aniosCompletos > 5)
-                diasBaseAnual += Math.Min(15, aniosCompletos - 5);
+                diasBaseAnual = 15m;
         }
 
         var diasVacacionesTomadosAnio = misSolicitudes
@@ -1823,8 +1829,8 @@ public static partial class PermisosEndpoints
             {
                 IdUsuarioDestino = idUsuarioDestino,
                 IdSolicitud = solicitud.Id,
-                Titulo = $"Nueva solicitud {dto.Codigo} ({dto.Tipo})",
-                Mensaje = $"{dto.Colaborador} registró una solicitud para {dto.Fechas}.",
+                Titulo = EsPermisoInformativoSinAprobacion(solicitud.TipoPermiso.Codigo) ? $"Copia informativa {dto.Codigo} ({dto.Tipo})" : $"Nueva solicitud {dto.Codigo} ({dto.Tipo})",
+                Mensaje = EsPermisoInformativoSinAprobacion(solicitud.TipoPermiso.Codigo) ? $"{dto.Colaborador} registró un permiso informativo de {dto.Tipo} para {dto.Fechas} (no requiere aprobación)." : $"{dto.Colaborador} registró una solicitud para {dto.Fechas}.",
                 UrlDestino = ruta,
                 Leida = false,
                 FechaCreacion = DateTime.UtcNow
@@ -2204,6 +2210,8 @@ public static partial class PermisosEndpoints
             "NAC" or "NACIMIENTO" or "NACIMIENTO_HIJO" => "NACIMIENTO_HIJO",
             "MTR" or "MATERNIDAD" => "MATERNIDAD",
             "FAL" or "FALLECIMIENTO" or "FALLECIMIENTO_FAMILIAR" => "FALLECIMIENTO_FAMILIAR",
+            "CAL" or "CALAMIDAD" or "CALAMIDAD_DOMESTICA" => "CALAMIDAD_DOMESTICA",
+            "ACC" or "ACCIDENTE" or "ACCIDENTES" => "ACCIDENTE",
             _ => "OTROS"
         };
 
