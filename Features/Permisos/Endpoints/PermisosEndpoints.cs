@@ -170,62 +170,6 @@ public static partial class PermisosEndpoints
                 .OrderBy(l => l.Nombre)
                 .ToList();
 
-            // Incluir todos los proyectos activos en BD con su Cliente y Jefe Inmediato asociado para búsqueda/selección
-            var todosProyectosActivos = await db.TblTimeReportProyectos
-                .AsNoTracking()
-                .Where(p => p.Activo)
-                .Include(p => p.IdclienteNavigation)
-                .OrderBy(p => p.Nombre)
-                .ToListAsync(ct);
-
-            foreach (var p in todosProyectosActivos)
-            {
-                if (proyectosYaAgregados.Contains(p.Id))
-                    continue;
-
-                var liderProy = liderPrincipalPorProyecto.GetValueOrDefault(p.Id);
-                var asigCabecera = todasAsignacionesActivas
-                    .FirstOrDefault(a => a.Idproyecto == p.Id && a.Idempleado == null && a.Idlider != null);
-
-                proyectosAsignados.Add(new ProyectoAsignadoPermisoDto(
-                    IdProyecto: p.Id,
-                    ProyectoNombre: p.Nombre,
-                    IdCliente: p.Idcliente,
-                    ClienteNombre: ObtenerNombreCliente(p.IdclienteNavigation),
-                    IdLider: liderProy?.Id,
-                    LiderNombre: ObtenerNombreLider(liderProy),
-                    LiderTipo: EsLiderExterno(liderProy) ? "EXT" : "INT",
-                    LiderCorreo: liderProy?.IdpersonaNavigation?.Email,
-                    IdAsignacionProyecto: asigCabecera?.Id,
-                    EsAsignacionPropia: false));
-                proyectosYaAgregados.Add(p.Id);
-            }
-
-            // Si en BD aún no existen proyectos pero sí clientes activos, exponer esos clientes reales
-            if (proyectosAsignados.Count == 0)
-            {
-                var clientesActivos = await db.TblAdministracionClientes
-                    .AsNoTracking()
-                    .Where(c => c.Activo)
-                    .OrderBy(c => c.Nombrecomercial ?? c.Razonsocial)
-                    .ToListAsync(ct);
-
-                foreach (var c in clientesActivos)
-                {
-                    proyectosAsignados.Add(new ProyectoAsignadoPermisoDto(
-                        IdProyecto: 0,
-                        ProyectoNombre: "",
-                        IdCliente: c.Id,
-                        ClienteNombre: ObtenerNombreCliente(c),
-                        IdLider: null,
-                        LiderNombre: "",
-                        LiderTipo: "INT",
-                        LiderCorreo: null,
-                        IdAsignacionProyecto: null,
-                        EsAsignacionPropia: false));
-                }
-            }
-
             var tiposPermisoCatalogo = await db.TblTimeReportTiposPermiso
                 .AsNoTracking()
                 .Where(t => t.Activo)
