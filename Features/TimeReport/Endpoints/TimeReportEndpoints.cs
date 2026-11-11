@@ -291,10 +291,11 @@ public static class TimeReportEndpoints
                 .ToListAsync();
 
             var jornadas = await CalculoHorasPeriodo.CargarJornadasAsync(db, [idEmpleado]);
+            var solicitudes = await CalculoHorasPeriodo.CargarSolicitudesAprobadasAsync(db, inicio, fin, [idEmpleado], idProyecto);
             // sm - Misma regla que la fila de Seguimiento: solo días entre Entrada y Salida de la asignación (del proyecto
             // pedido, o de cualquiera de sus proyectos si no se manda idProyecto).
             var vigencias = await CalculoHorasPeriodo.CargarVigenciasAsync(db, idEmpleado, idProyecto);
-            var calculo = CalculoHorasPeriodo.Calcular(empleado, inicio, fin, actividadesPeriodo, feriadosPeriodo, hoyEcuador, jornadas[idEmpleado], vigencias);
+            var calculo = CalculoHorasPeriodo.Calcular(empleado, inicio, fin, actividadesPeriodo, feriadosPeriodo, hoyEcuador, jornadas[idEmpleado], vigencias, solicitudes[idEmpleado], idProyecto);
             return Results.Ok(new ResumenHorasDto(calculo.HorasPorRegistrar, calculo.HorasRegistradas, calculo.PromedioPorDia, calculo.HorasJornada));
         });
 
@@ -493,6 +494,7 @@ public static class TimeReportEndpoints
             var colaboradores = new List<SeguimientoColaboradorDto>();
             // sm - Historial de contratos: la jornada de cada día es la del contrato vigente ese día (8 h / 6 h pasante).
             var jornadas = await CalculoHorasPeriodo.CargarJornadasAsync(db, empIds);
+            var solicitudesAprobadas = await CalculoHorasPeriodo.CargarSolicitudesAprobadasAsync(db, filtro.FechaDesde, filtro.FechaHasta, empIds);
 
             // sm - "Hoy" según la hora de Ecuador (ver CalculoHorasPeriodo): no se cuentan los días futuros del rango.
             var hoyEcuador = CalculoHorasPeriodo.HoyEcuador();
@@ -522,7 +524,7 @@ public static class TimeReportEndpoints
                 // (no hay un proyecto específico contra el cual separar horas/días).
                 if (!empProys.Any())
                 {
-                    var calculoSinProyecto = CalculoHorasPeriodo.Calcular(e, filtro.FechaDesde, filtro.FechaHasta, empActividades, feriados, hoyEcuador, jornadas[e.Id]);
+                    var calculoSinProyecto = CalculoHorasPeriodo.Calcular(e, filtro.FechaDesde, filtro.FechaHasta, empActividades, feriados, hoyEcuador, jornadas[e.Id], vigencias: null, solicitudes: solicitudesAprobadas[e.Id], idProyectoFiltro: null);
                     colaboradores.Add(new SeguimientoColaboradorDto(
                         e.Id,
                         nombreCompleto,
@@ -567,7 +569,7 @@ public static class TimeReportEndpoints
                     // sm - Solo se exigen horas entre la Entrada y la Salida del recurso en ESTE proyecto: si quedó
                     // Inactivo (o entró) dentro del rango, los días fuera de su asignación no suman pendientes.
                     var vigencias = g.Select(ep => new VigenciaAsignacion(ep.Fechaasignacion, ep.Fechafinasignacion)).ToList();
-                    var calculo = CalculoHorasPeriodo.Calcular(e, filtro.FechaDesde, filtro.FechaHasta, actividadesProyecto, feriados, hoyEcuador, jornadas[e.Id], vigencias);
+                    var calculo = CalculoHorasPeriodo.Calcular(e, filtro.FechaDesde, filtro.FechaHasta, actividadesProyecto, feriados, hoyEcuador, jornadas[e.Id], vigencias, solicitudes: solicitudesAprobadas[e.Id], idProyectoFiltro: g.Key);
 
                     // sm - Salida del proyecto: si alguna asignación del rango no tiene salida, sigue vigente (null).
                     var salidaProyecto = g.Any(ep => ep.Fechafinasignacion == null) ? null : g.Max(ep => ep.Fechafinasignacion);
