@@ -6,7 +6,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using tmr_backend.Features.Permisos.Endpoints;
 using tmr_backend.Features.Permisos.Services;
+using tmr_backend.Features.TimeReport.Services;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
 using tmr_backend.Infrastructure.Messaging;
@@ -32,8 +34,88 @@ Check(!PermisoAvisoVigencia.EsVigente(aviso with { IncluirTokenExterno = true },
 solicitud.Activo = false;
 Check(!PermisoAvisoVigencia.EsVigente(aviso, solicitud), "solicitud inactiva");
 
+// Verificar vigencia cuando una solicitud nace directamente en APROBADA (informativa) o PENDIENTE_TH (sin líder)
+var solInformativa = new TblTimeReportSolicitud
+{
+    Activo = true,
+    FechaCreacion = version,
+    Estado = new TblTimeReportEstadoSolicitud { Codigo = "APROBADA", CodigoCorto = "CON", Nombre = "Confirmado" },
+    Empleado = new TblAdministracionEmpleado { Codigoempleado = "EMP-01", IdpersonaNavigation = new TblAdministracionPersona { Nombres = "Carlos", Apellidos = "Colaborador" } },
+    TipoPermiso = new TblTimeReportTipoPermiso { Codigo = "CITAS_MEDICAS", CodigoCorto = "CIT", Nombre = "Citas médicas" },
+    FechaSolicitud = new DateOnly(2026, 11, 11),
+    FechaInicio = new DateOnly(2026, 11, 11),
+    FechaFin = new DateOnly(2026, 11, 11),
+    FechaRegreso = new DateOnly(2026, 11, 12),
+    DiasSolicitados = 1m,
+    HorasSolicitadas = 8m,
+    Horario = "COMPLETA",
+    DetalleHorario = "08:30 - 17:30",
+    Motivo = "Control médico general",
+    Codigo = "PER-2026-001"
+};
+var avisoInformativo = new CorreoPermisoEncolado(
+    1, "PER-2026-001", "colab@tmr.com", "Carlos",
+    RolDestinatarioCorreoPermiso.Colaborador, EventoNotificacionPermiso.SolicitudCreada,
+    VersionSolicitud: version, EstadoSolicitud: "APROBADA");
+Check(PermisoAvisoVigencia.EsVigente(avisoInformativo, solInformativa), "aviso informativo naciente en APROBADA es vigente");
+
+// Verificar formato de Período y Duración sin paréntesis anidados
+var dtoDiaCompleto = PermisosEndpoints.MapearSolicitudDto(solInformativa, null);
+Check(dtoDiaCompleto.Fechas == "11/11/2026 · 08:30 - 17:30", $"formato fecha limpia: {dtoDiaCompleto.Fechas}");
+Check(dtoDiaCompleto.Duracion == "1 día · 8 horas", $"formato duración día completo sin paréntesis: {dtoDiaCompleto.Duracion}");
+Check(!dtoDiaCompleto.Fechas.Contains('(') && !dtoDiaCompleto.Duracion.Contains('('), "sin paréntesis en período ni duración");
+
+solInformativa.DiasSolicitados = 0.25m;
+solInformativa.HorasSolicitadas = 2m;
+solInformativa.Horario = "OTROS";
+solInformativa.DetalleHorario = "09:00 - 11:00";
+var dtoParcial = PermisosEndpoints.MapearSolicitudDto(solInformativa, null);
+Check(dtoParcial.Fechas == "11/11/2026 · 09:00 - 11:00", $"formato fecha parcial: {dtoParcial.Fechas}");
+Check(dtoParcial.Duracion == "2 horas", $"formato duración parcial sin redundancia: {dtoParcial.Duracion}");
+
+// Verificar renderizado de plantilla HTML para todos los eventos y roles sin placeholders pendientes
+var rutaPlantilla = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "Features", "Permisos", "Templates", "notificacion-permiso.html"));
+var htmlPlantilla = await File.ReadAllTextAsync(rutaPlantilla);
+foreach (var ev in Enum.GetValues<EventoNotificacionPermiso>())
+{
+    foreach (var rol in Enum.GetValues<RolDestinatarioCorreoPermiso>())
+    {
+        var (asuntoRender, htmlRender) = PermisosNotificacionService.ConstruirMensajeCorreo(
+            htmlPlantilla,
+            dtoDiaCompleto with { TokenExterno = "0123456789abcdef0123456789abcdef", LiderTipo = "EXT", ObservacionRrhh = "Revisado OK" },
+            rol,
+            "Usuario Prueba",
+            ev,
+            "http://localhost:4200",
+            "http://localhost:4200/assets/img/logo-isc.png");
+        Check(!string.IsNullOrWhiteSpace(asuntoRender), $"asunto generado para {ev}/{rol}");
+        Check(!htmlRender.Contains("{{"), $"sin placeholders pendientes en {ev}/{rol}");
+    }
+}
+
+// Verificar sincronización de cálculo de horas con RESTA_META y SUMA_REPORTADAS
+var diaPrueba = new DateOnly(2026, 11, 11); // Miércoles laborable
+var empPrueba = new TblAdministracionEmpleado { Id = 10, Activo = true, Fechaingreso = new DateOnly(2022, 1, 1) };
+var calcSinPermiso = CalculoHorasPeriodo.Calcular(
+    empPrueba, diaPrueba, diaPrueba, [], new HashSet<DateOnly>(), diaPrueba);
+Check(calcSinPermiso.HorasEsperadas == 8m && calcSinPermiso.HorasPorRegistrar == 8m, "sin permiso exige 8h");
+
+var calcRestaMeta = CalculoHorasPeriodo.Calcular(
+    empPrueba, diaPrueba, diaPrueba, [], new HashSet<DateOnly>(), diaPrueba,
+    solicitudes: [new SolicitudAprobadaPeriodo(10, diaPrueba, diaPrueba, "COMPLETA", 8m, "RESTA_META")]);
+Check(calcRestaMeta.HorasEsperadas == 0m && calcRestaMeta.HorasPorRegistrar == 0m && calcRestaMeta.DiasACompletar == 0 && calcRestaMeta.Estado == "Completo", "RESTA_META reduce meta a 0h y cubre el día");
+
+var calcSumaReportadas = CalculoHorasPeriodo.Calcular(
+    empPrueba, diaPrueba, diaPrueba, [], new HashSet<DateOnly>(), diaPrueba,
+    solicitudes: [new SolicitudAprobadaPeriodo(10, diaPrueba, diaPrueba, "MANANA", 4m, "SUMA_REPORTADAS")]);
+Check(calcSumaReportadas.HorasEsperadas == 8m && calcSumaReportadas.HorasRegistradas == 4m && calcSumaReportadas.HorasPorRegistrar == 4m, "SUMA_REPORTADAS acredita 4h registradas");
+
 var cs = Environment.GetEnvironmentVariable("TMR_TEST_POSTGRES");
-if (string.IsNullOrEmpty(cs)) throw new Exception("TMR_TEST_POSTGRES debe apuntar a PostgreSQL aislado.");
+if (string.IsNullOrEmpty(cs))
+{
+    Console.WriteLine("Comprobaciones unitarias de notificaciones, plantillas y Time Report finalizaron correctamente.");
+    return;
+}
 var connection = new NpgsqlConnectionStringBuilder(cs);
 if (connection.Database != "tmr_notifications_tests" || connection.Host != "127.0.0.1")
     throw new Exception("Solo se admite la base local aislada tmr_notifications_tests.");
