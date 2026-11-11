@@ -1191,7 +1191,7 @@ public static partial class PermisosEndpoints
             .ToListAsync(ct);
 
         // Sin proyecto elegido se usa la asignación activa más reciente del colaborador
-        idProyecto ??= asignacionesEmpleado.FirstOrDefault()?.Idproyecto;
+        idProyecto = asignacionesEmpleado.Count == 0 ? null : (idProyecto != null && asignacionesEmpleado.Any(a => a.Idproyecto == idProyecto.Value) ? idProyecto : asignacionesEmpleado.FirstOrDefault()?.Idproyecto);
 
         if (idProyecto.HasValue)
         {
@@ -1231,7 +1231,7 @@ public static partial class PermisosEndpoints
             }
         }
 
-        if (!idLider.HasValue && idLiderSolicitado.HasValue)
+        if (!idLider.HasValue && idLiderSolicitado.HasValue && asignacionesEmpleado.Count > 0)
         {
             var liderActivo = await db.TblAdministracionLiders
                 .AnyAsync(l => l.Id == idLiderSolicitado.Value && l.Activo, ct);
@@ -1241,6 +1241,7 @@ public static partial class PermisosEndpoints
             idLider = idLiderSolicitado;
         }
 
+        idEstadoPendiente = await ObtenerIdEstadoSolicitudAsync(db, esInformativo ? "APROBADA" : (idLider.HasValue ? "PENDIENTE_JEFE" : "PENDIENTE_TH"), ct);
         var esLiderExternoAsignado = idLider.HasValue && await db.TblAdministracionLiders.AsNoTracking().Include(l => l.IdtipoNavigation).FirstOrDefaultAsync(l => l.Id == idLider.Value && l.Activo, ct) is { } liderEnt && EsLiderExterno(liderEnt);
         var anio = fechaInicio.Value.Year;
         int nuevaSolicitudId = 0;
@@ -1437,7 +1438,7 @@ public static partial class PermisosEndpoints
         var cliente = ObtenerNombreCliente(cliEfectivo);
         var proyecto = proyEfectivo?.Nombre ?? "General ISC";
 
-        var liderNombre = ObtenerNombreLider(liderEfectivo);
+        var liderNombre = liderEfectivo is not null ? ObtenerNombreLider(liderEfectivo) : "Sin líder (Directo a RRHH)";
         var esLiderExt = EsLiderExterno(liderEfectivo);
         var liderTipo = esLiderExt ? "EXT" : "INT";
         var liderCorreo = liderEfectivo?.IdpersonaNavigation?.Email;
@@ -1497,9 +1498,9 @@ public static partial class PermisosEndpoints
             revLider?.Decision,
             revTh?.Decision);
 
-        var metodoLider = EsPermisoInformativoSinAprobacion(s.TipoPermiso.Codigo) ? "Copia informativa" : (revLider?.MetodoRevision == "MAGIC_LINK_EXTERNO" || (revLider is null && esLiderExt)
+        var metodoLider = EsPermisoInformativoSinAprobacion(s.TipoPermiso.Codigo) ? "Copia informativa" : (liderEfectivo is null ? "Directo a RRHH (Sin proyecto)" : (revLider?.MetodoRevision == "MAGIC_LINK_EXTERNO" || (revLider is null && esLiderExt)
             ? "Magic Link Externo"
-            : "Cuenta TMR Líder");
+            : "Cuenta TMR Líder"));
 
         var responsableRrhh = revTh?.UsuarioRevisor?.IdpersonaNavigation is { } pTh
             ? $"{pTh.Nombres} {pTh.Apellidos}".Trim()
@@ -1829,8 +1830,8 @@ public static partial class PermisosEndpoints
             {
                 IdUsuarioDestino = idUsuarioDestino,
                 IdSolicitud = solicitud.Id,
-                Titulo = EsPermisoInformativoSinAprobacion(solicitud.TipoPermiso.Codigo) ? $"Copia informativa {dto.Codigo} ({dto.Tipo})" : $"Nueva solicitud {dto.Codigo} ({dto.Tipo})",
-                Mensaje = EsPermisoInformativoSinAprobacion(solicitud.TipoPermiso.Codigo) ? $"{dto.Colaborador} registró un permiso informativo de {dto.Tipo} para {dto.Fechas} (no requiere aprobación)." : $"{dto.Colaborador} registró una solicitud para {dto.Fechas}.",
+                Titulo = EsPermisoInformativoSinAprobacion(solicitud.TipoPermiso.Codigo) ? $"Copia informativa {dto.Codigo} ({dto.Tipo})" : (!solicitud.IdLider.HasValue ? $"Pendiente confirmación TH: {dto.Codigo} ({dto.Tipo})" : $"Nueva solicitud {dto.Codigo} ({dto.Tipo})"),
+                Mensaje = EsPermisoInformativoSinAprobacion(solicitud.TipoPermiso.Codigo) ? $"{dto.Colaborador} registró un permiso informativo de {dto.Tipo} para {dto.Fechas} (no requiere aprobación)." : (!solicitud.IdLider.HasValue ? $"{dto.Colaborador} registró una solicitud directa para Talento Humano ({dto.Fechas})." : $"{dto.Colaborador} registró una solicitud para {dto.Fechas}."),
                 UrlDestino = ruta,
                 Leida = false,
                 FechaCreacion = DateTime.UtcNow
