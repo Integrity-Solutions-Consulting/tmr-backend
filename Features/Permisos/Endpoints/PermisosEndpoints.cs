@@ -15,11 +15,13 @@ using tmr_backend.Shared.Wrappers;
 
 namespace tmr_backend.Features.Permisos.Endpoints;
 
-public static class PermisosEndpoints
+public static partial class PermisosEndpoints
 {
     public static void MapPermisosEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/permisos").WithTags("Permisos");
+        group.AddEndpointFilter<PermisoNotificacionTransactionFilter>();
+        MapEnviosPermisoEndpoints(group);
 
         // 0. Diagnóstico de conexión a MinIO S3 (restringido a RRHH / Administradores)
         group.MapGet("/storage/estado", async (
@@ -1095,14 +1097,14 @@ public static class PermisosEndpoints
             if (horasDesdeDetalle.HasValue)
             {
                 if (horasDesdeDetalle.Value < 0.5m || horasDesdeDetalle.Value >= 8m)
-                    return Results.BadRequest(ApiResponse<object>.Fail(400, "Para la jornada 'Otros', el rango horario debe comprender entre 0.5 y 7.5 horas por día (con hora de fin posterior a la de inicio).", []));
+                    return Results.BadRequest(ApiResponse<object>.Fail(400, "Revisa el horario: elige horas dentro de la jornada laboral, con la hora de fin posterior al inicio. El permiso debe durar entre 30 minutos y 7 horas y 30 minutos por día.", []));
                 horasTotales = Math.Round(horasDesdeDetalle.Value * diasLaborablesRango, 2);
             }
             else if (request.TotalHoras is > 0)
             {
                 horasTotales = Math.Round(request.TotalHoras.Value, 2);
                 if (horasTotales < 0.5m || horasTotales >= diasLaborablesRango * 8m)
-                    return Results.BadRequest(ApiResponse<object>.Fail(400, $"Para la jornada 'Otros', el total de horas solicitadas debe estar entre 0.5 y {(diasLaborablesRango * 8m) - 0.5m:0.##} horas.", []));
+                    return Results.BadRequest(ApiResponse<object>.Fail(400, "Revisa la duración solicitada: debe ser de al menos 30 minutos y menor al total de horas laborables del período.", []));
             }
             else
             {
@@ -1375,7 +1377,27 @@ public static class PermisosEndpoints
                     await db.SaveChangesAsync(ct);
                 }
 
+                var creada = await ConsultarSolicitudesBase(db).FirstAsync(s => s.Id == nuevaSolicitudId, ct);
+                var dto = MapearSolicitudDto(creada, null);
+
+                // Campana SSE en tiempo real (RF-010)
+                var campanaOk = await EmitirNotificacionesInternasPaso1SeguraAsync(db, sseNotifier, creada, dto, ct, request.IdUsuarioRrhh);
+
+                // Correo / Apprise (encolado asíncronamente en el Outbox de mensajería)
+                var correoColab = creada.Empleado.Emailcorporativo
+                                  ?? creada.Empleado.IdpersonaNavigation.Email
+                                  ?? usuario.Email;
+
+                // Solo el correo al líder externo usa el token; la respuesta HTTP no lo incluye
+                var correoOk = await NotificarCorreoSeguroAsync(db, notificacionService,
+                    dto with { TokenExterno = creada.TokenExterno },
+                    correoColab,
+                    EventoNotificacionPermiso.SolicitudCreada, request.IdUsuarioRrhh,
+                    ct);
+
+                if (!campanaOk || !correoOk) throw new InvalidOperationException("No se pudo registrar el aviso de la solicitud.");
                 await tx.CommitAsync(ct);
+                return Results.Ok(ApiResponse<PermisoItemDto>.Ok(dto, "Tu solicitud fue registrada correctamente."));
             }
             catch (Exception ex)
             {
@@ -1390,25 +1412,6 @@ public static class PermisosEndpoints
             }
         }
 
-        var creada = await ConsultarSolicitudesBase(db).FirstAsync(s => s.Id == nuevaSolicitudId, ct);
-        var dto = MapearSolicitudDto(creada, null);
-
-        // Campana SSE en tiempo real (RF-010)
-        var campanaOk = await EmitirNotificacionesInternasPaso1SeguraAsync(db, sseNotifier, creada, dto, ct, request.IdUsuarioRrhh);
-
-        // Correo / Apprise (encolado asíncronamente en el Outbox de mensajería)
-        var correoColab = creada.Empleado.Emailcorporativo
-                          ?? creada.Empleado.IdpersonaNavigation.Email
-                          ?? usuario.Email;
-
-        // Solo el correo al líder externo usa el token; la respuesta HTTP no lo incluye
-        var correoOk = await NotificarCorreoSeguroAsync(db, notificacionService,
-            dto with { TokenExterno = creada.TokenExterno },
-            correoColab,
-            EventoNotificacionPermiso.SolicitudCreada, request.IdUsuarioRrhh,
-            ct);
-
-        return ResponderPostCommit(dto, "Tu solicitud fue registrada correctamente.", campanaOk && correoOk);
     }
 
     private static async Task<string> GenerarSiguienteCodigoSolicitudAsync(
@@ -1885,7 +1888,7 @@ public static class PermisosEndpoints
         }
 
         await db.SaveChangesAsync(ct);
-        sseNotifier.NotificarUsuarios(destinatarios.Keys);
+        await CampanaPermisoEncolada.GuardarAsync(db, destinatarios.Keys, ct);
     }
 
     private static async Task EmitirNotificacionesInternasPaso2Async(
@@ -1974,7 +1977,7 @@ public static class PermisosEndpoints
         if (idsNotificados.Count > 0)
         {
             await db.SaveChangesAsync(ct);
-            sseNotifier.NotificarUsuarios(idsNotificados);
+            await CampanaPermisoEncolada.GuardarAsync(db, idsNotificados, ct);
         }
     }
 
@@ -2005,7 +2008,7 @@ public static class PermisosEndpoints
         });
 
         await db.SaveChangesAsync(ct);
-        sseNotifier.NotificarUsuarios([idUsuarioColab.Value]);
+        await CampanaPermisoEncolada.GuardarAsync(db, [idUsuarioColab.Value], ct);
     }
 
     private static async Task<int?> ObtenerIdUsuarioDeEmpleadoAsync(ApplicationDbContext db, int idPersona, CancellationToken ct) =>
@@ -2396,6 +2399,7 @@ public static class PermisosEndpoints
         }
         catch (Exception ex)
         {
+            if (db.Database.CurrentTransaction is not null) throw;
             db.ChangeTracker.Clear();
             RegistrarAdvertenciaPostCommit(db, ex, $"campana interna Paso 1 ({dto.Codigo})");
             return false;
@@ -2417,6 +2421,7 @@ public static class PermisosEndpoints
         }
         catch (Exception ex)
         {
+            if (db.Database.CurrentTransaction is not null) throw;
             db.ChangeTracker.Clear();
             RegistrarAdvertenciaPostCommit(db, ex, $"campana interna Paso 2 ({dto.Codigo})");
             return false;
@@ -2438,6 +2443,7 @@ public static class PermisosEndpoints
         }
         catch (Exception ex)
         {
+            if (db.Database.CurrentTransaction is not null) throw;
             db.ChangeTracker.Clear();
             RegistrarAdvertenciaPostCommit(db, ex, $"campana interna Paso 3 ({dto.Codigo})");
             return false;
@@ -2469,6 +2475,7 @@ public static class PermisosEndpoints
         }
         catch (Exception ex)
         {
+            if (db.Database.CurrentTransaction is not null) throw;
             db.ChangeTracker.Clear();
             RegistrarAdvertenciaPostCommit(db, ex, $"encolado de correo Outbox ({dto.Codigo} - {evento})");
             return false;

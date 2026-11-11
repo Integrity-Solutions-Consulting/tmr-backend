@@ -43,7 +43,13 @@ public sealed record CorreoPermisoEncolado(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? Asunto = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? Html = null) : IEvento;
+    string? Html = null,
+    PermisoItemDto? Instantanea = null,
+    DateTime? VersionSolicitud = null,
+    string? EstadoSolicitud = null,
+    string? ReintentadoPor = null,
+    DateTimeOffset? FechaReintento = null,
+    Guid? EnvioAnterior = null) : IEvento;
 
 /// <summary>
 /// Handler del bus de mensajería (Outbox + EventDispatcher) que consulta la solicitud actualizada,
@@ -80,6 +86,11 @@ public sealed class EnviarCorreoPermisoHandler : IEventHandler<CorreoPermisoEnco
         if (string.IsNullOrWhiteSpace(destinatario))
             return;
 
+        var vigente = await PermisosEndpoints.ConsultarSolicitudesBase(_db)
+            .FirstOrDefaultAsync(s => s.Id == evento.IdSolicitud && s.Activo, ct);
+        if (!PermisoAvisoVigencia.EsVigente(evento, vigente))
+            throw new EventoObsoletoException();
+
         string asunto;
         string html;
 
@@ -103,7 +114,7 @@ public sealed class EnviarCorreoPermisoHandler : IEventHandler<CorreoPermisoEnco
                 return;
             }
 
-            var dto = PermisosEndpoints.MapearSolicitudDto(solicitud, null);
+            var dto = evento.Instantanea ?? PermisosEndpoints.MapearSolicitudDto(solicitud, null);
             if (evento.IncluirTokenExterno)
             {
                 dto = dto with { TokenExterno = solicitud.TokenExterno };
@@ -152,10 +163,9 @@ public sealed class EnviarCorreoPermisoHandler : IEventHandler<CorreoPermisoEnco
             }
         }
 
-        if (_emailService is not null)
-        {
-            await _emailService.SendEmailAsync(destinatario, asunto, html);
-        }
+        if (_emailService is null)
+            throw new InvalidOperationException("No hay un proveedor de correo disponible.");
+        await _emailService.SendEmailAsync(destinatario, asunto, html);
     }
 }
 
@@ -173,6 +183,7 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
 {
     private readonly ApplicationDbContext _db;
     private readonly IEventBus _eventBus;
+    private readonly HashSet<string> _destinatariosEncolados = new(StringComparer.OrdinalIgnoreCase);
     private readonly ILogger<PermisosNotificacionService> _logger;
 
     public PermisosNotificacionService(
@@ -194,6 +205,7 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
     {
         var folio = permiso.FolioOrCodigo();
         var todosEncolados = true;
+        _destinatariosEncolados.Clear();
 
         // Resolver destinatario(s) de Talento Humano respetando la selección del colaborador (o Líder de TH por defecto)
         var usuariosRrhh = await ObtenerDestinatariosRrhhAsync(permiso.Id, idUsuarioRrhhElegido, ct);
@@ -356,7 +368,7 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
                         badgeRolColor: "#1d4ed8",
                         subtituloCabecera: "Confirmación de Registro de Solicitud",
                         mensajePersonalizado: $"Tu solicitud de <strong>{WebUtility.HtmlEncode(permiso.Tipo)}</strong> ({WebUtility.HtmlEncode(folio)}) ha sido registrada exitosamente y se envió a tu Jefe Inmediato (<strong>{WebUtility.HtmlEncode(permiso.LiderNombre)}</strong>) para su revisión.",
-                        ctaUrl: $"{frontendUrl}/permisos",
+                        ctaUrl: $"{frontendUrl}/permisos?solicitud={permiso.Id}",
                         ctaTexto: "Ver seguimiento en Mis Permisos",
                         notaPieBoton: "Recibirás un correo personalizado en cada cambio de estado de tu solicitud.");
 
@@ -368,7 +380,7 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
                     var esExterno = string.Equals(permiso.LiderTipo, "EXT", StringComparison.OrdinalIgnoreCase);
                     var ctaLiderUrl = esExterno && !string.IsNullOrWhiteSpace(permiso.TokenExterno)
                         ? $"{frontendUrl}/permisos/revision-externa?token={Uri.EscapeDataString(permiso.TokenExterno)}"
-                        : $"{frontendUrl}/permisos/equipo";
+                        : $"{frontendUrl}/permisos/equipo?solicitud={permiso.Id}";
 
                     var html = RenderizarCorreo(
                         plantilla,
@@ -401,7 +413,7 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
                     badgeRolColor: "#b45309",
                     subtituloCabecera: "Nueva Solicitud en Flujo de Aprobación",
                     mensajePersonalizado: $"Se ha registrado una nueva solicitud de <strong>{WebUtility.HtmlEncode(permiso.Tipo)}</strong> por parte de <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong>. Actualmente se encuentra en espera de aprobación de su Jefe Inmediato (<strong>{WebUtility.HtmlEncode(permiso.LiderNombre)}</strong>).",
-                    ctaUrl: $"{frontendUrl}/permisos/rrhh",
+                    ctaUrl: $"{frontendUrl}/permisos/rrhh?solicitud={permiso.Id}",
                     ctaTexto: "Ver Bandeja de Validación RRHH",
                     notaPieBoton: "Serás notificado nuevamente apenas el Jefe Inmediato registre su aprobación.");
 
@@ -425,7 +437,7 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
                     subtituloCabecera: "Recordatorio de Aprobación Pendiente",
                     mensajePersonalizado: $"Talento Humano de Integrity Solutions te reenvía el enlace directo para revisar y confirmar la solicitud de <strong>{WebUtility.HtmlEncode(permiso.Tipo)}</strong> de <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong>.",
                     ctaUrl: ctaLiderUrl,
-                    ctaTexto: "Abrir Formulario Oficial y Responder",
+                    ctaTexto: "Revisar solicitud",
                     notaPieBoton: "Enlace renovado por 72 horas. No requiere usuario ni contraseña.");
 
                 return ($"[Recordatorio] Aprobación pendiente {folio} — {permiso.Colaborador}", html);
@@ -457,7 +469,7 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
                             (evento == EventoNotificacionPermiso.AprobadaPorLider
                                 ? " Ahora ha pasado a la bandeja de <strong>Talento Humano (RRHH)</strong> para su confirmación final."
                                 : ""),
-                        ctaUrl: $"{frontendUrl}/permisos",
+                        ctaUrl: $"{frontendUrl}/permisos?solicitud={permiso.Id}",
                         ctaTexto: "Consultar mi Solicitud y PDF",
                         notaPieBoton: "Puedes visualizar el documento oficial actualizado desde tu bandeja Mis Permisos.");
 
@@ -478,7 +490,7 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
                     mensajePersonalizado: evento == EventoNotificacionPermiso.AprobadaPorLider
                         ? $"El Jefe Inmediato (<strong>{WebUtility.HtmlEncode(permiso.LiderNombre)}</strong>) aprobó la solicitud <strong>{WebUtility.HtmlEncode(folio)}</strong> de <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong> ({WebUtility.HtmlEncode(permiso.MetodoLider)}). Ya puedes revisarla y dar la confirmación definitiva de Talento Humano."
                         : $"El Jefe Inmediato (<strong>{WebUtility.HtmlEncode(permiso.LiderNombre)}</strong>) marcó la solicitud <strong>{WebUtility.HtmlEncode(folio)}</strong> de <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong> como <strong>{WebUtility.HtmlEncode(permiso.EstadoTexto)}</strong>.",
-                    ctaUrl: $"{frontendUrl}/permisos/rrhh",
+                    ctaUrl: $"{frontendUrl}/permisos/rrhh?solicitud={permiso.Id}",
                     ctaTexto: "Revisar Solicitud en Validación RRHH",
                     notaPieBoton: "Al confirmar se actualizará el formulario oficial PDF y su impacto en Time Report.");
 
@@ -507,11 +519,11 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
                             ? "Confirmación Definitiva de Talento Humano"
                             : "Solicitud Observada / Devuelta por Talento Humano",
                         mensajePersonalizado: confirmada
-                            ? $"¡Tu solicitud <strong>{WebUtility.HtmlEncode(folio)}</strong> ({WebUtility.HtmlEncode(permiso.Tipo)}) ha sido <strong>confirmada definitivamente por Talento Humano</strong>! El formulario oficial PDF con todas las firmas digitales de aprobación ya está disponible para su descarga."
+                            ? $"¡Tu solicitud <strong>{WebUtility.HtmlEncode(folio)}</strong> ({WebUtility.HtmlEncode(permiso.Tipo)}) ha sido <strong>confirmada definitivamente por Talento Humano</strong>! Puedes consultar el resultado y descargar el PDF desde TMR."
                             : $"Talento Humano ha revisado tu solicitud <strong>{WebUtility.HtmlEncode(folio)}</strong> y ha registrado una observación para subsanación.",
-                        ctaUrl: $"{frontendUrl}/permisos",
+                        ctaUrl: $"{frontendUrl}/permisos?solicitud={permiso.Id}",
                         ctaTexto: confirmada ? "Descargar PDF Oficial en Mis Permisos" : "Revisar Observación en Mis Permisos",
-                        notaPieBoton: "El seguimiento de tu solicitud ha concluido en el flujo de aprobaciones.");
+                        notaPieBoton: confirmada ? "La solicitud está confirmada." : "Consulta el comentario de Talento Humano en tu solicitud.");
 
                     var asuntoColab = confirmada
                         ? $"[Confirmado] Solicitud {folio} aprobada por Talento Humano"
@@ -534,8 +546,8 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
                     mensajePersonalizado: confirmada
                         ? $"Te informamos que Talento Humano ha confirmado definitivamente la solicitud <strong>{WebUtility.HtmlEncode(folio)}</strong> del colaborador <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong> para el período <strong>{WebUtility.HtmlEncode(permiso.Fechas)}</strong>."
                         : $"Talento Humano devolvió con observaciones la solicitud <strong>{WebUtility.HtmlEncode(folio)}</strong> del colaborador <strong>{WebUtility.HtmlEncode(permiso.Colaborador)}</strong>.",
-                    ctaUrl: $"{frontendUrl}/permisos/equipo",
-                    ctaTexto: "Ver en TMR",
+                    ctaUrl: permiso.LiderTipo == "EXT" ? "" : $"{frontendUrl}/permisos/equipo?solicitud={permiso.Id}",
+                    ctaTexto: "Ver solicitud",
                     notaPieBoton: "Notificación de seguimiento para coordinación del equipo.");
 
                 return ($"[Seguimiento Equipo] Solicitud {folio} ({permiso.Colaborador}) — {permiso.EstadoTexto}", htmlLider);
@@ -635,6 +647,12 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
             ? p.Cliente
             : $"{p.Cliente} ({p.Proyecto})";
 
+        if (string.IsNullOrWhiteSpace(ctaUrl))
+        {
+            var inicio = plantilla.IndexOf("<a href=\"{{CTA_URL}}\"", StringComparison.Ordinal);
+            var fin = inicio < 0 ? -1 : plantilla.IndexOf("</a>", inicio, StringComparison.Ordinal);
+            if (fin >= inicio && inicio >= 0) plantilla = plantilla.Remove(inicio, fin + 4 - inicio);
+        }
         return plantilla
             .Replace("{{TITULO_CORREO}}", WebUtility.HtmlEncode(subtituloCabecera))
             .Replace("{{LOGO_URL}}", logoUrl)
@@ -791,6 +809,11 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
     {
         try
         {
+            if (!_destinatariosEncolados.Add(destinatarioOriginal.Trim())) return true;
+            var solicitud = await PermisosEndpoints.ConsultarSolicitudesBase(_db)
+                .FirstAsync(s => s.Id == idSolicitud, ct);
+            var snapshot = PermisosEndpoints.MapearSolicitudDto(solicitud, null);
+            if (incluirTokenExterno) snapshot = snapshot with { TokenExterno = solicitud.TokenExterno };
             await _eventBus.PublishAsync(
                 new CorreoPermisoEncolado(
                     IdSolicitud: idSolicitud,
@@ -799,12 +822,16 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
                     NombreDestinatario: nombreDestinatario,
                     RolDestinatario: rolDestinatario,
                     Evento: evento,
-                    IncluirTokenExterno: incluirTokenExterno),
+                    IncluirTokenExterno: incluirTokenExterno,
+                    Instantanea: snapshot,
+                    VersionSolicitud: solicitud.FechaModificacion ?? solicitud.FechaCreacion,
+                    EstadoSolicitud: solicitud.Estado.Codigo),
                 ct);
             return true;
         }
         catch (Exception ex)
         {
+            if (_db.Database.CurrentTransaction is not null) throw;
             _logger.LogWarning(
                 ex,
                 "No se pudo encolar notificación de permiso {Folio} ({Evento}) para {Destinatario}",

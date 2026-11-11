@@ -37,7 +37,8 @@ public class EventBus : IEventBus
         await _db.SaveChangesAsync(ct);
 
         // 2. Después se avisa al dispatcher, enviando solo el Id por el canal en memoria
-        await _canal.Writer.WriteAsync(fila.Id, ct);
+        if (_db.Database.CurrentTransaction is null)
+            await _canal.Writer.WriteAsync(fila.Id, ct);
 
         _logger.LogDebug("Evento {Tipo} publicado con Id {Id}", fila.TipoEvento, fila.Id);
     }

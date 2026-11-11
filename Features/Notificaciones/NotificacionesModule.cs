@@ -70,6 +70,7 @@ public static class NotificacionesModule
 
         // Correos asíncronos del módulo de Permisos
         services.AddScoped<IEventHandler<CorreoPermisoEncolado>, EnviarCorreoPermisoHandler>();
+        services.AddScoped<IEventHandler<CampanaPermisoEncolada>, CampanaPermisoHandler>();
 
         return services;
     }
