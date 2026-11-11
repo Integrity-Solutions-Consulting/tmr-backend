@@ -1123,12 +1123,21 @@ public static partial class PermisosEndpoints
                 .Where(s => s.Activo && s.IdEmpleado == empleado.Id)
                 .ToListAsync(ct);
 
-            var diasDisponiblesVacaciones = CalcularDiasVacacionesDisponibles(empleado, solicitudesAnioEmpleado);
-            if (diasHabiles > 15m || horasTotales > 120m || diasHabiles > diasDisponiblesVacaciones)
+            var anioSolicitado = fechaInicio?.Year ?? DateTime.UtcNow.Year;
+            var diasDisponiblesVacaciones = CalcularDiasVacacionesDisponibles(empleado, solicitudesAnioEmpleado, anioSolicitado);
+            if (diasHabiles > 15m || horasTotales > 120m)
             {
                 return Results.BadRequest(ApiResponse<object>.Fail(
                     400,
-                    $"Solo se pueden solicitar hasta 15 días (120 horas) de vacaciones al año. Solicitas {diasHabiles:0.##} día(s) ({horasTotales:0.##} h), pero tu saldo disponible actual es de {diasDisponiblesVacaciones:0.##} día(s) ({Math.Round(diasDisponiblesVacaciones * 8m, 2):0.##} h).",
+                    $"Por política operativa, cada solicitud individual de vacaciones puede ser de hasta 15 días laborables (120 horas). Solicitas {diasHabiles:0.##} día(s) ({horasTotales:0.##} h). Tu saldo disponible total es de {diasDisponiblesVacaciones:0.##} día(s).",
+                    []));
+            }
+
+            if (diasHabiles > diasDisponiblesVacaciones)
+            {
+                return Results.BadRequest(ApiResponse<object>.Fail(
+                    400,
+                    $"No cuentas con suficientes días de vacaciones disponibles para el período {anioSolicitado}. Solicitas {diasHabiles:0.##} día(s) ({horasTotales:0.##} h), pero tu saldo disponible para este año es de {diasDisponiblesVacaciones:0.##} día(s) ({Math.Round(diasDisponiblesVacaciones * 8m, 2):0.##} h).",
                     []));
             }
         }
@@ -1703,27 +1712,31 @@ public static partial class PermisosEndpoints
 
     private static decimal CalcularDiasVacacionesDisponibles(
         TblAdministracionEmpleado? empleado,
-        IReadOnlyCollection<TblTimeReportSolicitud> misSolicitudes)
+        IReadOnlyCollection<TblTimeReportSolicitud> misSolicitudes,
+        int? anioObjetivo = null)
     {
         var hoy = CalculoHorasPeriodo.HoyEcuador();
+        var anio = anioObjetivo ?? hoy.Year;
         var diasBaseAnual = 15m;
 
         if (empleado?.Fechaingreso is { } ingreso && ingreso < hoy)
         {
-            var aniosCompletos = hoy.Year - ingreso.Year;
-            if (hoy < ingreso.AddYears(aniosCompletos))
+            var aniosCompletos = anio - ingreso.Year;
+            if (ingreso > new DateOnly(anio, 1, 1))
+                aniosCompletos = 0;
+            else if (hoy < ingreso.AddYears(Math.Max(0, aniosCompletos)))
                 aniosCompletos--;
 
             // Código del Trabajo (Art. 69): 1 día adicional por cada año que exceda de 5, hasta 15 adicionales
             if (aniosCompletos > 5)
-                diasBaseAnual = 15m;
+                diasBaseAnual += Math.Min(15m, aniosCompletos - 5);
         }
 
         var diasVacacionesTomadosAnio = misSolicitudes
             .Where(s => s.TipoPermiso.Codigo == "VACACIONES"
                         && s.Estado.Codigo != "RECHAZADA"
                         && s.Estado.Codigo != "OBSERVADA"
-                        && s.FechaInicio.Year == hoy.Year)
+                        && s.FechaInicio.Year == anio)
             .Sum(s => s.DiasSolicitados);
 
         return Math.Max(0m, diasBaseAnual - diasVacacionesTomadosAnio);
