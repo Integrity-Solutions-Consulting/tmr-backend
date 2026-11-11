@@ -603,7 +603,7 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
             .Replace("{{TIPO_PERMISO}}", WebUtility.HtmlEncode(p.Tipo))
             .Replace("{{FECHAS}}", WebUtility.HtmlEncode(p.Fechas))
             .Replace("{{FECHA_REGRESO}}", WebUtility.HtmlEncode(p.FechaRegreso))
-            .Replace("{{DURACION}}", WebUtility.HtmlEncode($"{p.DiasSolicitados} ({p.HorasSolicitadas})"))
+            .Replace("{{DURACION}}", WebUtility.HtmlEncode(string.IsNullOrWhiteSpace(p.Duracion) ? $"{p.DiasSolicitados} día(s) ({p.HorasSolicitadas} h)" : p.Duracion))
             .Replace("{{HORARIO}}", WebUtility.HtmlEncode(p.Horario))
             .Replace("{{MOTIVO}}", WebUtility.HtmlEncode(p.Motivo))
             .Replace("{{FILA_COMENTARIOS}}", filaComentarios)
