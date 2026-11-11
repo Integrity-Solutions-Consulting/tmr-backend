@@ -17,8 +17,7 @@ public static class PermisoAvisoVigencia
             EventoNotificacionPermiso.ConfirmadaPorRrhh => "APROBADA",
             _ => "OBSERVADA"
         };
-        if (solicitud.Estado.Codigo != esperado
-            && !(evento.Evento == EventoNotificacionPermiso.SolicitudCreada && solicitud.Estado.Codigo is "APROBADA" or "PENDIENTE_TH"))
+        if (solicitud.Estado.Codigo != esperado)
             return false;
         if (evento.IncluirTokenExterno)
             return !solicitud.TokenExternoUsadoEn.HasValue && solicitud.TokenExternoExpira > DateTime.UtcNow
