@@ -569,78 +569,12 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
         string ctaTexto,
         string notaPieBoton)
     {
-        var (estadoBg, estadoColor, estadoBorder) = p.EstadoClase switch
-        {
-            "confirmado" => ("#dcfce7", "#166534", "#86efac"),
-            "rechazado" => ("#fee2e2", "#991b1b", "#fca5a5"),
-            "rrhh" => ("#dbeafe", "#1e40af", "#93c5fd"),
-            _ => ("#fef3c7", "#92400e", "#fcd34d")
-        };
-
-        const string paso1Bg = "#16a34a";
-        const string paso1Color = "#ffffff";
-        var paso1Detalle = $"Registrado ({p.FechaSolicitud})";
-
-        string paso2Bg;
-        string paso2Color = "#ffffff";
-        string paso2Detalle;
-        if (p.AprobadoLider)
-        {
-            paso2Bg = "#16a34a";
-            paso2Detalle = $"Aprobado ({p.FechaAprobacionLider ?? p.FechaAprobacion})";
-        }
-        else if (p.EstadoClase == "rechazado")
-        {
-            paso2Bg = "#dc2626";
-            paso2Detalle = "Rechazado";
-        }
-        else if (p.EstadoCodigo == "OBS")
-        {
-            paso2Bg = "#d97706";
-            paso2Detalle = "Observado";
-        }
-        else
-        {
-            paso2Bg = "#f59e0b";
-            paso2Detalle = "En espera de aprobación";
-        }
-
-        string paso3Bg;
-        string paso3Color = "#ffffff";
-        string paso3Detalle;
-        if (p.ConfirmadoRrhh)
-        {
-            paso3Bg = "#16a34a";
-            paso3Detalle = $"Confirmado ({p.FechaConfirmacionRrhh ?? p.FechaAprobacion})";
-        }
-        else if (p.EstadoCodigo == "OBS")
-        {
-            paso3Bg = "#d97706";
-            paso3Detalle = "Observado / Devuelto";
-        }
-        else if (p.EstadoClase == "rechazado")
-        {
-            paso3Bg = "#94a3b8";
-            paso3Detalle = "Cancelado";
-        }
-        else if (p.AprobadoLider)
-        {
-            paso3Bg = "#2563eb";
-            paso3Detalle = "En revisión de RRHH";
-        }
-        else
-        {
-            paso3Bg = "#cbd5e1";
-            paso3Color = "#475569";
-            paso3Detalle = "Pendiente";
-        }
-
         var comentarios = p.ObservacionRrhh ?? p.ComentarioLider ?? p.Comentarios;
         var filaComentarios = string.IsNullOrWhiteSpace(comentarios)
             ? ""
-            : $@"<tr style='background-color: #fffbeb;'>
-                  <td style='padding: 8px 12px; border-top: 1px solid #e2e8f0; color: #92400e; font-weight: 600;'>Comentarios / Observaciones</td>
-                  <td style='padding: 8px 12px; border-top: 1px solid #e2e8f0; color: #78350f;'>{WebUtility.HtmlEncode(comentarios)}</td>
+            : $@"<tr>
+                  <td style='padding: 5px 0; color: #b45309; vertical-align: top;'>Observaciones</td>
+                  <td style='padding: 5px 0; color: #92400e; font-weight: 500; vertical-align: top;'>{WebUtility.HtmlEncode(comentarios)}</td>
                 </tr>";
 
         var clienteProyecto = string.IsNullOrWhiteSpace(p.Proyecto) || p.Proyecto == p.Cliente
@@ -653,29 +587,15 @@ public sealed class PermisosNotificacionService : IPermisosNotificacionService
             var fin = inicio < 0 ? -1 : plantilla.IndexOf("</a>", inicio, StringComparison.Ordinal);
             if (fin >= inicio && inicio >= 0) plantilla = plantilla.Remove(inicio, fin + 4 - inicio);
         }
+
         return plantilla
             .Replace("{{TITULO_CORREO}}", WebUtility.HtmlEncode(subtituloCabecera))
             .Replace("{{LOGO_URL}}", logoUrl)
             .Replace("{{SUBTITULO_CABECERA}}", WebUtility.HtmlEncode(subtituloCabecera))
             .Replace("{{FOLIO}}", WebUtility.HtmlEncode(p.FolioOrCodigo()))
             .Replace("{{ROL_DESTINATARIO}}", WebUtility.HtmlEncode(rolDestinatario))
-            .Replace("{{BADGE_ROL_BG}}", badgeRolBg)
-            .Replace("{{BADGE_ROL_COLOR}}", badgeRolColor)
-            .Replace("{{ESTADO_BG}}", estadoBg)
-            .Replace("{{ESTADO_COLOR}}", estadoColor)
-            .Replace("{{ESTADO_BORDER}}", estadoBorder)
-            .Replace("{{ESTADO_ACTUAL_TEXTO}}", WebUtility.HtmlEncode(p.EstadoTexto))
             .Replace("{{NOMBRE_DESTINATARIO}}", WebUtility.HtmlEncode(nombreDestinatario))
             .Replace("{{MENSAJE_PERSONALIZADO}}", mensajePersonalizado)
-            .Replace("{{PASO1_BG}}", paso1Bg)
-            .Replace("{{PASO1_COLOR}}", paso1Color)
-            .Replace("{{PASO1_DETALLE}}", WebUtility.HtmlEncode(paso1Detalle))
-            .Replace("{{PASO2_BG}}", paso2Bg)
-            .Replace("{{PASO2_COLOR}}", paso2Color)
-            .Replace("{{PASO2_DETALLE}}", WebUtility.HtmlEncode(paso2Detalle))
-            .Replace("{{PASO3_BG}}", paso3Bg)
-            .Replace("{{PASO3_COLOR}}", paso3Color)
-            .Replace("{{PASO3_DETALLE}}", WebUtility.HtmlEncode(paso3Detalle))
             .Replace("{{COLABORADOR}}", WebUtility.HtmlEncode(p.Colaborador))
             .Replace("{{CEDULA}}", WebUtility.HtmlEncode(p.Cedula))
             .Replace("{{CARGO}}", WebUtility.HtmlEncode(p.Cargo))
