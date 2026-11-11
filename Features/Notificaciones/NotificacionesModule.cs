@@ -6,6 +6,7 @@ using tmr_backend.Features.Notificaciones.Application.Cortes;
 using tmr_backend.Features.Notificaciones.Application.Estado;
 using tmr_backend.Features.Notificaciones.Application.Queries;
 using tmr_backend.Features.Notificaciones.Application.Handlers;
+using tmr_backend.Features.Permisos.Services;
 using tmr_backend.Infrastructure.Messaging;
 using tmr_backend.Features.Notificaciones.Infrastructure.Apprise;
 
@@ -38,6 +39,7 @@ public static class NotificacionesModule
         services.AddSingleton<ICorteNotifier, CorteNotifier>();
         // Aviso en memoria a la campana de cada colaborador (/mias/stream)
         services.AddSingleton<IAvisoColaboradorNotifier, AvisoColaboradorNotifier>();
+        services.AddSingleton<INotificacionInternaNotifier, NotificacionInternaNotifier>();
 
         // Lógica de dominio y consultas
         services.AddScoped<CalculadorHorasFaltantes>();
@@ -65,6 +67,10 @@ public static class NotificacionesModule
         // Avisos que agotaron sus reintentos: quedan registrados como Fallido
         services.AddScoped<IEventoFallidoHandler<HorasFaltantesDetectadas>, FalloDefinitivoHandler>();
         services.AddScoped<IEventoFallidoHandler<NotificacionManualSolicitada>, FalloDefinitivoHandler>();
+
+        // Correos asíncronos del módulo de Permisos
+        services.AddScoped<IEventHandler<CorreoPermisoEncolado>, EnviarCorreoPermisoHandler>();
+        services.AddScoped<IEventHandler<CampanaPermisoEncolada>, CampanaPermisoHandler>();
 
         return services;
     }

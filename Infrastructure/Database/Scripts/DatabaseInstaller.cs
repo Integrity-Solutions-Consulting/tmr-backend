@@ -131,7 +131,7 @@ public static class DatabaseInstaller
             return;
         if (await db.TblAutenticacionUsuarios.AnyAsync())
             throw new InvalidOperationException("El administrador inicial solo puede crearse en una instalación sin usuarios.");
-        var role = await db.TblAutenticacionRols.SingleAsync(x => x.Nombre == "Administrador" && x.Activo);
+        var role = await db.TblAutenticacionRols.SingleAsync(x => x.Nombre.ToUpper() == "ADMINISTRADOR" && x.Activo);
         var now = DateTime.UtcNow;
         var person = new TblAdministracionPersona
         {
@@ -178,7 +178,7 @@ public static class DatabaseInstaller
         if (await db.TblAutenticacionPermisos.CountAsync(x => x.Activo &&
             new[] { "PROVEEDORES_READ", "PROVEEDORES_CREATE", "PROVEEDORES_UPDATE", "PROVEEDORES_DELETE" }.Contains(x.Codigo)) != 4)
             throw new InvalidOperationException("Faltan permisos de Proveedores. Ejecute --initialize-data.");
-        var admin = await db.TblAutenticacionRols.SingleAsync(x => x.Nombre == "Administrador" && x.Activo);
+        var admin = await db.TblAutenticacionRols.SingleAsync(x => x.Nombre.ToUpper() == "ADMINISTRADOR" && x.Activo);
         if (await db.TblAutenticacionRolPermisos.CountAsync(x => x.Idrol == admin.Id && x.Activo &&
             x.IdpermisoNavigation.Codigo.StartsWith("PROVEEDORES_")) < 4 ||
             !await db.TblAutenticacionUsuarioRols.AnyAsync(x => x.Idrol == admin.Id && x.Activo) ||

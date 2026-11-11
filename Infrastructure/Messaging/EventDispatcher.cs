@@ -38,17 +38,22 @@ public class EventDispatcher : BackgroundService
         await ReencolarPendientesAsync(stoppingToken);
 
         // 2. Escuchar el canal: espera sin consumir CPU hasta que llegue un Id
-        await foreach (var id in _canal.Reader.ReadAllAsync(stoppingToken))
+        using var recoveryCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        var recovery = RecuperarPeriodicamenteAsync(recoveryCancellation.Token);
+        try
         {
-            try
+            await foreach (var id in _canal.Reader.ReadAllAsync(stoppingToken))
             {
-                await ProcesarAsync(id, stoppingToken);
+                try { await ProcesarAsync(id, stoppingToken); }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
+                catch (Exception ex) { _logger.LogError(ex, "Error inesperado procesando el evento {Id}", id); }
             }
-            catch (Exception ex)
-            {
-                // Un error inesperado no debe detener el dispatcher: se registra y sigue con el siguiente
-                _logger.LogError(ex, "Error inesperado procesando el evento {Id}", id);
-            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
+        finally
+        {
+            await recoveryCancellation.CancelAsync();
+            await recovery;
         }
     }
 
@@ -58,7 +63,11 @@ public class EventDispatcher : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-        var fila = await db.Set<EventoOutbox>().FirstOrDefaultAsync(e => e.Id == id, ct);
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        // Serializa workers de varias réplicas. El segundo vuelve a leer el estado confirmado.
+        var fila = await db.Set<EventoOutbox>()
+            .FromSqlInterpolated($"SELECT * FROM notificacion.evento_outbox WHERE id = {id} FOR UPDATE")
+            .FirstOrDefaultAsync(ct);
         if (fila is null || fila.Estado != EstadoEvento.Pendiente)
         {
             // ya se procesó o no existe: no hay nada que hacer
@@ -72,10 +81,11 @@ public class EventDispatcher : BackgroundService
             fila.Estado = EstadoEvento.Fallido;
             fila.UltimoError = $"Tipo de evento desconocido: {fila.TipoEvento}";
             await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
             _logger.LogError("Tipo de evento desconocido {Tipo} en el evento {Id}", fila.TipoEvento, id);
             return;
         }
-        var evento = JsonSerializer.Deserialize(fila.Payload, tipo)!;
+        object? evento = null;
 
         // 2. Buscar los handlers registrados para ese tipo: IEventHandler<CorteDeHorasAlcanzado>, etc.
         var tipoHandler = typeof(IEventHandler<>).MakeGenericType(tipo);
@@ -89,9 +99,12 @@ public class EventDispatcher : BackgroundService
             fila.TipoEvento, fila.Id, fila.Intentos + 1, handlers.Count);
 
         string? falloDefinitivo = null;
+        await tx.CreateSavepointAsync("handler", ct);
 
         try
         {
+            evento = JsonSerializer.Deserialize(fila.Payload, tipo) ?? throw new InvalidOperationException("Evento vacío.");
+            if (handlers.Count == 0) throw new InvalidOperationException("No hay handler para este evento.");
             // 3. Entregar el evento a cada handler
             foreach (var handler in handlers)
                 await (Task)metodo.Invoke(handler, [evento, ct])!;
@@ -101,7 +114,19 @@ public class EventDispatcher : BackgroundService
         }
         catch (Exception ex)
         {
+            await tx.RollbackToSavepointAsync("handler", ct);
             var error = ex is TargetInvocationException tie ? tie.InnerException ?? ex : ex;
+            if (error is EventoObsoletoException)
+            {
+                db.ChangeTracker.Clear();
+                db.Attach(fila);
+                fila.Estado = EstadoEvento.Procesado;
+                fila.UltimoError = "AVISO_NO_VIGENTE";
+                fila.FechaProcesado = DateTimeOffset.UtcNow;
+                await db.SaveChangesAsync(ct);
+                await tx.CommitAsync(ct);
+                return;
+            }
 
             // Lo que el handler dejó a medias (p. ej. una fila que violó un índice) sigue en el DbContext:
             // si no se descarta, el SaveChanges de abajo vuelve a fallar, Intentos nunca se guarda y el
@@ -119,18 +144,17 @@ public class EventDispatcher : BackgroundService
                 fila.Estado = EstadoEvento.Fallido;   // se rinde: queda para revisión manual
                 falloDefinitivo = error.Message;
             }
-            else
-            {
-                ReintentarMasTarde(id, ct);           // lo vuelve a intentar más tarde
-            }
+            // La recuperación periódica vuelve a descubrir eventos pendientes.
+            // No agregamos un segundo temporizador que duplique el mismo reintento.
         }
 
         await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
 
         if (fila.Estado == EstadoEvento.Procesado)
             _logger.LogDebug("Evento {Tipo} ({Id}) procesado correctamente", fila.TipoEvento, fila.Id);
 
-        if (falloDefinitivo is not null)
+        if (falloDefinitivo is not null && evento is not null)
             await AvisarFalloDefinitivoAsync(tipo, evento, fila, falloDefinitivo, ct);
     }
 
@@ -156,10 +180,15 @@ public class EventDispatcher : BackgroundService
         }
     }
 
-    private void ReintentarMasTarde(Guid id, CancellationToken ct) =>
-        _ = Task.Delay(_esperaEntreReintentos, ct)
-                .ContinueWith(_ => _canal.Writer.TryWrite(id), ct,
-                              TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
+    private async Task RecuperarPeriodicamenteAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(_esperaEntreReintentos);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct)) await ReencolarPendientesAsync(ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+    }
 
     private async Task ReencolarPendientesAsync(CancellationToken ct)
     {

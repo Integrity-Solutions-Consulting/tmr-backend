@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using tmr_backend.Features.Notificaciones.Application.Estado;
 using tmr_backend.Features.Notificaciones.Application.Queries;
 using tmr_backend.Features.Notificaciones.Domain.Events;
@@ -49,6 +50,10 @@ public static class NotificacionesEndpoints
             [FromServices] ICurrentUserService currentUserService,
             CancellationToken ct) =>
         {
+            var idsLimpiados = request.EmpleadoIds?.Where(id => id > 0).Distinct().ToList() ?? [];
+            if (idsLimpiados.Count > MaxEmpleadosEstado)
+                return Results.BadRequest(new { Mensaje = $"Máximo {MaxEmpleadosEstado} empleados por solicitud." });
+            request.EmpleadoIds = idsLimpiados;
             if (request.EmpleadoIds == null || !request.EmpleadoIds.Any())
                 return Results.BadRequest(new { Mensaje = "Debe seleccionar al menos un empleado para notificar." });
 
@@ -108,7 +113,7 @@ public static class NotificacionesEndpoints
             [FromServices] ICurrentUserService currentUserService,
             CancellationToken ct) =>
         {
-            var error = ValidarEmpleados(empleadoIds);
+            var error = ValidarEmpleados(empleadoIds, desdeMs);
             if (error is not null)
                 return error;
 
@@ -137,7 +142,7 @@ public static class NotificacionesEndpoints
             HttpContext http,
             CancellationToken ct) =>
         {
-            var error = ValidarEmpleados(empleadoIds);
+            var error = ValidarEmpleados(empleadoIds, desdeMs);
             if (error is not null)
                 return error;
 
@@ -196,6 +201,84 @@ public static class NotificacionesEndpoints
         .RequireAuthorization()
         .WithName("StreamMisNotificaciones")
         .WithSummary("Server-Sent Events con los avisos de horas faltantes enviados al usuario actual");
+
+        // Fechas de corte editables (flujo 3)
+        // ================================================================
+        // Campana interna persistida con estado leído (Solicitudes RF-010)
+        // ================================================================
+        group.MapGet("/internas", async (
+            [FromServices] ApplicationDbContext db,
+            [FromServices] ICurrentUserService currentUserService,
+            CancellationToken ct) =>
+        {
+            var items = await ConsultarNotificacionesInternasAsync(db, currentUserService.UserId, ct);
+            return Results.Ok(items);
+        })
+        .RequireAuthorization()
+        .WithName("GetNotificacionesInternas")
+        .WithSummary("Obtiene las notificaciones internas recientes del usuario actual");
+
+        group.MapGet("/internas/stream", (
+            [FromServices] IServiceScopeFactory scopeFactory,
+            [FromServices] INotificacionInternaNotifier notifier,
+            [FromServices] ICurrentUserService currentUserService,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            http.Response.Headers["X-Accel-Buffering"] = "no";
+            return TypedResults.ServerSentEvents(
+                StreamNotificacionesInternasAsync(scopeFactory, notifier, currentUserService.UserId, ct));
+        })
+        .RequireAuthorization()
+        .WithName("StreamNotificacionesInternas")
+        .WithSummary("Server-Sent Events con las notificaciones internas de la campana (RF-010)");
+
+        group.MapPatch("/internas/{id:long}/leer", async (
+            long id,
+            [FromServices] ApplicationDbContext db,
+            [FromServices] INotificacionInternaNotifier notifier,
+            [FromServices] ICurrentUserService currentUserService,
+            CancellationToken ct) =>
+        {
+            var notif = await db.NotificacionesUsuario
+                .FirstOrDefaultAsync(n => n.Id == id && n.IdUsuarioDestino == currentUserService.UserId, ct);
+
+            if (notif is null)
+                return Results.NotFound();
+
+            if (!notif.Leida)
+            {
+                notif.Leida = true;
+                notif.FechaLectura = DateTime.UtcNow;
+                await db.SaveChangesAsync(ct);
+                notifier.NotificarUsuarios([currentUserService.UserId]);
+            }
+
+            return Results.NoContent();
+        })
+        .RequireAuthorization()
+        .WithName("MarcarNotificacionInternaLeida");
+
+        group.MapPatch("/internas/leer-todas", async (
+            [FromServices] ApplicationDbContext db,
+            [FromServices] INotificacionInternaNotifier notifier,
+            [FromServices] ICurrentUserService currentUserService,
+            CancellationToken ct) =>
+        {
+            var ahora = DateTime.UtcNow;
+            var actualizadas = await db.NotificacionesUsuario
+                .Where(n => n.IdUsuarioDestino == currentUserService.UserId && !n.Leida)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(n => n.Leida, true)
+                    .SetProperty(n => n.FechaLectura, ahora), ct);
+
+            if (actualizadas > 0)
+                notifier.NotificarUsuarios([currentUserService.UserId]);
+
+            return Results.NoContent();
+        })
+        .RequireAuthorization()
+        .WithName("MarcarTodasNotificacionesInternasLeidas");
 
         // Fechas de corte editables (flujo 3)
         group.MapFechasCorteEndpoints();
@@ -308,12 +391,14 @@ public static class NotificacionesEndpoints
 
     private const string Pendiente = "Pendiente";
 
-    private static IResult? ValidarEmpleados(int[]? empleadoIds)
+    private static IResult? ValidarEmpleados(int[]? empleadoIds, long desdeMs = 0)
     {
         if (empleadoIds is null || empleadoIds.Length == 0)
             return Results.BadRequest(new { Mensaje = "Debe indicar al menos un empleado." });
         if (empleadoIds.Length > MaxEmpleadosEstado)
             return Results.BadRequest(new { Mensaje = $"Máximo {MaxEmpleadosEstado} empleados por consulta." });
+        if (empleadoIds.Any(id => id <= 0)) return Results.BadRequest(new { Mensaje = "Los identificadores de empleado deben ser mayores a cero." });
+        if (desdeMs < 0 || desdeMs > 253402300799999L) return Results.BadRequest(new { Mensaje = "La marca de tiempo indicada no es válida." });
         return null;
     }
 
@@ -407,6 +492,64 @@ public static class NotificacionesEndpoints
     }
 
     // true si llegó un cambio por el notificador; false si pasó el intervalo sin novedades
+    private static async Task<IReadOnlyList<NotificacionInternaDto>> ConsultarNotificacionesInternasAsync(
+        ApplicationDbContext db,
+        int idUsuario,
+        CancellationToken ct)
+    {
+        return await db.NotificacionesUsuario
+            .AsNoTracking()
+            .Where(n => n.IdUsuarioDestino == idUsuario)
+            .OrderByDescending(n => n.FechaCreacion)
+            .Take(20)
+            .Select(n => new NotificacionInternaDto(
+                n.Id,
+                n.IdSolicitud,
+                n.Titulo,
+                n.Mensaje,
+                n.UrlDestino,
+                n.Leida,
+                n.FechaLectura,
+                n.FechaCreacion))
+            .ToListAsync(ct);
+    }
+
+    private static async IAsyncEnumerable<SseItem<IReadOnlyList<NotificacionInternaDto>?>> StreamNotificacionesInternasAsync(
+        IServiceScopeFactory scopeFactory,
+        INotificacionInternaNotifier notifier,
+        int idUsuario,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        using var suscripcion = notifier.Suscribir(idUsuario);
+        string? ultimoEnviado = null;
+
+        while (!ct.IsCancellationRequested)
+        {
+            IReadOnlyList<NotificacionInternaDto> items;
+            await using (var scope = scopeFactory.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                items = await ConsultarNotificacionesInternasAsync(db, idUsuario, ct);
+            }
+
+            var json = System.Text.Json.JsonSerializer.Serialize(items);
+            if (json != ultimoEnviado)
+            {
+                ultimoEnviado = json;
+                yield return new SseItem<IReadOnlyList<NotificacionInternaDto>?>(items, "internas");
+            }
+
+            var huboCambio = await EsperarAsync(suscripcion.Lector, RevisionMisAvisos, ct);
+            if (ct.IsCancellationRequested)
+                yield break;
+
+            if (huboCambio)
+                while (suscripcion.Lector.TryRead(out _)) { }
+            else
+                yield return new SseItem<IReadOnlyList<NotificacionInternaDto>?>(null, "ping");
+        }
+    }
+
     private static async Task<bool> EsperarCambioAsync(SuscripcionEstado suscripcion, TimeSpan espera, CancellationToken ct)
     {
         using var temporizador = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -421,6 +564,16 @@ public static class NotificacionesEndpoints
         }
     }
 }
+
+public record NotificacionInternaDto(
+    long Id,
+    int? IdSolicitud,
+    string Titulo,
+    string Mensaje,
+    string? UrlDestino,
+    bool Leida,
+    DateTime? FechaLectura,
+    DateTime FechaCreacion);
 
 public record NotificarResponse(string Mensaje, int Solicitados, long SolicitadoEnMs);
 public record EstadoEmpleadoDto(int IdEmpleado, string Estado, string? Detalle);

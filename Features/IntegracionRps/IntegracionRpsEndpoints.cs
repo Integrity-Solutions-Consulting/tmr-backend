@@ -43,7 +43,10 @@ public static class IntegracionRpsEndpoints
                     e.IdpersonaNavigation.Apellidos,
                     Identificacion = e.IdpersonaNavigation.Numeroidentificacion,
                     Correo = e.Emailcorporativo ?? e.IdpersonaNavigation.Email,
-                    e.Activo
+                    e.Activo,
+                    // Código del catálogo TCT (CON, PAS, FJ, MT, COS): RPS decide con él quién factura
+                    // y si es Profesional o Junior. Null si no tiene tipo de contrato asignado.
+                    TipoContrato = e.IdtipocontratoNavigation != null ? e.IdtipocontratoNavigation.Codigovalor : null
                 })
                 .ToListAsync(ct)));
 
