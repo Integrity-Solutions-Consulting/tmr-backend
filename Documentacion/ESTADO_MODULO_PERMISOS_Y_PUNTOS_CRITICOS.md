@@ -5,9 +5,11 @@
 
 ---
 
-## 1. ¿Falta algún punto crítico en código?
+## 1. ¿Falta algún punto crítico en código (Backend o Frontend)?
 
-**No.** Como resultado de la auditoría, refactorización y pruebas integrales realizadas, **no queda ningún punto crítico pendiente a nivel de código (Backend, Frontend ni Base de Datos)**.
+**No.** Como resultado de la auditoría, refactorización y pruebas integrales realizadas, **no queda ningún punto crítico pendiente a nivel de código (Backend, Frontend ni Base de Datos)**:
+- **Frontend (`tmr-frontend`):** No requería cambios estructurales adicionales porque todos los componentes (`mis-permisos`, `aprobaciones-lider`, `gestion-rrhh`, `permisos-gerencia`, `resumen-solicitud` y campana SSE en `header`) ya consumían los campos normalizados de la API y contaban con las validaciones de horas, saldos y modales listas. (Únicamente se unificó el fallback visual de duración en `gestion-rrhh.ts` y `permisos-gerencia.ts`).
+- **Configuración (`appsettings*.json`):** No se modificó ni subió ningún archivo `appsettings.json` ni `appsettings.Development.json` al repositorio para respetar las credenciales locales de cada entorno.
 
 Todo el flujo de extremo a extremo está conectado, simplificado y blindado:
 
