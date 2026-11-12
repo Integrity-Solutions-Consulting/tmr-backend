@@ -158,13 +158,29 @@ public sealed class ActualizacionDirectaService(ApplicationDbContext db, ICurren
     {
         if (family is null) return;
         var all = family.Familiares.Concat(family.Pareja is null ? [] : [family.Pareja]).ToList(); var rows = await db.Set<ColaboradorFamiliar>().Where(x => x.IdEmpleado == id && x.Activo).ToListAsync(ct);
-        if (family.TieneHijos == "No" && rows.Any(x => x.TipoRelacion == "Hijo")) throw new ArgumentException("Existen hijos registrados. Elimínalos explícitamente antes de seleccionar No.");
         foreach (var row in rows.Where(r => r.TipoRelacion == "Hijo" && !all.Any(v => v.Id == r.Id || (!string.IsNullOrWhiteSpace(v.Clave) && v.Clave == r.Clave)))) row.Activo = false;
         foreach (var x in all) { var row = rows.FirstOrDefault(r => x.Id == r.Id || (!string.IsNullOrWhiteSpace(x.Clave) && x.Clave == r.Clave)) ?? new ColaboradorFamiliar { IdEmpleado = id, Clave = string.IsNullOrWhiteSpace(x.Clave) ? Guid.NewGuid().ToString("N") : x.Clave! }; row.TipoRelacion = x.TipoRelacion; row.Nombres = x.Nombres.Trim(); row.Apellidos = x.Apellidos.Trim(); row.Identificacion = x.Identificacion?.Trim(); row.FechaNacimiento = x.FechaNacimiento; row.TieneDiscapacidad = x.TieneDiscapacidad; row.TipoDiscapacidad = x.TipoDiscapacidad; row.PorcentajeDiscapacidad = x.PorcentajeDiscapacidad; row.Activo = true; if (row.Id == 0) db.Add(row); }
     }
 
     private static void Validate(ActualizacionRequest x)
-    { if (string.IsNullOrWhiteSpace(x.Persona.Nombres) || string.IsNullOrWhiteSpace(x.Persona.Apellidos)) throw new ArgumentException("Nombres y apellidos son obligatorios."); if (x.Persona.PorcentajeDiscapacidad is < 0 or > 100) throw new ArgumentException("El porcentaje de discapacidad debe estar entre 0 y 100."); if (x.Formaciones.Any(v => string.IsNullOrWhiteSpace(v.Nivel) || string.IsNullOrWhiteSpace(v.Institucion) || string.IsNullOrWhiteSpace(v.Titulo))) throw new ArgumentException("Completa los campos obligatorios de formación."); if (x.Certificaciones.Any(v => string.IsNullOrWhiteSpace(v.Nombre) || string.IsNullOrWhiteSpace(v.EntidadEmisora))) throw new ArgumentException("Completa los campos obligatorios de certificación."); }
+    {
+        if (string.IsNullOrWhiteSpace(x.Persona.Nombres) || string.IsNullOrWhiteSpace(x.Persona.Apellidos)) throw new ArgumentException("Nombres y apellidos son obligatorios.");
+        if (x.Persona.PorcentajeDiscapacidad is < 0 or > 100) throw new ArgumentException("El porcentaje de discapacidad debe estar entre 0 y 100.");
+        if (x.Formaciones.Any(v => string.IsNullOrWhiteSpace(v.Nivel) || string.IsNullOrWhiteSpace(v.Institucion) || string.IsNullOrWhiteSpace(v.Titulo))) throw new ArgumentException("Completa los campos obligatorios de formación.");
+        if (x.Certificaciones.Any(v => string.IsNullOrWhiteSpace(v.Nombre) || string.IsNullOrWhiteSpace(v.EntidadEmisora))) throw new ArgumentException("Completa los campos obligatorios de certificación.");
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        foreach (var certification in x.Certificaciones)
+        {
+            if (certification.FechaEmision > today) throw new ArgumentException("La fecha de emisión de una certificación no puede ser futura.");
+            if (certification.FechaVencimiento is not null && certification.FechaVencimiento < certification.FechaEmision) throw new ArgumentException("El vencimiento no puede ser anterior a la fecha de emisión.");
+        }
+        foreach (var family in (x.Familia?.Familiares ?? []).Append(x.Familia?.Pareja).Where(v => v is not null).Select(v => v!))
+        {
+            if (family.FechaNacimiento > today) throw new ArgumentException("La fecha de nacimiento no puede ser futura.");
+            if (!string.IsNullOrWhiteSpace(family.Identificacion) && !System.Text.RegularExpressions.Regex.IsMatch(family.Identificacion, "^\\d{10}$")) throw new ArgumentException("La identificación debe contener exactamente 10 dígitos.");
+            if (family.PorcentajeDiscapacidad is < 0 or > 100) throw new ArgumentException("El porcentaje de discapacidad debe estar entre 0 y 100.");
+        }
+    }
     private static InformacionFamiliarRequest? NormalizeFamily(InformacionFamiliarRequest? family)
     {
         if (family is null) return null;

@@ -67,7 +67,16 @@ public static class ColaboradoresEndpoints
                 return stream is null ? Results.NotFound() : Results.File(stream, file.ContentType, file.NombreOriginal);
             }
             var direct = await db.Set<ColaboradorDocumento>().SingleOrDefaultAsync(x => x.Id == archivoId && x.IdEmpleado == id && x.Activo, ct);
-            if (direct is null) return Results.NotFound();
+            if (direct is null)
+            {
+                var requestFile = await (from a in db.Set<ColaboradorSolicitudArchivo>()
+                                         join s in db.Set<ColaboradorSolicitud>() on a.IdSolicitud equals s.Id
+                                         where a.Id == archivoId && s.IdEmpleado == id
+                                         select a).SingleOrDefaultAsync(ct);
+                if (requestFile is null) return Results.NotFound();
+                var requestStream = await storage.OpenReadAsync(requestFile.StorageKey, ct, requestFile.Provider);
+                return requestStream is null ? Results.NotFound() : Results.File(requestStream, requestFile.ContentType, requestFile.NombreOriginal);
+            }
             var directStream = await storage.OpenReadAsync(direct.StorageKey, ct, direct.Provider);
             return directStream is null ? Results.NotFound() : Results.File(directStream, direct.ContentType, direct.NombreOriginal);
         }).RequireAuthorization("COLABORADORES_DATOS_REVISAR");

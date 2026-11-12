@@ -35,4 +35,4 @@ public sealed record ProyectoExpedienteResponse(int Id, string Nombre, string Cl
 public sealed record ExpedienteFormacionResponse(long Id, string Nivel, string Institucion, string Titulo, DateOnly? FechaInicio, DateOnly? FechaFin, IReadOnlyList<ExpedienteArchivoResponse>? Archivos = null);
 public sealed record ExpedienteCertificacionResponse(long Id, string Nombre, string EntidadEmisora, DateOnly FechaEmision, DateOnly? FechaVencimiento, IReadOnlyList<ExpedienteArchivoResponse>? Archivos = null);
 public sealed record ExpedienteArchivoResponse(long Id, long IdSolicitud, string NombreOriginal, string ContentType, long Tamano, DateTime Fecha, string Seccion = "General", long? ReferenciaId = null);
-public sealed record ExpedienteSolicitudResponse(long Id, string Estado, string? Observacion, DateTime Fecha, int Version, string? Asunto = null, string? Descripcion = null, bool Enviada = false);
+public sealed record ExpedienteSolicitudResponse(long Id, string Estado, string? Observacion, DateTime Fecha, int Version, string? Asunto = null, string? Descripcion = null, bool Enviada = false, IReadOnlyList<ExpedienteArchivoResponse>? Archivos = null);
