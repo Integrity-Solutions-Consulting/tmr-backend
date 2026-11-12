@@ -1,3 +1,4 @@
+using Amazon.S3;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using tmr_backend.Infrastructure.Messaging;
@@ -21,6 +22,8 @@ using tmr_backend.Features.Proyectos;
 using tmr_backend.Features.Catalogos;
 using tmr_backend.Features.Reportes;
 using tmr_backend.Features.TimeReport;
+using tmr_backend.Features.ActualizacionDatos.Endpoints;
+using tmr_backend.Features.ActualizacionDatos.Storage;
 using tmr_backend.Features.HealthCheck.Services;
 using tmr_backend.Features.Configuracion.Usuarios.Application;
 using tmr_backend.Features.Configuracion.Usuarios.Endpoints;
@@ -79,7 +82,7 @@ AppDomain.CurrentDomain.UnhandledException += (_, e) =>
     Log.CloseAndFlush();
 };
 
-var databaseCommands = new[] { "--prepare-database", "--initialize-data", "--verify-database" };
+var databaseCommands = new[] { "--prepare-database", "--apply-migrations", "--initialize-data", "--verify-database" };
 var requestedCommands = args.Where(databaseCommands.Contains).ToArray();
 if (requestedCommands.Length > 1)
     throw new InvalidOperationException("Ejecute una sola etapa de base de datos por comando.");
@@ -264,6 +267,29 @@ builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>()
 // VALIDADORES DE COLABORADORES (nuevo)
 // ================================================================
 builder.Services.AddScoped<IValidator<RegistrarSalidaRequest>, RegistrarSalidaRequestValidator>();
+builder.Services.Configure<FileStorageOptions>(builder.Configuration.GetSection("FileStorage"));
+builder.Services.Configure<LocalStorageOptions>(builder.Configuration.GetSection("FileStorage"));
+builder.Services.Configure<S3StorageOptions>(builder.Configuration.GetSection("FileStorage:S3"));
+builder.Services.AddSingleton<LocalFileStorage>();
+builder.Services.AddSingleton<S3FileStorage>(sp =>
+{
+    var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<S3StorageOptions>>().Value;
+    var config = new AmazonS3Config
+    {
+        RegionEndpoint = Amazon.RegionEndpoint.GetBySystemName(options.Region),
+        ServiceURL = options.Endpoint,
+        ForcePathStyle = false
+    };
+    return new S3FileStorage(
+        new AmazonS3Client(config),
+        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<S3StorageOptions>>(),
+        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<LocalStorageOptions>>());
+});
+builder.Services.AddSingleton<ConfigurableFileStorage>();
+builder.Services.AddSingleton<IFileStorage>(sp => sp.GetRequiredService<ConfigurableFileStorage>());
+builder.Services.AddScoped<tmr_backend.Features.ActualizacionDatos.Services.ActualizacionDatosService>();
+builder.Services.AddScoped<tmr_backend.Features.ActualizacionDatos.Services.ActualizacionDirectaService>();
+builder.Services.AddScoped<tmr_backend.Features.ActualizacionDatos.Services.ExpedienteService>();
 
 // ── Authentication & JWT Setup ──
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtSettings>()!;
@@ -403,6 +429,7 @@ app.MapRolesConfigEndpoints();
 app.MapDiasFestivosEndpoints();
 app.MapCatalogosConfigEndpoints();
 app.MapProveedoresEndpoints();
+app.MapActualizacionDatosEndpoints();
 app.MapNotificacionesEndpoints();
 app.MapPermisosEndpoints();
 app.MapIntegracionRpsEndpoints();
