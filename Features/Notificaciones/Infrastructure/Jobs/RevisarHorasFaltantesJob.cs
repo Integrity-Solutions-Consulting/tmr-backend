@@ -89,4 +89,5 @@ public sealed class RevisarHorasFaltantesJob : IJob
             "Publicado CorteDeHorasAlcanzado ({Tipo} {Mes}/{Anio}): período {InicioPeriodo} - {FinPeriodo}, corte {FechaCorte}",
             corte.Tipo, corte.Mes, corte.Anio, evento.InicioPeriodo, evento.FinPeriodo, evento.FechaCorte);
     }
+    
 }
