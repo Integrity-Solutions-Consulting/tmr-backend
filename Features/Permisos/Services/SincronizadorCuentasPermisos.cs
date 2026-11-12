@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
+using tmr_backend.Infrastructure.Security;
 
 namespace tmr_backend.Features.Permisos.Services;
 
@@ -61,6 +62,10 @@ public static class SincronizadorCuentasPermisos
             var usuariosExistentes = await db.TblAutenticacionUsuarios
                 .Where(u => emailsEstandar.Contains(u.Email.ToLower()))
                 .ToListAsync(ct);
+
+            // Esta cuenta es un fixture público de QA: su contraseña debe ser estable
+            // y no depender del orden de lectura de hashes de otras cuentas.
+            var hasher = new PasswordHasher();
 
             var hashBase = usuariosExistentes.FirstOrDefault(u => !string.IsNullOrWhiteSpace(u.Hashpassword))?.Hashpassword
                            ?? await db.TblAutenticacionUsuarios
@@ -154,7 +159,9 @@ public static class SincronizadorCuentasPermisos
                     {
                         Idpersona = persona.Id,
                         Email = def.Email,
-                        Hashpassword = hashBase,
+                        Hashpassword = def.Email.Equals("externo@tmr.com", StringComparison.OrdinalIgnoreCase)
+                            ? hasher.Hash("adminadmin")
+                            : hashBase,
                         Emailverificado = true,
                         Intentosfallidos = 0,
                         Bloqueadohasta = null,
@@ -170,6 +177,12 @@ public static class SincronizadorCuentasPermisos
                 else
                 {
                     var modUser = false;
+                    if (def.Email.Equals("externo@tmr.com", StringComparison.OrdinalIgnoreCase)
+                        && !hasher.Verify("adminadmin", usuario.Hashpassword))
+                    {
+                        usuario.Hashpassword = hasher.Hash("adminadmin");
+                        modUser = true;
+                    }
                     if (usuario.Idpersona != persona.Id)
                     {
                         var otroConMismaPersona = await db.TblAutenticacionUsuarios
