@@ -1,5 +1,5 @@
 -- ============================================================================
--- SCRIPT: 19-Inv_tmr_db_modulo_solicitudes.sql
+-- SCRIPT: 23-Inv_tmr_db_modulo_solicitudes.sql
 -- Módulo de Solicitudes (Permisos, Licencias y Vacaciones) - Diseño Normalizado (3FN)
 --
 -- Propósito (alineado con docs/requerimientos-solicitudes-v2.docx + tmr-frontend):
