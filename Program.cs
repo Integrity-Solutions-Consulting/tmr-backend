@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using tmr_backend.Infrastructure.Messaging;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
 using tmr_backend.Infrastructure.Database.Seeders;
@@ -155,7 +156,10 @@ if (string.IsNullOrWhiteSpace(defaultConnection))
 
 builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
     options.UseNpgsql(defaultConnection)
-           .AddInterceptors(sp.GetRequiredService<AuditInterceptor>()));
+           .AddInterceptors(
+               sp.GetRequiredService<AuditInterceptor>(),
+               // Despierta al EventDispatcher con los eventos publicados en una transacción, al confirmarla
+               sp.GetRequiredService<SenalesOutboxInterceptor>()));
 
 // ── CORS ──
  String[] allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? new[] { "http://localhost:3000" };

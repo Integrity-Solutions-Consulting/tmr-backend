@@ -36,9 +36,12 @@ public class EventBus : IEventBus
         _db.Set<EventoOutbox>().Add(fila);
         await _db.SaveChangesAsync(ct);
 
-        // 2. Después se avisa al dispatcher, enviando solo el Id por el canal en memoria
+        // 2. Después se avisa al dispatcher, enviando solo el Id por el canal en memoria. Dentro de una transacción
+        //    el aviso espera al commit (SenalesOutboxInterceptor): antes el dispatcher podría no encontrar la fila
         if (_db.Database.CurrentTransaction is null)
             await _canal.Writer.WriteAsync(fila.Id, ct);
+        else
+            SenalesOutboxInterceptor.Registrar(_db, fila.Id);
 
         _logger.LogDebug("Evento {Tipo} publicado con Id {Id}", fila.TipoEvento, fila.Id);
     }

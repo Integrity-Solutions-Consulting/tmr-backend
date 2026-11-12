@@ -13,8 +13,9 @@ using tmr_backend.Features.Notificaciones.Infrastructure.Apprise;
 namespace tmr_backend.Features.Notificaciones.Application.Handlers;
 
 /// <summary>
-/// Envía el correo de horas faltantes a un empleado y publica el resultado
-/// (NotificacionEnviada o NotificacionFallida) para que RegistrarEnvioHandler lo guarde.
+/// Envía el correo de horas faltantes a un empleado y registra el resultado (enviado, fallido u omitido) en el
+/// mismo paso, con RegistrarEnvioHandler, para que el toast de Seguimiento lo reciba sin esperar otra vuelta de la
+/// cola. Si ese registro falla, el resultado se publica como evento y el Outbox lo reintenta (sin reenviar el correo).
 /// Antes de enviar revisa NotificacionEnvio para no duplicar avisos:
 ///  - Automático (flujos 1 y 3): máximo un aviso por empleado y corte (RF-007).
 ///  - Manual (flujo 2): respeta NotificacionHoras:UmbralNotificacionManual (RF-008).
@@ -35,6 +36,7 @@ public sealed class EnviarCorreoHandler : IEventHandler<HorasFaltantesDetectadas
     private readonly IConfiguration _configuration;
     private readonly ILogger<EnviarCorreoHandler> _logger;
     private readonly IAppriseNotificationService? _appriseNotificationService;
+    private readonly RegistrarEnvioHandler? _registroEnvios;
 
     public EnviarCorreoHandler(
         ApplicationDbContext db,
@@ -43,7 +45,8 @@ public sealed class EnviarCorreoHandler : IEventHandler<HorasFaltantesDetectadas
         IOptions<NotificacionHorasOptions> opciones,
         IConfiguration configuration,
         ILogger<EnviarCorreoHandler> logger,
-        IAppriseNotificationService? appriseNotificationService = null)
+        IAppriseNotificationService? appriseNotificationService = null,
+        RegistrarEnvioHandler? registroEnvios = null)
     {
         _db = db;
         _emailService = emailService;
@@ -52,6 +55,7 @@ public sealed class EnviarCorreoHandler : IEventHandler<HorasFaltantesDetectadas
         _configuration = configuration;
         _logger = logger;
         _appriseNotificationService = appriseNotificationService;
+        _registroEnvios = registroEnvios;
     }
 
     public async Task HandleAsync(HorasFaltantesDetectadas evento, CancellationToken ct)
@@ -76,7 +80,7 @@ public sealed class EnviarCorreoHandler : IEventHandler<HorasFaltantesDetectadas
         {
             if (evento.Origen == OrigenNotificacion.Manual)
             {
-                await _bus.PublishAsync(new NotificacionOmitida(
+                await RegistrarResultadoAsync(new NotificacionOmitida(
                     evento.IdEmpleado,
                     evento.InicioPeriodo,
                     evento.FinPeriodo,
@@ -127,7 +131,7 @@ public sealed class EnviarCorreoHandler : IEventHandler<HorasFaltantesDetectadas
             "Correo de horas faltantes enviado al empleado {IdEmpleado} ({Origen}, {HorasFaltantes}h)",
             evento.IdEmpleado, evento.Origen, evento.HorasFaltantes);
 
-        await _bus.PublishAsync(new NotificacionEnviada(
+        await RegistrarResultadoAsync(new NotificacionEnviada(
             evento.IdEmpleado,
             evento.HorasFaltantes,
             evento.InicioPeriodo,
@@ -263,6 +267,7 @@ public sealed class EnviarCorreoHandler : IEventHandler<HorasFaltantesDetectadas
         // Cada proyecto exige su propia jornada: se detalla lo que falta en cada uno
         var detalleProyectos = ConstruirDetalleProyectos(proyectos);
 
+        // No tocar 
         var html = $@"
                 <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;'>
                     <div style='text-align: center; margin-bottom: 24px;'>
@@ -338,7 +343,7 @@ public sealed class EnviarCorreoHandler : IEventHandler<HorasFaltantesDetectadas
                 : "cierre del período";
 
     private Task PublicarFallidaAsync(HorasFaltantesDetectadas evento, DateTimeOffset fecha, string error, CancellationToken ct) =>
-        _bus.PublishAsync(new NotificacionFallida(
+        RegistrarResultadoAsync(new NotificacionFallida(
             evento.IdEmpleado,
             evento.HorasFaltantes,
             evento.InicioPeriodo,
@@ -349,4 +354,59 @@ public sealed class EnviarCorreoHandler : IEventHandler<HorasFaltantesDetectadas
             fecha,
             error,
             evento.IdProyecto), ct);
+
+    // ---------------------------------------------------------------------
+    // Registro del resultado
+    // ---------------------------------------------------------------------
+
+    private const string PuntoRegistro = "registro_envio";
+
+    /// <summary>
+    /// Guarda el resultado ya mismo (antes iba a la cola como otro evento y esperaba detrás de los demás: en un
+    /// envío masivo, ningún resultado se veía hasta mandar todos los correos). Si falla, deshace solo ese registro
+    /// y lo publica como evento para que el Outbox lo reintente; el correo no se vuelve a enviar.
+    /// </summary>
+    private async Task RegistrarResultadoAsync(IEvento resultado, CancellationToken ct)
+    {
+        if (_registroEnvios is null)
+        {
+            await _bus.PublishAsync(resultado, ct);
+            return;
+        }
+
+        // El dispatcher procesa cada evento dentro de una transacción: el punto de guardado permite deshacer
+        // solo este registro sin perder el estado del evento en el Outbox
+        var transaccion = _db.Database.CurrentTransaction;
+        try
+        {
+            if (transaccion is not null)
+                await transaccion.CreateSavepointAsync(PuntoRegistro, ct);
+
+            await (resultado switch
+            {
+                NotificacionEnviada enviada => _registroEnvios.HandleAsync(enviada, ct),
+                NotificacionFallida fallida => _registroEnvios.HandleAsync(fallida, ct),
+                NotificacionOmitida omitida => _registroEnvios.HandleAsync(omitida, ct),
+                _ => throw new InvalidOperationException($"Resultado no soportado: {resultado.GetType().Name}")
+            });
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex,
+                "No se pudo registrar el resultado {Tipo} del empleado; se encola para reintentarlo", resultado.GetType().Name);
+
+            if (transaccion is not null)
+                await transaccion.RollbackToSavepointAsync(PuntoRegistro, ct);
+
+            // Lo que quedó a medias en el DbContext volvería a fallar al guardar el evento de respaldo
+            foreach (var entrada in _db.ChangeTracker.Entries<NotificacionEnvio>()
+                         .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+                         .ToList())
+            {
+                entrada.State = EntityState.Detached;
+            }
+
+            await _bus.PublishAsync(resultado, ct);
+        }
+    }
 }
