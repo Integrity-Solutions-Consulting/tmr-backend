@@ -19,7 +19,8 @@ public enum EventoNotificacionPermiso
     RechazadaPorLider,
     ConfirmadaPorRrhh,
     DevueltaPorRrhh,
-    ReenvioMagicLink
+    ReenvioMagicLink,
+    SolicitudCorregidaReenviada
 }
 
 public enum RolDestinatarioCorreoPermiso
@@ -262,6 +263,7 @@ public sealed class PermisosNotificacionService(
 
         switch (evento)
         {
+            case EventoNotificacionPermiso.SolicitudCorregidaReenviada:
             case EventoNotificacionPermiso.SolicitudCreada:
                 var esExt = string.Equals(p.LiderTipo, "EXT", StringComparison.OrdinalIgnoreCase) && p.EstadoClase != "confirmado";
                 AgregarColab();
@@ -316,6 +318,15 @@ public sealed class PermisosNotificacionService(
 
         (string Asunto, string Titulo, string Mensaje, string CtaUrl, string CtaTexto) config = (evento, rol) switch
         {
+            (EventoNotificacionPermiso.SolicitudCorregidaReenviada, _) => (
+                Asunto: $"[Solicitud corregida] {folio} · {p.Colaborador}",
+                Titulo: "Solicitud corregida y reenviada",
+                Mensaje: rol == RolDestinatarioCorreoPermiso.Colaborador
+                    ? $"Recibimos la corrección de tu solicitud <strong>{folioHtml}</strong>. Está pendiente de una nueva revisión."
+                    : $"<strong>{colabHtml}</strong> corrigió la solicitud <strong>{folioHtml}</strong>. Revisa los datos actualizados. Las decisiones anteriores no aprueban esta corrección.",
+                CtaUrl: rol == RolDestinatarioCorreoPermiso.Colaborador ? urlColab : rol == RolDestinatarioCorreoPermiso.JefeInmediato ? urlLider : urlRrhh,
+                CtaTexto: rol == RolDestinatarioCorreoPermiso.Colaborador ? "Ver en Mis Permisos" : "Revisar solicitud corregida"),
+
             (EventoNotificacionPermiso.SolicitudCreada, RolDestinatarioCorreoPermiso.Colaborador) => (
                 Asunto: $"[Permisos ISC] Solicitud {folio} registrada · {p.Tipo}",
                 Titulo: esInformativo ? "Registro de Permiso Informativo" : "Confirmación de Solicitud",
@@ -368,7 +379,7 @@ public sealed class PermisosNotificacionService(
                 Mensaje: $"Tu solicitud <strong>{folioHtml}</strong> fue <strong>{TextoAccionLider(evento)}</strong> por <strong>{liderHtml}</strong>." +
                          (evento == EventoNotificacionPermiso.AprobadaPorLider
                              ? " Ahora se encuentra en la bandeja de <strong>Talento Humano</strong> para su confirmación final."
-                             : ""),
+                             : evento == EventoNotificacionPermiso.ObservadaPorLider ? " Corrige los datos y reenvía la solicitud desde Mis permisos." : ""),
                 CtaUrl: urlColab,
                 CtaTexto: "Ver en Mis Permisos"),
 
@@ -394,7 +405,7 @@ public sealed class PermisosNotificacionService(
                     : "Solicitud Observada por Talento Humano",
                 Mensaje: evento == EventoNotificacionPermiso.ConfirmadaPorRrhh
                     ? $"Tu solicitud <strong>{folioHtml}</strong> por <strong>{tipoHtml}</strong> fue <strong>confirmada por Talento Humano</strong>. Puedes consultar el detalle y descargar el PDF desde TMR."
-                    : $"Talento Humano revisó tu solicitud <strong>{folioHtml}</strong> y registró una observación. Por favor revísala en TMR.",
+                    : $"Talento Humano revisó tu solicitud <strong>{folioHtml}</strong> y registró una observación. Corrige los datos y reenvía la solicitud desde Mis permisos.",
                 CtaUrl: urlColab,
                 CtaTexto: "Ver en Mis Permisos"),
 

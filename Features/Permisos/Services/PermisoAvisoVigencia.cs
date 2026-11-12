@@ -11,7 +11,7 @@ public static class PermisoAvisoVigencia
             evento.VersionSolicitud.Value.Ticks / 10 != (solicitud.FechaModificacion ?? solicitud.FechaCreacion).Ticks / 10) return false;
         var esperado = evento.EstadoSolicitud ?? evento.Evento switch
         {
-            EventoNotificacionPermiso.SolicitudCreada or EventoNotificacionPermiso.ReenvioMagicLink => "PENDIENTE_JEFE",
+            EventoNotificacionPermiso.SolicitudCreada or EventoNotificacionPermiso.SolicitudCorregidaReenviada or EventoNotificacionPermiso.ReenvioMagicLink => "PENDIENTE_JEFE",
             EventoNotificacionPermiso.AprobadaPorLider => "PENDIENTE_TH",
             EventoNotificacionPermiso.RechazadaPorLider => "RECHAZADA",
             EventoNotificacionPermiso.ConfirmadaPorRrhh => "APROBADA",

@@ -120,7 +120,8 @@ public sealed record PermisoItemDto(
     string? TraslapeAlerta,
     string? TokenExterno,
     IReadOnlyList<AdjuntoPermisoDto>? Adjuntos = null,
-    string? AvisoNotificacion = null);
+    string? AvisoNotificacion = null,
+    string? VersionSolicitud = null);
 
 public sealed record CrearPermisoRequest(
     int? IdProyecto,
@@ -135,17 +136,19 @@ public sealed record CrearPermisoRequest(
     decimal? TotalDias,
     decimal? TotalHoras,
     string Motivo,
-    int? IdUsuarioRrhh = null);
+    int? IdUsuarioRrhh = null,
+    int? IdSolicitudObservada = null,
+    string? VersionSolicitud = null);
 
 public sealed record DecisionLiderRequest(
     string Accion, // "aprobar" | "observar" | "rechazar"
-    string? Comentario);
+    string? Comentario, string? VersionSolicitud = null);
 
 public sealed record DecisionRrhhRequest(
     string Accion, // "confirmar" | "devolver"
     string? ImpactoTimeReport, // "RESTA_META" | "SUMA_REPORTADAS" | "SIN_IMPACTO"
-    string? Observacion);
+    string? Observacion, string? VersionSolicitud = null);
 
 public sealed record DecisionExternaRequest(
     string Accion, // "aprobar" | "observar" | "rechazar"
-    string? Comentario);
+    string? Comentario, string? VersionSolicitud = null);

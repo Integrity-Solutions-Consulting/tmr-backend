@@ -313,7 +313,9 @@ public static partial class PermisosEndpoints
                 TotalDias: ParseDec("totalDias"),
                 TotalHoras: ParseDec("totalHoras"),
                 Motivo: form["motivo"].FirstOrDefault() ?? "",
-                IdUsuarioRrhh: ParseInt("idUsuarioRrhh"));
+                IdUsuarioRrhh: ParseInt("idUsuarioRrhh"),
+                IdSolicitudObservada: ParseInt("idSolicitudObservada"),
+                VersionSolicitud: form["versionSolicitud"].FirstOrDefault());
 
             var archivos = form.Files.Where(f => f.Length > 0).ToList();
             return await CrearSolicitudInternaAsync(
@@ -532,6 +534,9 @@ public static partial class PermisosEndpoints
             if (!actor.EsAdmin && (!actor.IdLider.HasValue || idLiderEfectivo != actor.IdLider.Value))
                 return Results.Json(ApiResponse<object>.Fail(403, "Esta solicitud no pertenece a tu bandeja de líder.", []), statusCode: 403);
 
+            if (request.VersionSolicitud != VersionActualSolicitud(solicitud))
+                return Results.Conflict(ApiResponse<object>.Fail(409, "La solicitud cambió. Actualiza y revisa los datos antes de decidir.", []));
+
             // Un líder no administrador no aprueba su propia solicitud
             if (!actor.EsAdmin && actor.IdEmpleado.HasValue && solicitud.IdEmpleado == actor.IdEmpleado.Value)
                 return Results.Json(ApiResponse<object>.Fail(403, "No puedes decidir sobre tu propia solicitud.", []), statusCode: 403);
@@ -645,6 +650,9 @@ public static partial class PermisosEndpoints
 
             if (solicitud is null)
                 return Results.NotFound(ApiResponse<object>.Fail(404, "Solicitud no encontrada.", []));
+
+            if (request.VersionSolicitud != VersionActualSolicitud(solicitud))
+                return Results.Conflict(ApiResponse<object>.Fail(409, "La solicitud cambió. Actualiza y revisa los datos antes de decidir.", []));
 
             // Un usuario de RRHH no administrador no confirma su propia solicitud
             if (!actor.EsAdmin && actor.IdEmpleado.HasValue && solicitud.IdEmpleado == actor.IdEmpleado.Value)
@@ -942,6 +950,9 @@ public static partial class PermisosEndpoints
     // =========================================================================
     // Creación transaccional (Solicitud + MinIO + Adjuntos + Campana SSE)
     // =========================================================================
+    private static string VersionActualSolicitud(TblTimeReportSolicitud s) =>
+        ((s.FechaModificacion ?? s.FechaCreacion).Ticks / 10).ToString(CultureInfo.InvariantCulture);
+
     private static async Task<IResult> CrearSolicitudInternaAsync(
         CrearPermisoRequest request,
         IReadOnlyList<IFormFile> archivosAdjuntos,
@@ -989,6 +1000,17 @@ public static partial class PermisosEndpoints
                 400,
                 "Tu usuario no tiene una ficha de colaborador activa asociada. Solicita a Talento Humano o al Administrador que vincule tu ficha de empleado antes de registrar solicitudes.",
                 []));
+        }
+
+        TblTimeReportSolicitud? corregida = null;
+        if (request.IdSolicitudObservada.HasValue)
+        {
+            corregida = await db.TblTimeReportSolicitudes.Include(s => s.Estado).Include(s => s.Adjuntos)
+                .FirstOrDefaultAsync(s => s.Id == request.IdSolicitudObservada.Value && s.Activo, ct);
+            if (corregida is null || corregida.IdEmpleado != empleado.Id)
+                return Results.Json(ApiResponse<object>.Fail(403, "No puedes editar esta solicitud.", []), statusCode: 403);
+            if (corregida.Estado.Codigo != "OBSERVADA")
+                return Results.BadRequest(ApiResponse<object>.Fail(400, "Solo puedes editar y reenviar solicitudes observadas.", []));
         }
 
         var motivoLimpio = request.Motivo?.Replace("\0", "").Trim();
@@ -1153,7 +1175,7 @@ public static partial class PermisosEndpoints
         if (esNomina
             && tipoPermiso.Codigo == "LICENCIA_ENFERMEDAD"
             && diasHabiles > 1m
-            && archivosAdjuntos.Count == 0)
+            && archivosAdjuntos.Count == 0 && !(corregida?.Adjuntos.Any(a => a.Activo) ?? false))
         {
             return Results.BadRequest(ApiResponse<object>.Fail(
                 400,
@@ -1189,7 +1211,7 @@ public static partial class PermisosEndpoints
             }
         }
 
-        var esInformativo = EsPermisoInformativoSinAprobacion(tipoPermiso.Codigo);
+        var esInformativo = corregida is null && EsPermisoInformativoSinAprobacion(tipoPermiso.Codigo);
         var idEstadoPendiente = await ObtenerIdEstadoSolicitudAsync(db, esInformativo ? "APROBADA" : "PENDIENTE_JEFE", ct);
 
         // Resolver asignación de proyecto, cliente y líder (RF-001).
@@ -1277,10 +1299,20 @@ public static partial class PermisosEndpoints
         {
             try
             {
+                if (corregida is not null)
+                {
+                    await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM time_report.tbl_time_report_solicitud WHERE id = {corregida.Id} FOR UPDATE", ct);
+                    await db.Entry(corregida).ReloadAsync(ct);
+                    if (request.VersionSolicitud != VersionActualSolicitud(corregida))
+                        return Results.Conflict(ApiResponse<object>.Fail(409, "La solicitud cambió. Vuelve a abrirla antes de corregirla.", []));
+                    var observadoId = await ObtenerIdEstadoSolicitudAsync(db, "OBSERVADA", ct);
+                    if (corregida.IdEstado != observadoId)
+                        return Results.BadRequest(ApiResponse<object>.Fail(400, "La solicitud ya no está observada. Actualiza la página.", []));
+                }
                 TblTimeReportSolicitud? nueva = null;
                 for (var intento = 1; intento <= 5; intento++)
                 {
-                    var codigo = await GenerarSiguienteCodigoSolicitudAsync(db, anio, intento - 1, ct);
+                    var codigo = corregida?.Codigo ?? await GenerarSiguienteCodigoSolicitudAsync(db, anio, intento - 1, ct);
                     nueva = new TblTimeReportSolicitud
                     {
                         Codigo = codigo,
@@ -1309,14 +1341,30 @@ public static partial class PermisosEndpoints
                         IpCreacion = ObtenerIpCliente(httpContext)
                     };
 
-                    db.TblTimeReportSolicitudes.Add(nueva);
+                    if (corregida is null)
+                        db.TblTimeReportSolicitudes.Add(nueva);
+                    else
+                    {
+                        nueva.Id = corregida.Id;
+                        nueva.Codigo = corregida.Codigo;
+                        nueva.FechaSolicitud = corregida.FechaSolicitud;
+                        nueva.FechaCreacion = corregida.FechaCreacion;
+                        nueva.UsuarioCreacion = corregida.UsuarioCreacion;
+                        nueva.IpCreacion = corregida.IpCreacion;
+                        nueva.UsuarioModificacion = usuario.Email;
+                        nueva.FechaModificacion = DateTime.UtcNow;
+                        nueva.IpModificacion = ObtenerIpCliente(httpContext);
+                        nueva.TokenExternoUsadoEn = null;
+                        db.Entry(corregida).CurrentValues.SetValues(nueva);
+                        nueva = corregida;
+                    }
                     try
                     {
                         await db.SaveChangesAsync(ct);
                         break;
                     }
                     catch (DbUpdateException ex) when (
-                        intento < 5
+                        corregida is null && intento < 5
                         && ex.InnerException is PostgresException pg
                         && pg.SqlState == PostgresErrorCodes.UniqueViolation)
                     {
@@ -1366,7 +1414,7 @@ public static partial class PermisosEndpoints
                 var correoOk = await NotificarCorreoSeguroAsync(db, notificacionService,
                     dto with { TokenExterno = creada.TokenExterno },
                     correoColab,
-                    EventoNotificacionPermiso.SolicitudCreada, request.IdUsuarioRrhh,
+                    corregida is null ? EventoNotificacionPermiso.SolicitudCreada : EventoNotificacionPermiso.SolicitudCorregidaReenviada, request.IdUsuarioRrhh,
                     ct);
 
                 if (!campanaOk || !correoOk) throw new InvalidOperationException("No se pudo registrar el aviso de la solicitud.");
@@ -1469,12 +1517,18 @@ public static partial class PermisosEndpoints
         var liderTipo = esLiderExt ? "EXT" : "INT";
         var liderCorreo = liderEfectivo?.IdpersonaNavigation?.Email;
 
-        var revLider = s.Revisiones
+        var observaciones = s.Revisiones.Where(r => r.Decision == "OBSERVADO")
+            .OrderByDescending(r => r.FechaRevision);
+        var limiteCiclo = (s.Estado.Codigo == "OBSERVADA" ? observaciones.Skip(1) : observaciones)
+            .Select(r => (DateTime?)r.FechaRevision).FirstOrDefault();
+        var revisionesVigentes = limiteCiclo is null ? s.Revisiones.AsEnumerable()
+            : s.Revisiones.Where(r => r.FechaRevision > limiteCiclo.Value);
+        var revLider = revisionesVigentes
             .Where(r => r.EtapaRevision == "JEFE_INMEDIATO")
             .OrderByDescending(r => r.FechaRevision)
             .FirstOrDefault();
 
-        var revTh = s.Revisiones
+        var revTh = revisionesVigentes
             .Where(r => r.EtapaRevision == "TALENTO_HUMANO")
             .OrderByDescending(r => r.FechaRevision)
             .FirstOrDefault();
@@ -1606,7 +1660,8 @@ public static partial class PermisosEndpoints
             // El token del magic link nunca sale en respuestas de la API: solo se agrega
             // (con `with`) al DTO que se usa para el correo al líder externo.
             TokenExterno: null,
-            Adjuntos: adjuntosDto);
+            Adjuntos: adjuntosDto,
+            VersionSolicitud: VersionActualSolicitud(s));
     }
 
     // =========================================================================
@@ -1861,7 +1916,9 @@ public static partial class PermisosEndpoints
             {
                 IdUsuarioDestino = idUsuarioDestino,
                 IdSolicitud = solicitud.Id,
-                Titulo = EsPermisoInformativoSinAprobacion(solicitud.TipoPermiso.Codigo)
+                Titulo = solicitud.FechaModificacion.HasValue
+                    ? $"Solicitud corregida y reenviada: {dto.Codigo}"
+                    : EsPermisoInformativoSinAprobacion(solicitud.TipoPermiso.Codigo)
                     ? $"Copia informativa {dto.Codigo} · {dto.Tipo}"
                     : (!solicitud.IdLider.HasValue ? $"Pendiente confirmación TH: {dto.Codigo} · {dto.Tipo}" : $"Nueva solicitud {dto.Codigo} · {dto.Tipo}"),
                 Mensaje = EsPermisoInformativoSinAprobacion(solicitud.TipoPermiso.Codigo)
@@ -1894,7 +1951,7 @@ public static partial class PermisosEndpoints
             var accionTxt = decision switch
             {
                 "APROBADO" => "aprobada por tu Jefe Inmediato y enviada a Talento Humano",
-                "OBSERVADO" => "observada por tu Jefe Inmediato",
+                "OBSERVADO" => "observada por tu Jefe Inmediato; corrígela y reenvíala desde Mis permisos",
                 _ => "rechazada por tu Jefe Inmediato"
             };
 
@@ -1966,7 +2023,7 @@ public static partial class PermisosEndpoints
                 : $"Solicitud {dto.Codigo} observada por TH",
             Mensaje = confirmada
                 ? $"Talento Humano registró y confirmó tu solicitud de {dto.Tipo} del {dto.Fechas}."
-                : TruncarTexto($"Talento Humano devolvió tu solicitud con observaciones: {dto.ObservacionRrhh}", 500),
+                : TruncarTexto($"Corrige y reenvía tu solicitud desde Mis permisos. Talento Humano indicó: {dto.ObservacionRrhh}", 500),
             UrlDestino = "/permisos",
             Leida = false,
             FechaCreacion = DateTime.UtcNow
