@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using tmr_backend.Features.CargaActividades.Domain;
 using tmr_backend.Features.CargaActividades.DTOs;
 using tmr_backend.Infrastructure.Database;
+using tmr_backend.Features.TimeReport.Services;
 
 namespace tmr_backend.Features.CargaActividades;
 
@@ -208,10 +209,15 @@ public static class CargaActividadesEndpoints
                     return Results.Json(CargaActividadesResponse.Failure("Token de sesión inválido o expirado."), statusCode: 401);
                 }
 
-                var empleadoId = await (from usuario in db.TblAutenticacionUsuarios
-                                        join empleado in db.TblAdministracionEmpleados on usuario.Idpersona equals empleado.Idpersona
-                                        where usuario.Id == userId && usuario.Activo && empleado.Activo
-                                        select (int?)empleado.Id).FirstOrDefaultAsync(context.RequestAborted);
+                // sm - También colaboradores con salida registrada: siguen completando sus actividades hasta la salida (EmpleadoSesion).
+                var idPersona = await db.TblAutenticacionUsuarios
+                    .Where(u => u.Id == userId && u.Activo)
+                    .Select(u => u.Idpersona)
+                    .FirstOrDefaultAsync(context.RequestAborted);
+                var empleadoId = idPersona is null ? null : await db.TblAdministracionEmpleados
+                    .DeLaPersona(idPersona)
+                    .Select(e => (int?)e.Id)
+                    .FirstOrDefaultAsync(context.RequestAborted);
                 if (!empleadoId.HasValue)
                     return Results.BadRequest(CargaActividadesResponse.Failure("El usuario no tiene un colaborador activo asociado."));
 
@@ -222,8 +228,6 @@ public static class CargaActividadesEndpoints
 
                 if (response.IsSuccess)
                 {
-                    // MODIFICACIÓN DE RETORNO: Aseguramos que si 'response' contiene la lista expuesta, 
-                    // o si deseas mapearla dinámicamente, se envíe de forma consistente al cliente HTTP.
                     return Results.Ok(response);
                 }
 

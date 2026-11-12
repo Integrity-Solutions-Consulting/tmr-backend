@@ -13,7 +13,8 @@ public record ActualizarColaboradorRequest(
     int? IdGenero,
     int? IdNacionalidad,
 
-    string? Email,
+    string? Email,               // Correo personal
+    string? EmailCorporativo,    // Correo institucional
     string? Telefono,
     string? Direccion,
 
@@ -28,9 +29,7 @@ public record ActualizarColaboradorRequest(
     int? IdModoTrabajo,
     int? IdCategoriaEmpleado,
 
-    // ================================================================
-    // NUEVO: CAMPO REEMPLAZO (ID del inactivo a reemplazar)
-    // ================================================================
+    // Id del inactivo a reemplazar, si corresponde.
     int? IdEmpleadoReemplazo,
 
     // sm - Fecha desde la que rige el nuevo tipo de contrato (solo si cambia). Si no se envía, rige desde hoy.

@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{TITULO_CORREO}}</title>
+</head>
+<body style="margin: 0; padding: 20px 10px; background-color: #f1f5f9; font-family: 'Segoe UI', Arial, Helvetica, sans-serif; color: #1e293b;">
+  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width: 640px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);">
+    <!-- CABECERA CORPORATIVA ISC -->
+    <tr>
+      <td style="background: linear-gradient(135deg, #163572 0%, #1e40af 100%); padding: 22px 28px; text-align: center;">
+        <img src="{{LOGO_URL}}" alt="Integrity Solutions" style="max-height: 46px; width: auto; margin-bottom: 8px; background: #ffffff; padding: 6px 12px; border-radius: 6px;" />
+        <h1 style="margin: 4px 0 0 0; font-size: 19px; font-weight: 700; color: #ffffff; letter-spacing: 0.01em;">
+          ISC Time Report · Gestión de Permisos y Vacaciones
+        </h1>
+        <p style="margin: 6px 0 0 0; font-size: 13px; color: #bfdbfe;">
+          {{SUBTITULO_CABECERA}} · Folio <strong>{{FOLIO}}</strong>
+        </p>
+      </td>
+    </tr>
+
+    <!-- SALUDO PERSONALIZADO Y MENSAJE PRINCIPAL -->
+    <tr>
+      <td style="padding: 24px 28px 12px 28px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td>
+              <span style="display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; background-color: {{BADGE_ROL_BG}}; color: {{BADGE_ROL_COLOR}};">
+                {{ROL_DESTINATARIO}}
+              </span>
+            </td>
+            <td style="text-align: right;">
+              <span style="display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; background-color: {{ESTADO_BG}}; color: {{ESTADO_COLOR}}; border: 1px solid {{ESTADO_BORDER}};">
+                {{ESTADO_ACTUAL_TEXTO}}
+              </span>
+            </td>
+          </tr>
+        </table>
+
+        <p style="margin: 16px 0 8px 0; font-size: 16px; color: #0f172a;">
+          Hola <strong>{{NOMBRE_DESTINATARIO}}</strong>,
+        </p>
+        <p style="margin: 0; font-size: 14px; color: #475569; line-height: 1.55;">
+          {{MENSAJE_PERSONALIZADO}}
+        </p>
+      </td>
+    </tr>
+
+    <!-- SEGUIMIENTO DE ESTADO (STEPPER VISUAL 3 PASOS) -->
+    <tr>
+      <td style="padding: 12px 28px;">
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px;">
+          <p style="margin: 0 0 12px 0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; text-align: center;">
+            Seguimiento del Estado de la Solicitud
+          </p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <!-- PASO 1: COLABORADOR -->
+              <td width="33%" style="text-align: center; vertical-align: top; padding: 0 4px;">
+                <div style="width: 28px; height: 28px; line-height: 28px; border-radius: 50%; margin: 0 auto 6px auto; font-size: 13px; font-weight: 700; background-color: {{PASO1_BG}}; color: {{PASO1_COLOR}};">
+                  1
+                </div>
+                <div style="font-size: 12px; font-weight: 700; color: #0f172a;">Solicitud Creada</div>
+                <div style="font-size: 11px; color: #64748b; margin-top: 2px;">{{PASO1_DETALLE}}</div>
+              </td>
+
+              <!-- PASO 2: LÍDER / JEFE INMEDIATO -->
+              <td width="34%" style="text-align: center; vertical-align: top; padding: 0 4px;">
+                <div style="width: 28px; height: 28px; line-height: 28px; border-radius: 50%; margin: 0 auto 6px auto; font-size: 13px; font-weight: 700; background-color: {{PASO2_BG}}; color: {{PASO2_COLOR}};">
+                  2
+                </div>
+                <div style="font-size: 12px; font-weight: 700; color: #0f172a;">Jefe Inmediato</div>
+                <div style="font-size: 11px; color: #64748b; margin-top: 2px;">{{PASO2_DETALLE}}</div>
+              </td>
+
+              <!-- PASO 3: TALENTO HUMANO (RRHH) -->
+              <td width="33%" style="text-align: center; vertical-align: top; padding: 0 4px;">
+                <div style="width: 28px; height: 28px; line-height: 28px; border-radius: 50%; margin: 0 auto 6px auto; font-size: 13px; font-weight: 700; background-color: {{PASO3_BG}}; color: {{PASO3_COLOR}};">
+                  3
+                </div>
+                <div style="font-size: 12px; font-weight: 700; color: #0f172a;">Talento Humano</div>
+                <div style="font-size: 11px; color: #64748b; margin-top: 2px;">{{PASO3_DETALLE}}</div>
+              </td>
+            </tr>
+          </table>
+        </div>
+      </td>
+    </tr>
+
+    <!-- FICHA RESUMEN DE LA SOLICITUD -->
+    <tr>
+      <td style="padding: 8px 28px 16px 28px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border: 1px solid #cbd5e1; border-radius: 8px; border-collapse: collapse; font-size: 13px;">
+          <tr style="background-color: #e2e8f0;">
+            <th colspan="2" style="padding: 8px 12px; text-align: left; font-size: 12px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.03em;">
+              Detalle del Formulario Oficial ({{FOLIO}})
+            </th>
+          </tr>
+          <tr>
+            <td style="padding: 8px 12px; border-top: 1px solid #e2e8f0; color: #64748b; width: 38%;">Colaborador</td>
+            <td style="padding: 8px 12px; border-top: 1px solid #e2e8f0; color: #0f172a; font-weight: 600;">{{COLABORADOR}} ({{CEDULA}})</td>
+          </tr>
+          <tr style="background-color: #f8fafc;">
+            <td style="padding: 8px 12px; border-top: 1px solid #e2e8f0; color: #64748b;">Cargo / Cliente</td>
+            <td style="padding: 8px 12px; border-top: 1px solid #e2e8f0; color: #0f172a;">{{CARGO}} · {{CLIENTE_PROYECTO}}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 12px; border-top: 1px solid #e2e8f0; color: #64748b;">Jefe Inmediato</td>
+            <td style="padding: 8px 12px; border-top: 1px solid #e2e8f0; color: #0f172a;">{{LIDER_NOMBRE}}</td>
+          </tr>
+          <tr style="background-color: #f8fafc;">
+            <td style="padding: 8px 12px; border-top: 1px solid #e2e8f0; color: #64748b;">Tipo de Permiso</td>
+            <td style="padding: 8px 12px; border-top: 1px solid #e2e8f0; color: #163572; font-weight: 700;">{{TIPO_PERMISO}}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 12px; border-top: 1px solid #e2e8f0; color: #64748b;">Período Solicitado</td>
+            <td style="padding: 8px 12px; border-top: 1px solid #e2e8f0; color: #0f172a; font-weight: 600;">{{FECHAS}} (Regreso: {{FECHA_REGRESO}})</td>
+          </tr>
+          <tr style="background-color: #f8fafc;">
+            <td style="padding: 8px 12px; border-top: 1px solid #e2e8f0; color: #64748b;">Duración y Horario</td>
+            <td style="padding: 8px 12px; border-top: 1px solid #e2e8f0; color: #0f172a;">{{DURACION}} · {{HORARIO}}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 12px; border-top: 1px solid #e2e8f0; color: #64748b;">Motivo</td>
+            <td style="padding: 8px 12px; border-top: 1px solid #e2e8f0; color: #334155;">{{MOTIVO}}</td>
+          </tr>
+          {{FILA_COMENTARIOS}}
+        </table>
+      </td>
+    </tr>
+
+    <!-- BOTÓN DE ACCIÓN PERSONALIZADO -->
+    <tr>
+      <td style="padding: 6px 28px 24px 28px; text-align: center;">
+        <a href="{{CTA_URL}}" style="display: inline-block; background-color: #163572; color: #ffffff; text-decoration: none; padding: 12px 26px; border-radius: 8px; font-size: 14px; font-weight: 700;">
+          {{CTA_TEXTO}}
+        </a>
+        <p style="margin: 10px 0 0 0; font-size: 11px; color: #64748b;">
+          {{NOTA_PIE_BOTON}}
+        </p>
+      </td>
+    </tr>
+
+    <!-- PIE DE CORREO -->
+    <tr>
+      <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 14px 28px; text-align: center;">
+        <p style="margin: 0; font-size: 11px; color: #94a3b8; line-height: 1.5;">
+          Notificación automática enviada vía Apprise · ISC Time Report.<br />
+          © {{ANIO_ACTUAL}} Integrity Solutions · Todos los derechos reservados.
+        </p>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

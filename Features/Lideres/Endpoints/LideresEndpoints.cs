@@ -96,27 +96,15 @@ public static class LideresEndpoints
          .Produces(404)
          .WithDescription("Elimina físicamente un líder y sus registros asociados. Si es externo, también elimina la persona vinculada.");
 
-        // 11. Personas no líderes (Elisa - redundancia)
+        // 11. Personas no líderes (Elisa - redundancia): dos rutas, mismo resultado
         group.MapGet("/personasNoLideres", PersonasNoLideres)
              .WithName("PersonasNoLideres");
 
-        group.MapGet("/personas", Personas)
+        group.MapGet("/personas", PersonasNoLideres)
              .WithName("Personas");
     }
 
     private static async Task<IResult> PersonasNoLideres(
-        ILiderService liderService,
-        CancellationToken ct)
-    {
-        var personas = await liderService.ObtenerPersonasNoLideresAsync(ct);
-        return Results.Ok(ApiResponse<IEnumerable<PersonaResponse>>.Ok(
-            data: personas,
-            message: "Personas no líderes obtenidas exitosamente",
-            meta: new PaginationMeta(personas.Count, 1, personas.Count)
-        ));
-    }
-
-    private static async Task<IResult> Personas(
         ILiderService liderService,
         CancellationToken ct)
     {

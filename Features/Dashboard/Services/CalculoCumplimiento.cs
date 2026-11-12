@@ -3,8 +3,8 @@ using tmr_backend.Features.TimeReport.Services;
 namespace tmr_backend.Features.Dashboard.Services;
 
 /// <summary>
-/// sm - Parámetros del Dashboard Time Report. Los marcados como PROVISIONAL están pendientes de confirmar con negocio
-/// y se muestran en pantalla y en la descarga (RF 16: el usuario debe conocer los parámetros aplicados).
+/// sm - Parámetros del Dashboard Time Report, confirmados con negocio. Se muestran en pantalla y en la
+/// descarga (RF 16: el usuario debe conocer los parámetros aplicados).
 /// </summary>
 public static class ParametrosDashboard
 {

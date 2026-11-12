@@ -16,7 +16,7 @@ jobs:
       pr: ${{ steps.release.outputs.pr }}
       prs_created: ${{ steps.release.outputs.prs_created }}
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         id: release
         with:
           # Use a Personal Access Token here, NOT the default GITHUB_TOKEN.
