@@ -36,7 +36,7 @@ public static class SincronizadorCuentasPermisos
         new("lider@tmr.com",       "1790000003", "Luis Fernando", "Líder Proyecto",  "EMP-LID-003", ["Lider", "Líder", "Colaborador"],  "Líder de Proyecto", EsLiderInterno: true),
         new("ger1@tmr.com",        "1790000004", "Gabriel",       "Gerencia TMR",    "EMP-GER-004", ["Gerencia", "Gerente"],            "Gerente de Operaciones"),
         new("rec1@tmr.com",        "1790000005", "Ana María",     "Talento Humano",  "EMP-RRHH-005",["Recursos Humanos"],               "Líder de Talento Humano"),
-        new("externo@tmr.com",     "1790000006", "Ernesto",       "Líder Externo",   "EMP-EXT-006", ["Colaborador"],                    "Líder Externo de Prueba", EsLiderExterno: true)
+        new("externo@tmr.com",     "1790000006", "Ernesto",       "Líder Externo",   "EMP-EXT-006", ["Lider", "Líder", "Colaborador"],                    "Líder Externo de Prueba", EsLiderExterno: true)
     ];
 
     public static async Task AsegurarCuentasSincronizadasAsync(
