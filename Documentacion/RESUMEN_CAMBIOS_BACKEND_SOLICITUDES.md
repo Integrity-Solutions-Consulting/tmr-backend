@@ -8,8 +8,8 @@
 
 ## 1. Lo que quedó implementado y consolidado (Estado actual)
 
-### 1.1. Base de Datos PostgreSQL normalizada en 3FN (Script 19)
-Se implementó un modelo relacional en **Tercera Forma Normal (3FN)** dentro de `Documentacion/Scripts_DB/19-Inv_tmr_db_modulo_solicitudes.sql`, compuesto por **6 tablas**:
+### 1.1. Base de Datos PostgreSQL normalizada en 3FN (Script 23)
+Se implementó un modelo relacional en **Tercera Forma Normal (3FN)** dentro de `Documentacion/Scripts_DB/23-Inv_tmr_db_modulo_solicitudes.sql`, compuesto por **6 tablas**:
 
 1. **`time_report.tbl_time_report_estado_solicitud`**: Catálogo normalizado de estados del flujo (`PENDIENTE_JEFE`, `PENDIENTE_TH`, `OBSERVADA`, `APROBADA`, `RECHAZADA`) con código de semáforo (`AMARILLO`, `VERDE`, `ROJO`).
 2. **`time_report.tbl_time_report_tipo_permiso`**: Catálogo oficial de los 8 tipos de solicitud del formulario de Talento Humano (`VACACIONES`, `LICENCIA_PATERNIDAD`, `LICENCIA_MATERNIDAD`, `PERMISO_PERSONAL`, `LICENCIA_CALAMIDAD`, `LICENCIA_ENFERMEDAD`, `PERMISO_ESTUDIOS`, `OTRO`).
@@ -19,7 +19,6 @@ Se implementó un modelo relacional en **Tercera Forma Normal (3FN)** dentro de 
 6. **`notificacion.notificacion_usuario`**: Bandeja persistida para la campana de notificaciones internas en tiempo real por usuario destino.
 
 Adicionalmente:
-- Se dejó `Documentacion/Scripts_DB/ROLLBACK_19-Inv_tmr_db_modulo_solicitudes.sql` para reversión limpia e idempotente.
 - Se mantuvo intacta `Infrastructure/Database/Entities/TblTimeReportPermiso.cs` (tabla original `time_report.tbl_time_report_permisos` usada por Time Report clásico).
 - El esquema se gestiona exclusivamente mediante scripts de migración SQL (sin ejecución de DDL en tiempo de petición HTTP).
 
@@ -65,8 +64,7 @@ En `Features/Permisos/Endpoints/PermisosEndpoints.cs` y `Features/Permisos/DTOs/
 ## 2. Inventario de archivos del Backend
 
 ### Archivos creados
-- `tmr-backend/Documentacion/Scripts_DB/19-Inv_tmr_db_modulo_solicitudes.sql`
-- `tmr-backend/Documentacion/Scripts_DB/ROLLBACK_19-Inv_tmr_db_modulo_solicitudes.sql`
+- `tmr-backend/Documentacion/Scripts_DB/23-Inv_tmr_db_modulo_solicitudes.sql`
 - `tmr-backend/Infrastructure/Database/Entities/TblTimeReportEstadoSolicitud.cs`
 - `tmr-backend/Infrastructure/Database/Entities/TblTimeReportTipoPermiso.cs`
 - `tmr-backend/Infrastructure/Database/Entities/TblTimeReportSolicitud.cs`
