@@ -53,10 +53,16 @@ public record SeguimientoColaboradorDto(
     decimal HorasDiasLaborables = 0m,
     // sm - El proyecto de esta fila, como lista de un solo elemento (null si es la fila "Sin Proyecto"). Se
     // mantiene como lista por compatibilidad con el frontend (descarga de reportes por proyecto).
-    List<SeguimientoProyectoDto>? Proyectos = null
+    List<SeguimientoProyectoDto>? Proyectos = null,
+    // sm - Datos de salida para las descargas (columnas del reporte general e información adicional del Time Report
+    // individual). Los de salida del colaborador solo vienen si está Inactivo; SalidaProyecto es la salida del
+    // colaborador en el proyecto de esta fila (null si no tiene o si la fila es "Sin Proyecto").
+    bool ColaboradorActivo = true,
+    DateOnly? FechaSalida = null,
+    string? TipoSalida = null,
+    string? CausaSalida = null,
+    string? MotivoSalida = null,
+    DateOnly? SalidaProyecto = null,
+    // sm - "Activo"/"Inactivo" en el proyecto de esta fila dentro del rango filtrado (null si la fila es "Sin Proyecto").
+    string? EstadoEnProyecto = null
 );
-
-// sm - Se comenta: la funcionalidad de aprobar horas se retira de Seguimiento (endpoint /aprobar comentado).
-// public record AprobarHorasRequest(
-//     List<int> Ids
-// );

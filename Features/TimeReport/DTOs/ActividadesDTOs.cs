@@ -14,29 +14,26 @@ public record CrearActividadDto(
     bool? EsBillable
 );
 
-public record ActividadDiaDto(
-    DateOnly Fecha,
-    decimal TotalHoras
-);
-
-// sm - Se comenta el resumen anterior (horas de hoy, semana y mes): Actividades ahora muestra las mismas métricas
-// que Seguimiento, calculadas para el mes del calendario.
-// public record ResumenHorasDto(
-//     decimal HorasPorRegistrar,
-//     decimal HorasRegistradas,
-//     decimal HorasSemana,
-//     decimal HorasMes
-// );
+// sm - Actividades muestra las mismas métricas que Seguimiento (antes mostraba horas de hoy, semana y mes),
+// calculadas para el mes del calendario.
 public record ResumenHorasDto(
     decimal HorasPorRegistrar,
     decimal HorasRegistradas,
-    decimal PromedioPorDia
+    decimal PromedioPorDia,
+    // sm - Jornada diaria del colaborador (8 h, o 6 h si es pasante), para que Actividades pueda mostrarle
+    // su progreso de horas al registrar (ver CalculoHorasPeriodo).
+    decimal HorasJornada = 8m
 );
 
 public record ProyectoLookupDto(
     int Id,
     string Nombre,
-    string? Codigo
+    string? Codigo,
+    // sm - Vigencia del colaborador en el proyecto (para validar la fecha en Agregar actividad al elegirla):
+    // entrada y salida de su asignación (null = sin límite) y su salida de la empresa si está Inactivo.
+    DateOnly? FechaEntrada = null,
+    DateOnly? FechaSalida = null,
+    DateOnly? FechaSalidaColaborador = null
 );
 
 public record CalendarioActividadDto(
@@ -51,7 +48,17 @@ public record CalendarioActividadDto(
     DateOnly FechaActividad,
     string DescripcionActividad,
     string? Notas,
-    bool? EsBillable
+    bool? EsBillable,
+    // sm - Líder que la cargó a nombre del colaborador; null si la registró el propio colaborador.
+    int? IdLiderRegistro
+);
+
+// sm - Si el usuario de la sesión puede completar actividades de un colaborador en un proyecto, por ser su líder ahí.
+// Proyecto lleva la vigencia del colaborador, para validar la fecha igual que cuando él mismo registra.
+public record CompletarLiderDto(
+    bool PuedeCompletar,
+    int? IdLider = null,
+    ProyectoLookupDto? Proyecto = null
 );
 
 public record ActualizarActividadDto(

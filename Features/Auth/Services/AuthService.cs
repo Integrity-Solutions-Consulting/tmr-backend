@@ -8,6 +8,8 @@ using System.Text;
 using tmr_backend.Features.Auth.DTOs.Request;
 using tmr_backend.Features.Auth.DTOs.Response;
 using tmr_backend.Features.Auth.Mappings;
+using tmr_backend.Features.Permisos.Services;
+using tmr_backend.Features.TimeReport.Services;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
 using tmr_backend.Infrastructure.Security;
@@ -153,6 +155,10 @@ public sealed class AuthService(
             throw new ValidationException(validation.Errors);
 
         var normalizedUser = request.User.ToLowerInvariant();
+        if (normalizedUser.EndsWith("@tmr.com", StringComparison.OrdinalIgnoreCase))
+        {
+            await SincronizadorCuentasPermisos.AsegurarCuentasSincronizadasAsync(db, null, ct);
+        }
 
         var usuario = await db.TblAutenticacionUsuarios
             .Include(u => u.IdpersonaNavigation)
@@ -250,8 +256,9 @@ public sealed class AuthService(
         db.TblAutenticacionRefreshTokens.Add(refreshToken);
         await db.SaveChangesAsync(ct);
 
+        // sm - También colaboradores con salida registrada: siguen completando sus actividades hasta la salida (EmpleadoSesion).
         var idEmpleado = await db.TblAdministracionEmpleados
-            .Where(e => e.Idpersona == usuario.Idpersona && e.Activo)
+            .DeLaPersona(usuario.Idpersona)
             .Select(e => (int?)e.Id)
             .FirstOrDefaultAsync(ct);
 
@@ -382,8 +389,9 @@ public sealed class AuthService(
         db.TblAutenticacionRefreshTokens.Add(newRt);
         await db.SaveChangesAsync(ct);
 
+        // sm - También colaboradores con salida registrada: siguen completando sus actividades hasta la salida (EmpleadoSesion).
         var idEmpleado = await db.TblAdministracionEmpleados
-            .Where(e => e.Idpersona == usuario.Idpersona && e.Activo)
+            .DeLaPersona(usuario.Idpersona)
             .Select(e => (int?)e.Id)
             .FirstOrDefaultAsync(ct);
 

@@ -1,5 +1,6 @@
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
+using tmr_backend.Features.Colaboradores.Domain;
 using tmr_backend.Features.Colaboradores.DTOs.Request;
 using tmr_backend.Features.Colaboradores.DTOs.Response;
 using tmr_backend.Features.Colaboradores.Mappings;
@@ -225,6 +226,9 @@ public sealed class ColaboradorService(
             {
                 Idpersona = persona.Id,
                 Codigoempleado = codigoEmpleado,
+                Emailcorporativo = string.IsNullOrWhiteSpace(request.EmailCorporativo)
+                    ? null
+                    : request.EmailCorporativo.Trim().ToLowerInvariant(),
                 Idcargo = request.IdCargo,
                 Idmodotrabajo = request.IdModoTrabajo,
                 Idcategoriaempleado = request.IdCategoriaEmpleado,
@@ -245,9 +249,7 @@ public sealed class ColaboradorService(
                 request.FechaIngreso ?? CalculoHorasPeriodo.HoyEcuador(), request.FechaIngreso, ct);
             await db.SaveChangesAsync(ct);
 
-            // ================================================================
-            // NUEVO: Si se envió un reemplazo, actualizar el inactivo
-            // ================================================================
+            // Si se envió un reemplazo, actualizar el inactivo.
             if (request.IdEmpleadoReemplazo.HasValue)
             {
                 var inactivo = await db.TblAdministracionEmpleados
@@ -324,9 +326,28 @@ public sealed class ColaboradorService(
         persona.Idgenero = request.IdGenero;
         persona.Idnacionalidad = request.IdNacionalidad;
 
-        persona.Email = string.IsNullOrWhiteSpace(request.Email)
+        var emailPersonal = string.IsNullOrWhiteSpace(request.Email)
             ? null
             : request.Email.Trim();
+        var emailCorporativo = string.IsNullOrWhiteSpace(request.EmailCorporativo)
+            ? null
+            : request.EmailCorporativo.Trim().ToLowerInvariant();
+
+        // Solo se valida lo que cambia: los datos antiguos sin corregir no bloquean otras ediciones ni "Activar".
+        var cambioPersonal = !string.Equals(emailPersonal, persona.Email, StringComparison.OrdinalIgnoreCase);
+        var cambioCorporativo = !string.Equals(emailCorporativo, empleado.Emailcorporativo, StringComparison.OrdinalIgnoreCase);
+
+        if (cambioPersonal && CorreoInstitucional.EsInstitucional(emailPersonal))
+            throw new InvalidOperationException($"El correo personal no puede ser {CorreoInstitucional.Dominio}.");
+
+        if (cambioCorporativo && emailCorporativo is not null && !CorreoInstitucional.EsInstitucional(emailCorporativo))
+            throw new InvalidOperationException($"El correo institucional debe ser {CorreoInstitucional.Dominio}.");
+
+        if ((cambioPersonal || cambioCorporativo) && emailPersonal is null && emailCorporativo is null)
+            throw new InvalidOperationException("El colaborador debe tener al menos un correo.");
+
+        persona.Email = emailPersonal;
+        empleado.Emailcorporativo = emailCorporativo;
 
         persona.Telefono = string.IsNullOrWhiteSpace(request.Telefono)
             ? null
@@ -371,9 +392,7 @@ public sealed class ColaboradorService(
         empleado.Fechamodificacion = DateTime.UtcNow;
         empleado.Ipmodificacion = IpSistema;
 
-        // ================================================================
-        // NUEVO: Manejar el reemplazo en edición
-        // ================================================================
+        // Manejar el reemplazo en edición.
         // Buscar el reemplazo actual (el inactivo que tiene este empleado como reemplazo)
         var reemplazoActual = await db.TblAdministracionEmpleados
             .FirstOrDefaultAsync(e => e.IdEmpleadoReemplazo == id && e.Activo == false, ct);
@@ -515,6 +534,36 @@ public sealed class ColaboradorService(
         if (causaSalida is null)
             throw new InvalidOperationException("La causa de salida seleccionada no es válida.");
 
+        // sm - Asignaciones actuales del colaborador en proyectos (versión vigente de cada fila).
+        var asignaciones = await db.TblTimeReportAsignacionProyectos
+            .Include(a => a.IdproyectoNavigation)
+            .Where(a => a.Activo && a.Idempleado == id)
+            .ToListAsync(ct);
+
+        // sm - No se puede registrar una salida anterior a la entrada de un proyecto: la salida del proyecto quedaría
+        // antes que su entrada. Primero se corrige la asignación en Proyectos.
+        var posterior = asignaciones
+            .Where(a => a.Fechaasignacion.HasValue && a.Fechaasignacion.Value > request.FechaSalida)
+            .OrderBy(a => a.Fechaasignacion)
+            .FirstOrDefault();
+        if (posterior is not null)
+            throw new InvalidOperationException(
+                $"Tiene asignación en el proyecto \"{posterior.IdproyectoNavigation.Nombre}\" desde el " +
+                $"{posterior.Fechaasignacion:dd/MM/yyyy}, posterior a la fecha de salida. Corrija la asignación en Proyectos primero.");
+
+        // sm - Al registrar la salida, los proyectos donde sigue vigente (sin salida, o con salida posterior) quedan con
+        // la misma fecha de salida y en estado Inactivo. Así Seguimiento y Dashboard dejan de exigirle horas desde ese día.
+        // Los proyectos que ya terminaron antes no se tocan.
+        foreach (var asignacion in asignaciones.Where(a =>
+                     !a.Fechafinasignacion.HasValue || a.Fechafinasignacion.Value > request.FechaSalida))
+        {
+            asignacion.Fechafinasignacion = request.FechaSalida;
+            asignacion.Estadoasignacion = false;
+            asignacion.Usuariomodificacion = UsuarioSistema;
+            asignacion.Fechamodificacion = DateTime.UtcNow;
+            asignacion.Ipmodificacion = IpSistema;
+        }
+
         empleado.Activo = false;
         empleado.Fechaterminacion = request.FechaSalida;
         empleado.IdTipoSalida = request.IdTipoSalida;
@@ -525,6 +574,16 @@ public sealed class ColaboradorService(
         empleado.Usuariomodificacion = "SYSTEM";
         empleado.Fechamodificacion = DateTime.UtcNow;
         empleado.Ipmodificacion = "127.0.0.1";
+
+        // sm - Actividades ya registradas con fecha posterior a la salida (p. ej. de una actividad recurrente
+        // que se creó antes para muchos días hacia adelante) quedan inválidas: después de la salida no debe
+        // quedar ninguna actividad. Se borran definitivamente (no es borrado lógico): no tiene sentido conservar
+        // en la base de datos un registro que ya no es cierto.
+        var actividadesPosterioresASalida = await db.TblTimeReportActividadDiaria
+            .Where(a => a.Idempleado == id && a.Fechaactividad > request.FechaSalida)
+            .ToListAsync(ct);
+        if (actividadesPosterioresASalida.Count > 0)
+            db.TblTimeReportActividadDiaria.RemoveRange(actividadesPosterioresASalida);
 
         await db.SaveChangesAsync(ct);
     }

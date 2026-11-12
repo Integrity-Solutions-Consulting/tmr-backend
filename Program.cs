@@ -1,6 +1,7 @@
 using Amazon.S3;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using tmr_backend.Infrastructure.Messaging;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
 using tmr_backend.Infrastructure.Database.Seeders;
@@ -34,6 +35,8 @@ using tmr_backend.Features.Configuracion.Catalogos.Application;
 using tmr_backend.Features.Configuracion.Catalogos.Endpoints;
 using tmr_backend.Features.HealthCheck.Endpoints;
 using tmr_backend.Features.Proveedores.Endpoints;
+using tmr_backend.Features.Permisos.Endpoints;
+using tmr_backend.Features.Permisos.Services;
 using Scalar.AspNetCore;
 using tmr_backend.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -60,6 +63,24 @@ using Microsoft.AspNetCore.ResponseCompression;
 using System.IO.Compression;
 using tmr_backend.Infrastructure.Extensions;
 using tmr_backend.Infrastructure.BackgroundServices;
+using tmr_backend.Features.Notificaciones;
+using tmr_backend.Features.Notificaciones.Presentation.Endpoint;
+using tmr_backend.Features.IntegracionRps;
+using Serilog;
+using tmr_backend.Infrastructure.Logging;
+
+// Logger de arranque: registra lo que ocurra antes de que Serilog lea appsettings
+// (p. ej. falta la cadena de conexión o el JWT). Luego AddSerilog lo reemplaza por el configurado.
+Log.Logger = new LoggerConfiguration()
+    .Enrich.With<NivelAbreviadoEnricher>()
+    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Nivel:l}] {Message:lj}{NewLine}{Exception}")
+    .CreateBootstrapLogger();
+
+AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+{
+    Log.Fatal(e.ExceptionObject as Exception, "El backend se detuvo por un error no controlado");
+    Log.CloseAndFlush();
+};
 
 var databaseCommands = new[] { "--prepare-database", "--apply-migrations", "--initialize-data", "--verify-database" };
 var requestedCommands = args.Where(databaseCommands.Contains).ToArray();
@@ -78,8 +99,12 @@ if (requestedCommands.Length == 1)
 // SERVICES CONFIGURATION
 // =======================
 
-builder.Logging.ClearProviders();
-builder.Logging.AddConsole();
+// ── Logging: Serilog, configurado en la sección "Serilog" de appsettings ──
+builder.Services.AddSerilog((servicios, configuracion) => configuracion
+    .ReadFrom.Configuration(builder.Configuration)
+    .ReadFrom.Services(servicios)
+    .Enrich.FromLogContext()
+    .Enrich.With<NivelAbreviadoEnricher>());   // {Nivel}: TRC/DBG/INF/WRN/ERR/CRT
 
 // ── JSON Serializer Configuration ──
 builder.Services.ConfigureHttpJsonOptions(options =>
@@ -112,6 +137,21 @@ JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 // ── Database Context ──
 builder.Services.AddScoped<AuditInterceptor>();
 var defaultConnection = builder.Configuration.GetConnectionString("DefaultConnection") ?? string.Empty;
+if (defaultConnection.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase) ||
+    defaultConnection.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase))
+{
+    var dbUri = new Uri(defaultConnection);
+    var userInfo = dbUri.UserInfo.Split(':', 2);
+    defaultConnection = new NpgsqlConnectionStringBuilder
+    {
+        Host = dbUri.Host,
+        Port = dbUri.Port > 0 ? dbUri.Port : 5432,
+        Database = dbUri.AbsolutePath.Trim('/'),
+        Username = userInfo.Length > 0 ? Uri.UnescapeDataString(userInfo[0]) : string.Empty,
+        Password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : string.Empty
+    }.ConnectionString;
+    builder.Configuration["ConnectionStrings:DefaultConnection"] = defaultConnection;
+}
 if (string.IsNullOrWhiteSpace(defaultConnection))
     throw new InvalidOperationException(
         "Falta la cadena de conexión de PostgreSQL. Configure ConnectionStrings__DefaultConnection " +
@@ -119,7 +159,10 @@ if (string.IsNullOrWhiteSpace(defaultConnection))
 
 builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
     options.UseNpgsql(defaultConnection)
-           .AddInterceptors(sp.GetRequiredService<AuditInterceptor>()));
+           .AddInterceptors(
+               sp.GetRequiredService<AuditInterceptor>(),
+               // Despierta al EventDispatcher con los eventos publicados en una transacción, al confirmarla
+               sp.GetRequiredService<SenalesOutboxInterceptor>()));
 
 // ── CORS ──
  String[] allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? new[] { "http://localhost:3000" };
@@ -139,6 +182,7 @@ builder.Services.AddCors(options =>
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("magic-link", context => RateLimitPartition.GetFixedWindowLimiter(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions { PermitLimit = 30, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
     options.AddPolicy("auth", context => RateLimitPartition.GetFixedWindowLimiter(
         context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions
@@ -210,6 +254,11 @@ builder.Services.AddScoped<ICargarActividadesExcelHandler, CargarActividadesExce
 
 // Feature: HealthCheck
 builder.Services.AddScoped<IHealthCheckService, HealthCheckService>();
+
+// Feature: Permisos, Licencias y Vacaciones
+builder.Services.AddScoped<IPermisosStorageService, PermisosStorageService>();
+builder.Services.AddScoped<IPermisosNotificacionService, PermisosNotificacionService>();
+builder.Services.AddScoped<IPermisosPdfService, PermisosPdfService>();
 
 // ── Fluent Validation ──
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
@@ -302,6 +351,12 @@ builder.Services.AddAuthorization(options =>
         .Build();
 });
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
+// =========================
+// NOTIFICACIONES MODULE
+// =========================
+builder.Services.AddMessaging();
+builder.Services.AddNotificacionesModule(builder.Configuration);
+builder.Services.AddNotificacionesQuartz(builder.Configuration);
 
 // =========================
 // PIPELINE CONFIGURATION
@@ -375,6 +430,10 @@ app.MapDiasFestivosEndpoints();
 app.MapCatalogosConfigEndpoints();
 app.MapProveedoresEndpoints();
 app.MapActualizacionDatosEndpoints();
-
+app.MapNotificacionesEndpoints();
+app.MapPermisosEndpoints();
+app.MapIntegracionRpsEndpoints();
 app.Run();
+
+Log.CloseAndFlush();
 

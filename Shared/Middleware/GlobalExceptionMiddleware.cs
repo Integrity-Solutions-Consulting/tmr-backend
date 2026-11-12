@@ -18,10 +18,28 @@ public class GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExcep
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Excepción no controlada: {Message}", ex.Message);
+            // Los rechazos esperados (validación, conflicto, no encontrado...) no son fallos del sistema:
+            // van como Warning y sin stack trace para que los errores reales no se pierdan entre ellos
+            if (EsRechazoEsperado(ex))
+                logger.LogWarning("Solicitud {Method} {Path} rechazada ({TipoExcepcion}): {Message}",
+                    context.Request.Method, context.Request.Path, ex.GetType().Name, ex.Message);
+            else
+                logger.LogError(ex, "Excepción no controlada en {Method} {Path}: {Message}",
+                    context.Request.Method, context.Request.Path, ex.Message);
+
             await HandleExceptionAsync(context, ex);
         }
     }
+
+    // Solo las excepciones propias del proyecto y las de validación. ArgumentException,
+    // InvalidOperationException o KeyNotFoundException también las lanzan errores de programación
+    // (EF Core, diccionarios...), así que siguen registrándose como Error con su stack trace.
+    private static bool EsRechazoEsperado(Exception exception) =>
+        exception is FluentValidation.ValidationException
+            or Exceptions.ConflictException
+            or Exceptions.NotFoundException
+            or Exceptions.UnauthorizedException
+            or UsuariosConfigDomainException;
 
     private static async Task HandleExceptionAsync(HttpContext context, Exception exception)
     {
@@ -35,7 +53,7 @@ public class GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExcep
             Exceptions.UnauthorizedException      => (HttpStatusCode.Unauthorized,    "No autorizado"),
             UsuarioEmailYaExisteException         => (HttpStatusCode.Conflict,        "Conflicto con un recurso existente"),
             UsuarioIdentificacionYaExisteException => (HttpStatusCode.Conflict,       "Conflicto con un recurso existente"),
-            UsuariosConfigDomainException         => (HttpStatusCode.BadRequest,      "Solicitud invÃ¡lida"),
+            UsuariosConfigDomainException         => (HttpStatusCode.BadRequest,      "Solicitud inválida"),
 
             KeyNotFoundException                  => (HttpStatusCode.NotFound,        "Recurso no encontrado"),
             UnauthorizedAccessException           => (HttpStatusCode.Unauthorized,    "No autorizado"),

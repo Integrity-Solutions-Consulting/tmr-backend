@@ -248,7 +248,7 @@ public static class AuthEndpoints
                 Status = StatusCodes.Status400BadRequest
             });
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return Results.StatusCode(StatusCodes.Status500InternalServerError);
         }
@@ -287,7 +287,7 @@ public static class AuthEndpoints
                 Status = StatusCodes.Status400BadRequest
             });
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return Results.StatusCode(StatusCodes.Status500InternalServerError);
         }

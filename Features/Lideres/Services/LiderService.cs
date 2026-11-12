@@ -39,7 +39,12 @@ public class LiderService : ILiderService
             l.IdtipoNavigation != null ? l.IdtipoNavigation.Descripcion : null,
             l.IdpersonaNavigation.Numeroidentificacion,
             l.Activo,
-            l.Fechacreacion
+            l.Fechacreacion,
+            l.IdpersonaNavigation.TblAdministracionEmpleados
+                .Where(e => e.Emailcorporativo != null && e.Emailcorporativo != "")
+                .OrderByDescending(e => e.Activo)
+                .Select(e => e.Emailcorporativo)
+                .FirstOrDefault()
         )).ToListAsync(ct);
     }
 
@@ -52,6 +57,12 @@ public class LiderService : ILiderService
 
         if (lider is null) return null;
 
+        var emailCorporativo = await _db.TblAdministracionEmpleados
+            .Where(e => e.Idpersona == lider.Idpersona && e.Emailcorporativo != null && e.Emailcorporativo != "")
+            .OrderByDescending(e => e.Activo)
+            .Select(e => e.Emailcorporativo)
+            .FirstOrDefaultAsync(ct);
+
         return new LiderResponse(
             lider.Id,
             lider.IdpersonaNavigation.Nombres,
@@ -63,7 +74,8 @@ public class LiderService : ILiderService
             lider.IdtipoNavigation?.Descripcion,
             lider.IdpersonaNavigation.Numeroidentificacion,
             lider.Activo,
-            lider.Fechacreacion);
+            lider.Fechacreacion,
+            emailCorporativo);
     }
 
     public async Task<LiderResponse> CrearAsync(CrearLiderRequest request, CancellationToken ct)

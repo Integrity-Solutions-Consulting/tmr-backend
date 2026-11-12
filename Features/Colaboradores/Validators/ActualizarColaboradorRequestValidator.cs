@@ -9,6 +9,13 @@ public class ActualizarColaboradorRequestValidator : AbstractValidator<Actualiza
 {
     public ActualizarColaboradorRequestValidator()
     {
+        // Las reglas de dominio de los correos se validan en el servicio y solo si el correo
+        // cambia, para que los datos antiguos no bloqueen otras ediciones ni "Activar".
+        RuleFor(x => x.EmailCorporativo)
+            .MaximumLength(100).WithMessage("El correo institucional no puede superar los 100 caracteres.")
+            .EmailAddress().WithMessage("El correo institucional no tiene un formato válido.")
+            .When(x => !string.IsNullOrWhiteSpace(x.EmailCorporativo));
+
         RuleFor(x => x.IdTipoContrato)
             .GreaterThan(0).WithMessage("El tipo de contrato es requerido.");
 
@@ -28,9 +35,7 @@ public class ActualizarColaboradorRequestValidator : AbstractValidator<Actualiza
             .When(x => x.IdCategoriaEmpleado.HasValue)
             .WithMessage("La categoría seleccionada no es válida.");
 
-        // ================================================================
-        // NUEVO: Validar reemplazo (si se envía, debe existir)
-        // ================================================================
+        // Validar reemplazo (si se envía, debe existir).
         RuleFor(x => x.IdEmpleadoReemplazo)
             .GreaterThan(0)
             .When(x => x.IdEmpleadoReemplazo.HasValue)

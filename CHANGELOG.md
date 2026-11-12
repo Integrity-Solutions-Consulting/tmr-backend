@@ -1,5 +1,152 @@
 # Changelog
 
+## [1.8.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.8.0...v1.8.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* **notificaciones:** no avisar por proyectos inactivos, completados o cancelados ([98358e1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/98358e19c3b5130fb945c798b08fb99d9caaba98))
+
+## [1.8.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.7.5...v1.8.0) (2026-11-09)
+
+
+### Features
+
+* Botón para registrar actividades para los líderes ([4603fee](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/4603fee7d0cce269f815867158d2a06622892d8b))
+* Botón para registrar actividades para los líderes ([681cdb9](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/681cdb95361a0f17c496ddff0ed5b75072b276d6))
+* **notificaciones:** enlace a produccion y detalle de todos los proyectos en el correo ([df41778](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/df41778ec5f6f9c2749bf177b8afa75ed5d3d8bb))
+
+
+### Bug Fixes
+
+* **notificaciones:** exigir una sola jornada por persona en horas faltantes ([bb4c029](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/bb4c0294525703d8b033d4bef9d250a476b08dcf))
+* **notificaciones:** no nombrar el proyecto en el mensaje del aviso manual ([e8ba958](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/e8ba9586e7f867397cec28530260fb6cd653d745))
+* **notificaciones:** proyectar feriados recurrentes al año del período ([466fbba](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/466fbba555fb0d93a26c68209da54a6d018fa1ff))
+* **notificaciones:** volver a la jornada por proyecto y detallar todos los faltantes en el correo ([951d0ec](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/951d0ecfd5a8823742c1a5d7138d4817d88e7dac))
+
+## [1.7.5](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.7.4...v1.7.5) (2026-11-09)
+
+
+### Bug Fixes
+
+* Agregar cargos al departamento administrativo ([a59b374](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/a59b374fbeffa5aa3b4fc8aa0aad2f42d652c6d6))
+
+## [1.7.4](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.7.3...v1.7.4) (2026-11-08)
+
+
+### Bug Fixes
+
+* Cambios de tipo de contrato ([6c28121](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/6c281212339e5f9f606a799677ed4903a31b9890))
+* Cambios de tipo de contrato ([b5f9c33](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/b5f9c33029fb47a5edaa57bd5868d9420df74fd0))
+
+## [1.7.3](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.7.2...v1.7.3) (2026-11-06)
+
+
+### Bug Fixes
+
+* Corrección de errores ([e2af9e3](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/e2af9e37eb40a5017d41e8d1ee56375c2ad80a54))
+* **seguimiento:** filtro de cliente solo muestra proyectos de ese cliente ([c15b440](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/c15b4409458422c57111e3afb6717f5d802a5076))
+
+## [1.7.2](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.7.1...v1.7.2) (2026-11-05)
+
+
+### Bug Fixes
+
+* **colaboradores:** reactivar tipo de contrato obligatorio ([9252441](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/9252441342af86eb46b2483cecf0c36b2a5f4067))
+* **colaboradores:** reactivar tipo de contrato obligatorio ([c1115f0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/c1115f03d84a7fa01f21829110ffe6576699bdeb))
+
+## [1.7.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.7.0...v1.7.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* Desactivación temporal de tipo de contrato obligatorio ([9a6f562](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/9a6f56208d186e360d4882ce0dbe9ba6d15f11c8))
+* Desactivación temporal de tipo de contrato obligatorio ([beb59f6](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/beb59f6e36571939b4bb6161f47a1c9cd8ac6cde))
+
+## [1.7.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.6.1...v1.7.0) (2026-11-05)
+
+
+### Features
+
+* **colaboradores:** separar correo institucional y correo personal ([6ff2a88](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/6ff2a88efdd1b082789b95b178cb0870ba814097))
+* **correos:** mostrar institucional o, si no hay, personal ([bb4b738](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/bb4b73896d944949059a8c4e2e3dbb64f087653e))
+* **correos:** mostrar institucional o, si no hay, personal ([de0a085](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/de0a085cafd6c048ec94c96426801c716c86db0e))
+
+
+### Bug Fixes
+
+* **colaboradores:** exigir al menos un correo ([2803ec9](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/2803ec94023382dcde4c9e3d29de9eaa33757e9e))
+* **colaboradores:** exigir al menos un correo ([f9c0b85](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/f9c0b85316e2acb4102bddf77eeedef30367c842))
+
+## [1.6.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.6.0...v1.6.1) (2026-11-04)
+
+
+### Bug Fixes
+
+* revertir merge accidental de feat/permisos en master ([#160](https://github.com/Integrity-Solutions-Consulting/tmr-backend/issues/160)) ([92c4c89](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/92c4c89dc846df945a3699eb66cc71fdfc99c7ac))
+
+## [1.6.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.5.1...v1.6.0) (2026-11-04)
+
+
+### Features
+
+* **permisos:** implementar modulo de permisos, evidencias S3/local, generacion PDF y notificaciones Apprise ([0b455e9](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/0b455e99dce80e4e8b0f93f0f02ebcdc8b4efb7c))
+* **permisos:** normalizar esquema 3FN script 19, notificaciones SSE, lectura real BD y soporte dual MinIO ([98c0373](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/98c0373093ee6be6ba6e64db3221fa1b8bd03720))
+
+## [1.5.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.5.0...v1.5.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* Se elimina validación de mínimo 3 actividades por día ([adbbfc4](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/adbbfc455242533529771ad855007abef885e87a))
+
+## [1.5.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.4.5...v1.5.0) (2026-10-22)
+
+
+### Features
+
+* Integración del módulo de Notificaciones ([ac0230a](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/ac0230a892e46ce1a2d8accc93ced4ccb806e568))
+* integrate notifications module into develop ([020247d](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/020247db7c66904d07850fc37a160a1fd80a6638))
+* **notificaciones:** fechas de corte configurables (flujo 3) ([682c7d2](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/682c7d21731eca814007d62a0df2210ef70d08ad))
+
+
+### Bug Fixes
+
+* **instalador:** ejecutar solo los scripts numerados NN-*.sql ([afb914b](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/afb914b5ffbd200a3ab4f35c556e9a0bf00e86d0))
+* **instalador:** incluir el script 18 en el paquete SQL embebido ([c7d00c0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/c7d00c0128114b1c99707057896e4630c119df2b))
+* release-tag-pr ([df896f3](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/df896f38c96ac56544c623a9acecae26da6b3970))
+* release-tag-pr ([a023370](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/a02337043f76d33ac030dd37700af8de02352485))
+* **sql:** script 16 compara los roles sin distinguir mayúsculas ([577ccda](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/577ccda573cd2a3c82f87a43113fcb27ce3d0f84))
+* **sql:** script 16 compara los roles sin distinguir mayúsculas ([a3f7392](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/a3f73924ae792ea7d44ada11afd764c756dd8493))
+
+## [1.4.5](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.4.4...v1.4.5) (2026-10-19)
+
+
+### Bug Fixes
+
+* Mejoras en exportación Excel/PDF, seguimiento y gestión de actividades y bajas de colaboradores ([2458d72](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/2458d72defeccc4887c7b0e87162e56021d6db60))
+* Mejoras en Seguimiento, reportes y registro de actividades ([4d9cc36](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/4d9cc3610f7a2251eb08079b88444df5641dc9c6))
+
+## [1.4.4](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.4.3...v1.4.4) (2026-10-18)
+
+
+### Bug Fixes
+
+* **ci:** corrige validacion y prepara instalacion reproducible de TMR ([4c59410](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/4c594102a9c51de277b4f622384e4db918b66391))
+* **ci:** corrige validacion y prepara instalacion reproducible de TMR ([0e99977](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/0e99977d210f4b042624392c1406ff822e177041))
+
+## [1.4.3](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.4.2...v1.4.3) (2026-10-15)
+
+
+### Bug Fixes
+
+* mejora de provedores en peteciones ([bfb8505](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/bfb8505535c9c99735a99e478addb6085427be26))
+
+
+### Performance Improvements
+
+* optimiza tiempos de carga, consultas y rendimiento general de la aplicación ([70253f1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/70253f1b4b4669f5d4a8ee5e613fbea31acb357d))
+
 ## [1.4.2](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.4.1...v1.4.2) (2026-10-13)
 
 

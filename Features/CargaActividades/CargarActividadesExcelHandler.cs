@@ -10,6 +10,8 @@ using Microsoft.EntityFrameworkCore;
 using MiniExcelLibs;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
+using tmr_backend.Features.Colaboradores.Domain;
+using tmr_backend.Features.TimeReport.Services;
 
 namespace tmr_backend.Features.CargaActividades
 {
@@ -37,7 +39,9 @@ namespace tmr_backend.Features.CargaActividades
             try
             {
                 var empleadoAutenticado = await _context.TblAdministracionEmpleados
-                    .FirstOrDefaultAsync(e => e.Id == command.EmpleadoId && e.Activo, cancellationToken);
+                    // sm - También con salida registrada (completa sus actividades hasta la salida).
+                    // .FirstOrDefaultAsync(e => e.Id == command.EmpleadoId && e.Activo, cancellationToken);
+                    .FirstOrDefaultAsync(e => e.Id == command.EmpleadoId && (e.Activo || e.Fechaterminacion != null), cancellationToken);
                 if (empleadoAutenticado is null)
                     return CargaActividadesResponse.Failure("El colaborador autenticado no está disponible.");
 
@@ -144,6 +148,13 @@ namespace tmr_backend.Features.CargaActividades
                     if (tipoActividadId is null)
                     {
                         erroresValidacion.Add($"Fila {filaIndex}: no se pudo determinar el tipo de actividad.");
+                        continue;
+                    }
+
+                    // sm - Con salida registrada no se cargan filas posteriores a la fecha de salida.
+                    if (EmpleadoSesion.ErrorFechaPosteriorSalida(empleado, fechaActividad) is { } errorSalida)
+                    {
+                        erroresValidacion.Add($"Fila {filaIndex}: {errorSalida}");
                         continue;
                     }
 
@@ -354,7 +365,10 @@ namespace tmr_backend.Features.CargaActividades
                     Tipopersona          = "NATURAL",
                     Nombres              = string.IsNullOrWhiteSpace(colaborador) ? "Carga Excel" : colaborador.Trim(),
                     Apellidos            = "Usuario",
-                    Email                = string.IsNullOrWhiteSpace(email) ? fallbackEmail : email.Trim(),
+                    // El correo de Integrity va solo en empleado.emailcorporativo.
+                    Email                = string.IsNullOrWhiteSpace(email) ? fallbackEmail
+                                           : CorreoInstitucional.EsInstitucional(email) ? null
+                                           : email.Trim(),
                     Activo               = true,
                     Usuariocreacion      = "carga_excel",
                     Fechacreacion        = DateTime.UtcNow,
@@ -373,7 +387,9 @@ namespace tmr_backend.Features.CargaActividades
             {
                 Idpersona        = persona.Id,
                 Codigoempleado   = string.IsNullOrWhiteSpace(codigoEmpleado) ? fallbackCodigo : codigoEmpleado.Trim(),
-                Emailcorporativo = string.IsNullOrWhiteSpace(email) ? fallbackEmail : email.Trim(),
+                Emailcorporativo = string.IsNullOrWhiteSpace(email) ? fallbackEmail
+                                   : CorreoInstitucional.EsInstitucional(email) ? email.Trim().ToLowerInvariant()
+                                   : null,
                 Activo           = true,
                 Usuariocreacion  = "carga_excel",
                 Fechacreacion    = DateTime.UtcNow,

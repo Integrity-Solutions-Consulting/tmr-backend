@@ -12,6 +12,8 @@ using tmr_backend.Features.Reportes.Domain;
 using tmr_backend.Features.TimeReport.Domain;
 using tmr_backend.Features.Lideres.Domain;
 using tmr_backend.Features.ActualizacionDatos.Domain;
+using tmr_backend.Features.Notificaciones.Domain;
+using tmr_backend.Infrastructure.Messaging;
 
 
 namespace tmr_backend.Infrastructure.Database;
@@ -114,6 +116,15 @@ public partial class ApplicationDbContext : DbContext
     public DbSet<ColaboradorDocumento> ColaboradorDocumentos { get; set; } = null!;
     public DbSet<ColaboradorSolicitud> ColaboradorSolicitudes { get; set; } = null!;
     public DbSet<ColaboradorSolicitudArchivo> ColaboradorSolicitudArchivos { get; set; } = null!;
+    public DbSet<NotificacionEnvio> NotificacionesEnvio { get; set; } = null!;
+    public DbSet<NotificacionFechaCorte> NotificacionesFechaCorte { get; set; } = null!;
+    public DbSet<EventoOutbox> EventosOutbox { get; set; } = null!;
+    public DbSet<NotificacionUsuario> NotificacionesUsuario { get; set; } = null!;
+    public virtual DbSet<TblTimeReportEstadoSolicitud> TblTimeReportEstadoSolicitudes { get; set; } = null!;
+    public virtual DbSet<TblTimeReportTipoPermiso> TblTimeReportTiposPermiso { get; set; } = null!;
+    public virtual DbSet<TblTimeReportSolicitud> TblTimeReportSolicitudes { get; set; } = null!;
+    public virtual DbSet<TblTimeReportSolicitudRevision> TblTimeReportSolicitudRevisiones { get; set; } = null!;
+    public virtual DbSet<TblTimeReportSolicitudAdjunto> TblTimeReportSolicitudAdjuntos { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -123,7 +134,6 @@ public partial class ApplicationDbContext : DbContext
             // También debes asegurarte de que el tipo en PostgreSQL tenga estos valores.
             // Si la columna revocadorazon en PG es de tipo "autenticacion.revocacion_razon_enum",
             // la alternativa más simple y robusta es eliminar esa restricción de tipo y usar TEXT.
-            // Ver comentario al final de este archivo.
             .HasPostgresEnum("autenticacion", "audit_evento_enum", new[]
             {
                 "LOGIN_OK", "LOGIN_FAIL", "LOGOUT", "REFRESH_OK", "REFRESH_FAIL",
@@ -1880,6 +1890,7 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.Idempleado).HasColumnName("idempleado");
             entity.Property(e => e.Idproyecto).HasColumnName("idproyecto");
             entity.Property(e => e.Idtipoactividad).HasColumnName("idtipoactividad");
+            entity.Property(e => e.Idliderregistro).HasColumnName("idliderregistro");
             entity.Property(e => e.Ipcreacion)
                 .HasMaxLength(45)
                 .HasColumnName("ipcreacion");
@@ -2140,6 +2151,7 @@ public partial class ApplicationDbContext : DbContext
 
             entity.HasIndex(e => e.Idempleado, "idx_tr_permiso_empleado");
             entity.HasIndex(e => e.Idestadoaprobacion, "idx_tr_permiso_estado");
+            entity.HasIndex(e => new { e.Fechainicio, e.Fechafin }, "idx_tr_permiso_fechas");
 
             entity.Property(e => e.Id)
                 .UseIdentityAlwaysColumn()
@@ -2509,7 +2521,362 @@ public partial class ApplicationDbContext : DbContext
             .OnDelete(DeleteBehavior.SetNull);
 
 
+ modelBuilder.Entity<NotificacionEnvio>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("pk_notificacion_envio");
+
+            entity.ToTable("notificacion_envio", "notificacion");
+
+            entity.HasIndex(e => new { e.IdEmpleado, e.FechaCorte }, "uq_idx_notificacion_envio_auto")
+                .IsUnique()
+                .HasFilter("origen = 'Automatico'");
+
+            entity.Property(e => e.Id)
+                .UseIdentityByDefaultColumn()
+                .HasColumnName("id");
+
+            entity.Property(e => e.IdEmpleado)
+                .HasColumnName("id_empleado");
+
+            entity.Property(e => e.InicioPeriodo)
+                .HasColumnName("inicio_periodo");
+
+            entity.Property(e => e.FinPeriodo)
+                .HasColumnName("fin_periodo");
+
+            entity.Property(e => e.FechaCorte)
+                .HasColumnName("fecha_corte");
+
+            entity.Property(e => e.Origen)
+                .HasConversion<string>()
+                .HasMaxLength(20)
+                .HasColumnName("origen");
+
+            entity.Property(e => e.Estado)
+                .HasConversion<string>()
+                .HasMaxLength(20)
+                .HasColumnName("estado");
+
+            entity.Property(e => e.HorasFaltantes)
+                .HasPrecision(6, 2)
+                .HasColumnName("horas_faltantes");
+
+            entity.Property(e => e.IdUsuarioEjecutor)
+                .HasColumnName("id_usuario_ejecutor");
+
+            // Script 17-Inv_tmr_db_notificacion_envio_proyecto.sql
+            entity.Property(e => e.IdProyecto)
+                .HasColumnName("id_proyecto");
+
+            entity.Property(e => e.FechaEnvio)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("fecha_envio");
+
+            entity.Property(e => e.DetalleError)
+                .HasColumnName("detalle_error");
+
+            entity.HasOne(d => d.Empleado)
+                .WithMany()
+                .HasForeignKey(d => d.IdEmpleado)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_notificacion_envio_empleado");
+        });
+
+        // ================================================================
+        // 2. NOTIFICACION_FECHA_CORTE (Flujo 3)
+        // ================================================================
+        modelBuilder.Entity<NotificacionFechaCorte>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("pk_notificacion_fecha_corte");
+
+            entity.ToTable("notificacion_fecha_corte", "notificacion", t =>
+            {
+                t.HasCheckConstraint("chk_notificacion_fecha_corte_mes", "mes BETWEEN 1 AND 12");
+            });
+
+            entity.HasIndex(e => new { e.Anio, e.Mes, e.Tipo }, "uq_notificacion_fecha_corte_periodo")
+                .IsUnique();
+
+            entity.Property(e => e.Id)
+                .UseIdentityByDefaultColumn()
+                .HasColumnName("id");
+
+            entity.Property(e => e.Anio)
+                .HasColumnName("anio");
+
+            entity.Property(e => e.Mes)
+                .HasColumnName("mes");
+
+            entity.Property(e => e.Tipo)
+                .HasMaxLength(20)
+                .HasColumnName("tipo");
+
+            entity.Property(e => e.InicioPeriodo)
+                .HasColumnName("inicio_periodo");
+
+            entity.Property(e => e.FinPeriodo)
+                .HasColumnName("fin_periodo");
+
+            entity.Property(e => e.FechaCorte)
+                .HasColumnName("fecha_corte");
+
+            entity.Property(e => e.Ejecutada)
+                .HasDefaultValue(false)
+                .HasColumnName("ejecutada");
+
+            entity.Property(e => e.FechaEjecucion)
+                .HasColumnName("fecha_ejecucion");
+
+            entity.Property(e => e.IdUsuarioCreador)
+                .HasColumnName("id_usuario_creador");
+
+            entity.Property(e => e.FechaCreacion)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("fecha_creacion");
+
+            entity.Property(e => e.IdUsuarioModificacion)
+                .HasColumnName("id_usuario_modificacion");
+
+            entity.Property(e => e.FechaModificacion)
+                .HasColumnName("fecha_modificacion");
+        });
+
+        // ================================================================
+        // 3. EVENTO_OUTBOX (Flujos 1, 2 y 3)
+        // ================================================================
+        modelBuilder.Entity<EventoOutbox>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("pk_evento_outbox");
+
+            entity.ToTable("evento_outbox", "notificacion");
+
+            entity.HasIndex(e => new { e.Estado, e.FechaCreacion }, "idx_evento_outbox_estado_fecha");
+
+            entity.Property(e => e.Id)
+                .HasDefaultValueSql("gen_random_uuid()")
+                .HasColumnName("id");
+
+            entity.Property(e => e.TipoEvento)
+                .HasMaxLength(100)
+                .HasColumnName("tipo_evento");
+
+            entity.Property(e => e.Payload)
+                .HasColumnType("jsonb")
+                .HasColumnName("payload");
+
+            entity.Property(e => e.Estado)
+                .HasConversion<string>()
+                .HasMaxLength(20)
+                .HasColumnName("estado");
+
+            entity.Property(e => e.Intentos)
+                .HasDefaultValue(0)
+                .HasColumnName("intentos");
+
+            entity.Property(e => e.UltimoError)
+                .HasColumnName("ultimo_error");
+
+            entity.Property(e => e.FechaCreacion)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("fecha_creacion");
+
+            entity.Property(e => e.FechaProcesado)
+                .HasColumnName("fecha_procesado");
+        });
+
+        // ================================================================
+        // 4. MÓDULO DE SOLICITUDES (PERMISOS, LICENCIAS Y VACACIONES - 3FN)
+        // ================================================================
+        modelBuilder.Entity<TblTimeReportEstadoSolicitud>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.ToTable("tbl_time_report_estado_solicitud", "time_report");
+
+            entity.HasIndex(e => e.Codigo, "uq_tr_estado_solicitud_codigo").IsUnique();
+            entity.HasIndex(e => e.CodigoCorto, "uq_tr_estado_solicitud_codigo_corto").IsUnique();
+
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.Codigo).HasMaxLength(30).HasColumnName("codigo");
+            entity.Property(e => e.CodigoCorto).HasMaxLength(5).HasColumnName("codigo_corto");
+            entity.Property(e => e.Nombre).HasMaxLength(60).HasColumnName("nombre");
+            entity.Property(e => e.Semaforo).HasMaxLength(15).HasColumnName("semaforo");
+            entity.Property(e => e.Orden).HasColumnName("orden");
+            entity.Property(e => e.Activo).HasDefaultValue(true).HasColumnName("activo");
+        });
+
+        modelBuilder.Entity<TblTimeReportTipoPermiso>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.ToTable("tbl_time_report_tipo_permiso", "time_report");
+
+            entity.HasIndex(e => e.Codigo, "uq_tr_tipo_permiso_codigo").IsUnique();
+            entity.HasIndex(e => e.CodigoCorto, "uq_tr_tipo_permiso_codigo_corto").IsUnique();
+
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.Codigo).HasMaxLength(30).HasColumnName("codigo");
+            entity.Property(e => e.CodigoCorto).HasMaxLength(5).HasColumnName("codigo_corto");
+            entity.Property(e => e.Nombre).HasMaxLength(80).HasColumnName("nombre");
+            entity.Property(e => e.Descripcion).HasMaxLength(200).HasColumnName("descripcion");
+            entity.Property(e => e.RequiereAdjunto).HasDefaultValue(false).HasColumnName("requiere_adjunto");
+            entity.Property(e => e.Orden).HasDefaultValue((short)1).HasColumnName("orden");
+            entity.Property(e => e.Activo).HasDefaultValue(true).HasColumnName("activo");
+        });
+
+        modelBuilder.Entity<TblTimeReportSolicitud>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.ToTable("tbl_time_report_solicitud", "time_report");
+
+            entity.HasIndex(e => e.Codigo, "uq_tr_solicitud_codigo").IsUnique();
+
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.Codigo).HasMaxLength(30).HasColumnName("codigo");
+            entity.Property(e => e.IdEmpleado).HasColumnName("id_empleado");
+            entity.Property(e => e.IdAsignacionProyecto).HasColumnName("id_asignacion_proyecto");
+            entity.Property(e => e.IdProyecto).HasColumnName("id_proyecto");
+            entity.Property(e => e.IdCliente).HasColumnName("id_cliente");
+            entity.Property(e => e.IdLider).HasColumnName("id_lider");
+            entity.Property(e => e.IdTipoPermiso).HasColumnName("id_tipo_permiso");
+            entity.Property(e => e.IdEstado).HasColumnName("id_estado");
+            entity.Property(e => e.FechaSolicitud).HasColumnName("fecha_solicitud");
+            entity.Property(e => e.Motivo).HasColumnName("motivo");
+            entity.Property(e => e.FechaInicio).HasColumnName("fecha_inicio");
+            entity.Property(e => e.FechaFin).HasColumnName("fecha_fin");
+            entity.Property(e => e.FechaRegreso).HasColumnName("fecha_regreso");
+            entity.Property(e => e.DiasSolicitados).HasPrecision(5, 2).HasColumnName("dias_solicitados");
+            entity.Property(e => e.Horario).HasMaxLength(20).HasDefaultValueSql("'COMPLETA'").HasColumnName("horario");
+            entity.Property(e => e.DetalleHorario).HasMaxLength(120).HasColumnName("detalle_horario");
+            entity.Property(e => e.HorasSolicitadas).HasPrecision(5, 2).HasColumnName("horas_solicitadas");
+            entity.Property(e => e.ImpactoTimeReport).HasMaxLength(30).HasDefaultValueSql("'RESTA_META'").HasColumnName("impacto_timereport");
+            entity.Property(e => e.TokenExterno).HasMaxLength(120).HasColumnName("token_externo");
+            entity.Property(e => e.TokenExternoExpira).HasColumnName("token_externo_expira");
+            entity.Property(e => e.TokenExternoUsadoEn).HasColumnName("token_externo_usado_en");
+            entity.Property(e => e.Activo).HasDefaultValue(true).HasColumnName("activo");
+            entity.Property(e => e.UsuarioCreacion).HasMaxLength(50).HasColumnName("usuario_creacion");
+            entity.Property(e => e.FechaCreacion).HasDefaultValueSql("now()").HasColumnName("fecha_creacion");
+            entity.Property(e => e.UsuarioModificacion).HasMaxLength(50).HasColumnName("usuario_modificacion");
+            entity.Property(e => e.FechaModificacion).HasColumnName("fecha_modificacion");
+            entity.Property(e => e.IpCreacion).HasMaxLength(45).HasColumnName("ip_creacion");
+            entity.Property(e => e.IpModificacion).HasMaxLength(45).HasColumnName("ip_modificacion");
+
+            entity.HasOne(d => d.Empleado).WithMany()
+                .HasForeignKey(d => d.IdEmpleado)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_tr_solicitud_empleado");
+
+            entity.HasOne(d => d.AsignacionProyecto).WithMany()
+                .HasForeignKey(d => d.IdAsignacionProyecto)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_tr_solicitud_asignacion_proyecto");
+
+            entity.HasOne(d => d.Proyecto).WithMany()
+                .HasForeignKey(d => d.IdProyecto)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_tr_solicitud_proyecto");
+
+            entity.HasOne(d => d.Cliente).WithMany()
+                .HasForeignKey(d => d.IdCliente)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_tr_solicitud_cliente");
+
+            entity.HasOne(d => d.Lider).WithMany()
+                .HasForeignKey(d => d.IdLider)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_tr_solicitud_lider");
+
+            entity.HasOne(d => d.TipoPermiso).WithMany(p => p.Solicitudes)
+                .HasForeignKey(d => d.IdTipoPermiso)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_tr_solicitud_tipo_permiso");
+
+            entity.HasOne(d => d.Estado).WithMany(p => p.Solicitudes)
+                .HasForeignKey(d => d.IdEstado)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_tr_solicitud_estado");
+        });
+
+        modelBuilder.Entity<TblTimeReportSolicitudRevision>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.ToTable("tbl_time_report_solicitud_revision", "time_report");
+
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.IdSolicitud).HasColumnName("id_solicitud");
+            entity.Property(e => e.EtapaRevision).HasMaxLength(30).HasColumnName("etapa_revision");
+            entity.Property(e => e.IdUsuarioRevisor).HasColumnName("id_usuario_revisor");
+            entity.Property(e => e.MetodoRevision).HasMaxLength(30).HasDefaultValueSql("'CUENTA_TMR'").HasColumnName("metodo_revision");
+            entity.Property(e => e.Decision).HasMaxLength(20).HasColumnName("decision");
+            entity.Property(e => e.FechaRevision).HasDefaultValueSql("now()").HasColumnName("fecha_revision");
+            entity.Property(e => e.Comentario).HasColumnName("comentario");
+
+            entity.HasOne(d => d.Solicitud).WithMany(p => p.Revisiones)
+                .HasForeignKey(d => d.IdSolicitud)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_tr_solicitud_revision_solicitud");
+
+            entity.HasOne(d => d.UsuarioRevisor).WithMany()
+                .HasForeignKey(d => d.IdUsuarioRevisor)
+                .HasConstraintName("fk_tr_solicitud_revision_usuario");
+        });
+
+        modelBuilder.Entity<TblTimeReportSolicitudAdjunto>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.ToTable("tbl_time_report_solicitud_adjunto", "time_report");
+
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.IdSolicitud).HasColumnName("id_solicitud");
+            entity.Property(e => e.NombreOriginal).HasMaxLength(255).HasColumnName("nombre_original");
+            entity.Property(e => e.BucketName).HasMaxLength(63).HasColumnName("bucket_name");
+            entity.Property(e => e.ObjectKey).HasMaxLength(255).HasColumnName("object_key");
+            entity.Property(e => e.ContentType).HasMaxLength(100).HasColumnName("content_type");
+            entity.Property(e => e.TamanoBytes).HasColumnName("tamano_bytes");
+            entity.Property(e => e.Sha256).HasMaxLength(64).IsFixedLength().HasColumnName("sha256");
+            entity.Property(e => e.SubidoPorUsuarioId).HasColumnName("subido_por_usuario_id");
+            entity.Property(e => e.Activo).HasDefaultValue(true).HasColumnName("activo");
+            entity.Property(e => e.FechaCreacion).HasDefaultValueSql("now()").HasColumnName("fecha_creacion");
+
+            entity.HasOne(d => d.Solicitud).WithMany(p => p.Adjuntos)
+                .HasForeignKey(d => d.IdSolicitud)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_tr_solicitud_adjunto_solicitud");
+
+            entity.HasOne(d => d.SubidoPorUsuario).WithMany()
+                .HasForeignKey(d => d.SubidoPorUsuarioId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_tr_solicitud_adjunto_usuario");
+        });
+
+        modelBuilder.Entity<NotificacionUsuario>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.ToTable("notificacion_usuario", "notificacion");
+
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.IdUsuarioDestino).HasColumnName("id_usuario_destino");
+            entity.Property(e => e.IdSolicitud).HasColumnName("id_solicitud");
+            entity.Property(e => e.Titulo).HasMaxLength(160).HasColumnName("titulo");
+            entity.Property(e => e.Mensaje).HasMaxLength(500).HasColumnName("mensaje");
+            entity.Property(e => e.UrlDestino).HasMaxLength(255).HasColumnName("url_destino");
+            entity.Property(e => e.Leida).HasDefaultValue(false).HasColumnName("leida");
+            entity.Property(e => e.FechaLectura).HasColumnName("fecha_lectura");
+            entity.Property(e => e.FechaCreacion).HasDefaultValueSql("now()").HasColumnName("fecha_creacion");
+
+            entity.HasOne(d => d.UsuarioDestino).WithMany()
+                .HasForeignKey(d => d.IdUsuarioDestino)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_notificacion_usuario_destino");
+
+            entity.HasOne(d => d.Solicitud).WithMany()
+                .HasForeignKey(d => d.IdSolicitud)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_notificacion_usuario_solicitud");
+        });
+
         OnModelCreatingPartial(modelBuilder);
+
+
+
     }
 
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder);

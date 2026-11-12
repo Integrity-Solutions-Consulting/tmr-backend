@@ -26,9 +26,24 @@ public class EmailService : IEmailService
             var smtpServer = _configuration["EmailSettings:SmtpServer"] ?? "smtp.gmail.com";
             var portStr = _configuration["EmailSettings:Port"] ?? "587";
             var senderName = _configuration["EmailSettings:SenderName"] ?? "ISC Time Report";
-            var senderEmail = _configuration["EmailSettings:SenderEmail"] ?? "";
+            var senderEmail = (_configuration["EmailSettings:SenderEmail"] ?? "").Trim();
             var username = _configuration["EmailSettings:Username"] ?? "";
             var password = _configuration["EmailSettings:Password"] ?? "";
+
+            if (string.IsNullOrWhiteSpace(toEmail))
+            {
+                _logger.LogWarning("Envío SMTP omitido ({Subject}): destinatario vacío.", subject);
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(senderEmail))
+            {
+                _logger.LogWarning(
+                    "Envío SMTP omitido para {ToEmail} ({Subject}): EmailSettings:SenderEmail no está configurado.",
+                    toEmail,
+                    subject);
+                return;
+            }
 
             int.TryParse(portStr, out var port);
             if (port == 0) port = 587;
@@ -82,10 +97,17 @@ public class EmailService : IEmailService
             {
                 socketOptions = SecureSocketOptions.StartTls;
             }
+            else if (port == 1025)
+            {
+                socketOptions = SecureSocketOptions.StartTlsWhenAvailable;
+                client.ServerCertificateValidationCallback = (_, _, _, _) => true;
+            }
 
             await client.ConnectAsync(smtpServer, port, socketOptions);
 
-            if (!string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password))
+            if (!string.IsNullOrEmpty(username)
+                && !string.IsNullOrEmpty(password)
+                && client.Capabilities.HasFlag(SmtpCapabilities.Authentication))
             {
                 await client.AuthenticateAsync(username, password);
             }

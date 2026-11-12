@@ -59,7 +59,7 @@ public class HealthCheckService : IHealthCheckService
         }
         catch (Exception ex)
         {
-            _logger.LogError($"Error en health check: {ex.Message}");
+            _logger.LogError(ex, "Error en health check: {Message}", ex.Message);
             response.Status = "Unhealthy";
             response.Message = "Error durante el health check";
             response.Database.IsConnected = false;
@@ -91,7 +91,7 @@ public class HealthCheckService : IHealthCheckService
         }
         catch (Exception ex)
         {
-            _logger.LogError($"Error en readiness check: {ex.Message}");
+            _logger.LogError(ex, "Error en readiness check: {Message}", ex.Message);
             response.Status = "Unhealthy";
             response.Message = "Aplicación no disponible - error interno";
             return response;

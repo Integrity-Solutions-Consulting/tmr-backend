@@ -85,11 +85,14 @@ public static class DatabaseInstaller
             """, connection).ExecuteNonQueryAsync();
 
         var assembly = Assembly.GetExecutingAssembly();
+        // Solo los scripts numerados (NN-*.sql). Otros .sql de la carpeta, como consultas de solo
+        // lectura, también quedan embebidos por el patrón del .csproj, pero no son de instalación.
         var resources = assembly.GetManifestResourceNames()
             .Where(x => x.Contains(".Scripts_DB.") && x.EndsWith(".sql", StringComparison.Ordinal))
+            .Where(x => Regex.IsMatch(x[(x.IndexOf(".Scripts_DB.", StringComparison.Ordinal) + 12)..], @"^\d{2}-"))
             .Order(StringComparer.Ordinal).ToArray();
-        if (resources.Length != 13)
-            throw new InvalidOperationException("El paquete debe contener los scripts 01–14, excluyendo 06.");
+        if (resources.Length != 21)
+            throw new InvalidOperationException("El paquete debe contener los scripts 01–22, excluyendo 06.");
 
         foreach (var resource in resources)
         {
@@ -164,7 +167,7 @@ public static class DatabaseInstaller
             return;
         if (await db.TblAutenticacionUsuarios.AnyAsync())
             throw new InvalidOperationException("El administrador inicial solo puede crearse en una instalación sin usuarios.");
-        var role = await db.TblAutenticacionRols.SingleAsync(x => x.Nombre == "Administrador" && x.Activo);
+        var role = await db.TblAutenticacionRols.SingleAsync(x => x.Nombre.ToUpper() == "ADMINISTRADOR" && x.Activo);
         var now = DateTime.UtcNow;
         var person = new TblAdministracionPersona
         {
