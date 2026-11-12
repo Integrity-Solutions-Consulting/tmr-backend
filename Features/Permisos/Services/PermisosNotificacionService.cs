@@ -557,7 +557,7 @@ public sealed class PermisosNotificacionService(
                 return await File.ReadAllTextAsync(ruta, ct);
         }
 
-        return "<div style='font-family:Arial,sans-serif;'><h2>{{SUBTITULO_CABECERA}} ({{FOLIO}})</h2><p>Hola <strong>{{NOMBRE_DESTINATARIO}}</strong>,</p><p>{{MENSAJE_PERSONALIZADO}}</p><p><a href='{{CTA_URL}}'>{{CTA_TEXTO}}</a></p></div>";
+        return "<div style='font-family:Arial,sans-serif;'><h2>{{SUBTITULO_CABECERA}}</h2><p>Hola <strong>{{NOMBRE_DESTINATARIO}}</strong>,</p><p>{{MENSAJE_PERSONALIZADO}}</p><p><a href='{{CTA_URL}}'>{{CTA_TEXTO}}</a></p></div>";
     }
 }
 
