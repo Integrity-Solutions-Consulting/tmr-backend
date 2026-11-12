@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Npgsql;
 using tmr_backend.Infrastructure.Database.Entities;
 using tmr_backend.Infrastructure.Database.Seeders;
@@ -26,17 +27,29 @@ public static class DatabaseInstaller
         await new NpgsqlCommand("SELECT pg_advisory_lock(846720261017)", connection).ExecuteNonQueryAsync();
         try
         {
-            var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(connection).Options;
+            var migrationHistorySchema = await ResolveMigrationHistorySchemaAsync(connection);
+            var optionsBuilder = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseNpgsql(connection, npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", migrationHistorySchema));
+            if (command == "--apply-migrations")
+                optionsBuilder.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
+            var options = optionsBuilder.Options;
             await using var db = new ApplicationDbContext(options);
             switch (command)
             {
                 case "--prepare-database":
                     await PrepareAsync(connection);
                     break;
+                case "--apply-migrations":
+                    await BaselineLegacySchemaAsync(connection, migrationHistorySchema);
+                    Console.WriteLine($"Migraciones disponibles: {string.Join(", ", db.Database.GetMigrations())}");
+                    await db.Database.MigrateAsync();
+                    Console.WriteLine("Migraciones EF aplicadas.");
+                    break;
                 case "--initialize-data":
                     await using (var transaction = await db.Database.BeginTransactionAsync())
                     {
                         await ProveedorPermissionsSeeder.EnsureAsync(db);
+                        await ActualizacionDatosPermissionsSeeder.EnsureAsync(db);
                         await CreateAdministratorAsync(db, configuration);
                         await transaction.CommitAsync();
                     }
@@ -113,6 +126,29 @@ public static class DatabaseInstaller
         }
     }
 
+    private static async Task<string> ResolveMigrationHistorySchemaAsync(NpgsqlConnection connection)
+    {
+        const string sql = "SELECT CASE WHEN EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'public') THEN 'public' ELSE 'administracion' END";
+        return (string)(await new NpgsqlCommand(sql, connection).ExecuteScalarAsync())!;
+    }
+
+    private static async Task BaselineLegacySchemaAsync(NpgsqlConnection connection, string historySchema)
+    {
+        var schema = historySchema == "public" ? "\"public\"" : "\"administracion\"";
+        var sql = $"""
+            CREATE TABLE IF NOT EXISTS {schema}."__EFMigrationsHistory" (
+                "MigrationId" character varying(150) NOT NULL,
+                "ProductVersion" character varying(32) NOT NULL,
+                CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY ("MigrationId"));
+            INSERT INTO {schema}."__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+            SELECT '20260527194023_InitialCreate', '10.0.8'
+            WHERE EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'administracion' AND table_name = 'tbl_administracion_empleado')
+              AND NOT EXISTS (SELECT 1 FROM {schema}."__EFMigrationsHistory" WHERE "MigrationId" = '20260527194023_InitialCreate');
+            """;
+        await using var command = new NpgsqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync();
+    }
+
     private static async Task CreateAdministratorAsync(ApplicationDbContext db, IConfiguration configuration)
     {
         var keys = new[] { "AdminEmail", "AdminPassword", "AdminIdentification", "AdminName" };
@@ -178,10 +214,17 @@ public static class DatabaseInstaller
         if (await db.TblAutenticacionPermisos.CountAsync(x => x.Activo &&
             new[] { "PROVEEDORES_READ", "PROVEEDORES_CREATE", "PROVEEDORES_UPDATE", "PROVEEDORES_DELETE" }.Contains(x.Codigo)) != 4)
             throw new InvalidOperationException("Faltan permisos de Proveedores. Ejecute --initialize-data.");
-        var admin = await db.TblAutenticacionRols.SingleAsync(x => x.Nombre.ToUpper() == "ADMINISTRADOR" && x.Activo);
-        if (await db.TblAutenticacionRolPermisos.CountAsync(x => x.Idrol == admin.Id && x.Activo &&
-            x.IdpermisoNavigation.Codigo.StartsWith("PROVEEDORES_")) < 4 ||
-            !await db.TblAutenticacionUsuarioRols.AnyAsync(x => x.Idrol == admin.Id && x.Activo) ||
+        var requiredPermissionCodes = new[] { "COLABORADORES_DATOS_REVISAR" };
+        var requiredPermissions = await db.TblAutenticacionPermisos
+            .Where(x => x.Activo && requiredPermissionCodes.Contains(x.Codigo))
+            .Select(x => x.Codigo).ToListAsync();
+        if (requiredPermissions.Count != requiredPermissionCodes.Length)
+            throw new InvalidOperationException("Faltan permisos requeridos del módulo de actualización de colaboradores.");
+        var assignedReviewer = await db.TblAutenticacionRolPermisos.AnyAsync(x =>
+            x.Activo && x.IdpermisoNavigation.Activo && x.IdpermisoNavigation.Codigo == "COLABORADORES_DATOS_REVISAR" &&
+            db.TblAutenticacionRols.Any(role => role.Id == x.Idrol && role.Activo) &&
+            db.TblAutenticacionUsuarioRols.Any(userRole => userRole.Idrol == x.Idrol && userRole.Activo));
+        if (!assignedReviewer ||
             !await db.TblAdministracionCatalogos.AnyAsync() || !await db.TblTimeReportTipoActividads.AnyAsync())
             throw new InvalidOperationException("Instalación sin roles, administrador o catálogos indispensables.");
         Console.WriteLine("Esquema mapeado, catálogos, administrador y permisos verificados.");

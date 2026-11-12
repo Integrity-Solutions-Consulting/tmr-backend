@@ -6,6 +6,9 @@ using tmr_backend.Features.Colaboradores.DTOs.Response;
 using tmr_backend.Features.Colaboradores.Mappings;
 using tmr_backend.Features.Colaboradores.Services;
 using tmr_backend.Infrastructure.Database;
+using tmr_backend.Features.ActualizacionDatos.Services;
+using tmr_backend.Features.ActualizacionDatos.Storage;
+using tmr_backend.Features.ActualizacionDatos.Domain;
 
 namespace tmr_backend.Features.Colaboradores;
 
@@ -44,6 +47,30 @@ public static class ColaboradoresEndpoints
             var detalle = await service.ObtenerPorIdAsync(id, ct);
             return detalle is null ? Results.NotFound() : Results.Ok(detalle);
         });
+
+        group.MapGet("/{id:int}/expediente", async (int id, HttpContext http, ExpedienteService service, CancellationToken ct) =>
+        {
+            var canReadRestricted = http.User.HasClaim("permission", "COLABORADORES_DATOS_REVISAR");
+            var expediente = await service.GetAsync(id, canReadRestricted, ct);
+            return expediente is null ? Results.NotFound() : Results.Ok(expediente);
+        }).RequireAuthorization("COLABORADORES_READ");
+
+        group.MapGet("/{id:int}/expediente/archivos/{archivoId:long}", async (int id, long archivoId, ApplicationDbContext db, IFileStorage storage, CancellationToken ct) =>
+        {
+            var file = await (from a in db.Set<ActualizacionArchivo>()
+                               join s in db.Set<ActualizacionSolicitud>() on a.IdSolicitud equals s.Id
+                               where a.Id == archivoId && s.IdEmpleado == id
+                               select a).SingleOrDefaultAsync(ct);
+            if (file is not null)
+            {
+                var stream = await storage.OpenReadAsync(file.StorageKey, ct, file.Provider);
+                return stream is null ? Results.NotFound() : Results.File(stream, file.ContentType, file.NombreOriginal);
+            }
+            var direct = await db.Set<ColaboradorDocumento>().SingleOrDefaultAsync(x => x.Id == archivoId && x.IdEmpleado == id && x.Activo, ct);
+            if (direct is null) return Results.NotFound();
+            var directStream = await storage.OpenReadAsync(direct.StorageKey, ct, direct.Provider);
+            return directStream is null ? Results.NotFound() : Results.File(directStream, direct.ContentType, direct.NombreOriginal);
+        }).RequireAuthorization("COLABORADORES_DATOS_REVISAR");
         
 
         // =====================================================================

@@ -105,14 +105,20 @@ public class AuditInterceptor : SaveChangesInterceptor
     /// <summary>
     /// Extrae el ID de una entidad (soporta 'Id' y 'id')
     /// </summary>
-    private int GetEntityId(object entity)
+    private long GetEntityId(object entity)
     {
         var idProperty = entity.GetType().GetProperty("Id") ?? entity.GetType().GetProperty("id");
         if (idProperty == null)
             return 0;
 
         var value = idProperty.GetValue(entity);
-        return value is int intValue ? intValue : 0;
+        return value switch
+        {
+            int intValue => intValue,
+            long longValue => longValue,
+            short shortValue => shortValue,
+            _ => 0
+        };
     }
 
     /// <summary>
