@@ -2,15 +2,16 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
+using tmr_backend.Infrastructure.Security;
 
 namespace tmr_backend.Features.Permisos.Services;
 
 /// <summary>
-/// Sincroniza de forma idempotente las 5 cuentas estándar de prueba del sistema
+/// Sincroniza de forma idempotente las cuentas estándar de prueba del sistema
 /// (admin@tmr.com, colaborador@tmr.com, lider@tmr.com, ger1@tmr.com, rec1@tmr.com)
 /// garantizando que cuenten con Persona, Ficha de Empleado (Nómina), Contrato vigente,
 /// Cargo (incluyendo Líder de Talento Humano para rec1@tmr.com), registro de Líder Interno
-/// para lider@tmr.com, asignación de Proyecto activa (colaborador -> lider) y permisos RBAC.
+/// para lider@tmr.com y externo@tmr.com, asignaciones activas y permisos RBAC.
 /// </summary>
 public static class SincronizadorCuentasPermisos
 {
@@ -25,7 +26,8 @@ public static class SincronizadorCuentasPermisos
         string CodigoEmpleado,
         string[] RolesPreferidos,
         string CargoPreferido,
-        bool EsLiderInterno = false);
+        bool EsLiderInterno = false,
+        bool EsLiderExterno = false);
 
     private static readonly DefinicionCuentaPrueba[] CuentasEstandar =
     [
@@ -33,7 +35,8 @@ public static class SincronizadorCuentasPermisos
         new("colaborador@tmr.com", "1790000002", "Carlos Andrés", "Colaborador TMR", "EMP-COL-002", ["Colaborador"],                    "Analista de Desarrollo"),
         new("lider@tmr.com",       "1790000003", "Luis Fernando", "Líder Proyecto",  "EMP-LID-003", ["Lider", "Líder", "Colaborador"],  "Líder de Proyecto", EsLiderInterno: true),
         new("ger1@tmr.com",        "1790000004", "Gabriel",       "Gerencia TMR",    "EMP-GER-004", ["Gerencia", "Gerente"],            "Gerente de Operaciones"),
-        new("rec1@tmr.com",        "1790000005", "Ana María",     "Talento Humano",  "EMP-RRHH-005",["Recursos Humanos"],               "Líder de Talento Humano")
+        new("rec1@tmr.com",        "1790000005", "Ana María",     "Talento Humano",  "EMP-RRHH-005",["Recursos Humanos"],               "Líder de Talento Humano"),
+        new("externo@tmr.com",     "1790000006", "Ernesto",       "Líder Externo",   "EMP-EXT-006", ["Colaborador"],                    "Líder Externo de Prueba", EsLiderExterno: true)
     ];
 
     public static async Task AsegurarCuentasSincronizadasAsync(
@@ -60,6 +63,10 @@ public static class SincronizadorCuentasPermisos
                 .Where(u => emailsEstandar.Contains(u.Email.ToLower()))
                 .ToListAsync(ct);
 
+            // Esta cuenta es un fixture público de QA: su contraseña debe ser estable
+            // y no depender del orden de lectura de hashes de otras cuentas.
+            var hasher = new PasswordHasher();
+
             var hashBase = usuariosExistentes.FirstOrDefault(u => !string.IsNullOrWhiteSpace(u.Hashpassword))?.Hashpassword
                            ?? await db.TblAutenticacionUsuarios
                                .AsNoTracking()
@@ -76,6 +83,7 @@ public static class SincronizadorCuentasPermisos
             // 1. Asegurar catálogo de contrato Nómina (Relación de dependencia) y Tipo de Líder Interno (INT)
             var idTipoContratoNomina = await ObtenerIdContratoNominaAsync(db, ct);
             var idTipoLiderInterno = await ObtenerIdTipoLiderInternoAsync(db, ct);
+            var idTipoLiderExterno = await ObtenerIdTipoLiderExternoAsync(db, ct);
 
             // 2. Asegurar cargos base (en especial "Líder de Talento Humano")
             var idCargoTh = await AsegurarCargoAsync(db, "Líder de Talento Humano", ahora, usuarioSistema, ipSistema, ct);
@@ -95,6 +103,7 @@ public static class SincronizadorCuentasPermisos
 
             var empleadosPorEmail = new Dictionary<string, TblAdministracionEmpleado>(StringComparer.OrdinalIgnoreCase);
             int? idLiderPrueba = null;
+            int? idLiderExternoPrueba = null;
 
             foreach (var def in CuentasEstandar)
             {
@@ -150,7 +159,9 @@ public static class SincronizadorCuentasPermisos
                     {
                         Idpersona = persona.Id,
                         Email = def.Email,
-                        Hashpassword = hashBase,
+                        Hashpassword = def.Email.Equals("externo@tmr.com", StringComparison.OrdinalIgnoreCase)
+                            ? hasher.Hash("adminadmin")
+                            : hashBase,
                         Emailverificado = true,
                         Intentosfallidos = 0,
                         Bloqueadohasta = null,
@@ -166,6 +177,12 @@ public static class SincronizadorCuentasPermisos
                 else
                 {
                     var modUser = false;
+                    if (def.Email.Equals("externo@tmr.com", StringComparison.OrdinalIgnoreCase)
+                        && !hasher.Verify("adminadmin", usuario.Hashpassword))
+                    {
+                        usuario.Hashpassword = hasher.Hash("adminadmin");
+                        modUser = true;
+                    }
                     if (usuario.Idpersona != persona.Id)
                     {
                         var otroConMismaPersona = await db.TblAutenticacionUsuarios
@@ -334,6 +351,29 @@ public static class SincronizadorCuentasPermisos
                     idLiderPrueba = lider.Id;
                 }
 
+                if (def.EsLiderExterno && idTipoLiderExterno.HasValue)
+                {
+                    var lider = await db.TblAdministracionLiders
+                        .FirstOrDefaultAsync(l => l.Idpersona == idPersonaEfectiva, ct);
+                    if (lider is null)
+                    {
+                        lider = new TblAdministracionLider
+                        {
+                            Idpersona = idPersonaEfectiva, Idtipo = idTipoLiderExterno, Activo = true,
+                            Usuariocreacion = usuarioSistema, Fechacreacion = ahora, Ipcreacion = ipSistema
+                        };
+                        db.TblAdministracionLiders.Add(lider);
+                        await db.SaveChangesAsync(ct);
+                    }
+                    else if (!lider.Activo || lider.Idtipo != idTipoLiderExterno)
+                    {
+                        lider.Activo = true;
+                        lider.Idtipo = idTipoLiderExterno;
+                        await db.SaveChangesAsync(ct);
+                    }
+                    idLiderExternoPrueba = lider.Id;
+                }
+
                 cache?.Remove($"permissions:{usuario.Id}");
             }
 
@@ -350,6 +390,9 @@ public static class SincronizadorCuentasPermisos
                     ipSistema,
                     ct);
             }
+
+            if (idLiderExternoPrueba.HasValue && empleadosPorEmail.TryGetValue("colaborador@tmr.com", out var empColabExterno))
+                await AsegurarAsignacionLiderExternoAsync(db, empColabExterno, idLiderExternoPrueba.Value, ahora, usuarioSistema, ipSistema, ct);
 
             _ultimaVerificacionUtc = DateTime.UtcNow;
         }
@@ -388,6 +431,35 @@ public static class SincronizadorCuentasPermisos
                         && (d.Codigovalor == "INT" || d.Valor.ToUpper().Contains("INTERN")))
             .Select(d => (int?)d.Id)
             .FirstOrDefaultAsync(ct);
+    }
+
+    private static async Task<int?> ObtenerIdTipoLiderExternoAsync(ApplicationDbContext db, CancellationToken ct)
+    {
+        return await db.TblAdministracionCatalogoDetalles.AsNoTracking()
+            .Where(d => d.Activo && d.IdcatalogoNavigation.Codigo == "TLI"
+                && (d.Codigovalor == "EXT" || d.Valor.ToUpper().Contains("EXTERN")))
+            .Select(d => (int?)d.Id).FirstOrDefaultAsync(ct);
+    }
+
+    private static async Task AsegurarAsignacionLiderExternoAsync(
+        ApplicationDbContext db, TblAdministracionEmpleado colaborador, int idLiderExterno,
+        DateTime ahora, string usuarioSistema, string ipSistema, CancellationToken ct)
+    {
+        var asignacion = await db.TblTimeReportAsignacionProyectos
+            .Where(a => a.Idempleado == colaborador.Id && a.Activo && a.Estadoasignacion)
+            .OrderBy(a => a.Id).FirstOrDefaultAsync(ct);
+        if (asignacion is null) return;
+        var existe = await db.TblTimeReportAsignacionProyectos.AnyAsync(a =>
+            a.Idproyecto == asignacion.Idproyecto && a.Idempleado == null && a.Idlider == idLiderExterno && a.Activo, ct);
+        if (existe) return;
+        db.TblTimeReportAsignacionProyectos.Add(new TblTimeReportAsignacionProyecto
+        {
+            Idproyecto = asignacion.Idproyecto, Idempleado = null, Idlider = idLiderExterno,
+            Rolasignado = "Líder Externo de Prueba", Fechaasignacion = new DateOnly(2025, 1, 1),
+            Costoporhora = 0m, Horasasignadas = 160m, Estadoasignacion = true, Activo = true,
+            Usuariocreacion = usuarioSistema, Fechacreacion = ahora, Ipcreacion = ipSistema
+        });
+        await db.SaveChangesAsync(ct);
     }
 
     private static async Task<int?> AsegurarCargoAsync(
