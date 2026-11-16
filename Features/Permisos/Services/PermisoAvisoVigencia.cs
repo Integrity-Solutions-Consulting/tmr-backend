@@ -19,10 +19,7 @@ public static class PermisoAvisoVigencia
         };
         if (solicitud.Estado.Codigo != esperado)
             return false;
-        if (evento.IncluirTokenExterno)
-            return !solicitud.TokenExternoUsadoEn.HasValue && solicitud.TokenExternoExpira > DateTime.UtcNow
-                && !string.IsNullOrWhiteSpace(solicitud.TokenExterno)
-                && (evento.Instantanea is null || evento.Instantanea.TokenExterno == solicitud.TokenExterno);
+        if (evento.IncluirTokenExterno) { var reqSinUso = solicitud.Estado.Codigo == "PENDIENTE_JEFE"; return (!reqSinUso || !solicitud.TokenExternoUsadoEn.HasValue) && solicitud.TokenExternoExpira > DateTime.UtcNow && !string.IsNullOrWhiteSpace(solicitud.TokenExterno) && (evento.Instantanea is null || evento.Instantanea.TokenExterno == solicitud.TokenExterno); }
         return true;
     }
 }

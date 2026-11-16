@@ -646,6 +646,7 @@ public static partial class PermisosEndpoints
             var solicitud = await db.TblTimeReportSolicitudes
                 .Include(s => s.Estado)
                 .Include(s => s.Revisiones)
+                .Include(s => s.Lider).ThenInclude(l => l!.IdtipoNavigation)
                 .FirstOrDefaultAsync(s => s.Id == id && s.Activo, ct);
 
             if (solicitud is null)
@@ -702,6 +703,7 @@ public static partial class PermisosEndpoints
             solicitud.UsuarioModificacion = actor.Email;
             solicitud.FechaModificacion = DateTime.UtcNow;
             solicitud.IpModificacion = ObtenerIpCliente(httpContext);
+            if (EsLiderExterno(solicitud.Lider)) { solicitud.TokenExterno ??= Guid.NewGuid().ToString("N"); solicitud.TokenExternoUsadoEn ??= DateTime.UtcNow; solicitud.TokenExternoExpira = DateTime.UtcNow.AddDays(30); }
 
             db.TblTimeReportSolicitudRevisiones.Add(new TblTimeReportSolicitudRevision
             {
@@ -723,7 +725,7 @@ public static partial class PermisosEndpoints
 
             var correoColab = recargada.Empleado.Emailcorporativo ?? recargada.Empleado.IdpersonaNavigation.Email;
             var correoOk = await NotificarCorreoSeguroAsync(db, notificacionService,
-                dto,
+                dto with { TokenExterno = recargada.TokenExterno },
                 correoColab,
                 confirmar ? EventoNotificacionPermiso.ConfirmadaPorRrhh : EventoNotificacionPermiso.DevueltaPorRrhh,
                 ct);
@@ -749,8 +751,8 @@ public static partial class PermisosEndpoints
 
             var solicitud = await db.TblTimeReportSolicitudes
                 .Include(s => s.Estado)
-                .Include(s => s.Lider)
-                    .ThenInclude(l => l!.IdtipoNavigation)
+                .Include(s => s.Lider).ThenInclude(l => l!.IdtipoNavigation)
+                .Include(s => s.Lider).ThenInclude(l => l!.IdpersonaNavigation)
                 .FirstOrDefaultAsync(s => s.Id == id && s.Activo, ct);
 
             if (solicitud is null)
@@ -758,6 +760,9 @@ public static partial class PermisosEndpoints
 
             if (!EsLiderExterno(solicitud.Lider))
                 return Results.BadRequest(ApiResponse<object>.Fail(400, "El Jefe Inmediato de esta solicitud es interno; no usa enlace externo.", []));
+
+            if (string.IsNullOrWhiteSpace(solicitud.Lider?.IdpersonaNavigation?.Email))
+                return Results.BadRequest(ApiResponse<object>.Fail(400, "El líder externo no tiene un correo electrónico registrado.", []));
 
             if (solicitud.Estado.Codigo != "PENDIENTE_JEFE")
                 return Results.BadRequest(ApiResponse<object>.Fail(400, "La solicitud ya no está pendiente del Jefe Inmediato.", []));
@@ -1333,8 +1338,9 @@ public static partial class PermisosEndpoints
                         DetalleHorario = detalleHorarioLimpio,
                         HorasSolicitadas = horasTotales,
                         ImpactoTimeReport = esInformativo ? "SIN_IMPACTO" : "RESTA_META",
-                        TokenExterno = !esInformativo && esLiderExternoAsignado ? Guid.NewGuid().ToString("N") : null,
-                        TokenExternoExpira = !esInformativo && esLiderExternoAsignado ? DateTime.UtcNow.AddHours(72) : null,
+                        TokenExterno = esLiderExternoAsignado ? Guid.NewGuid().ToString("N") : null,
+                        TokenExternoExpira = esLiderExternoAsignado ? (esInformativo ? DateTime.UtcNow.AddDays(30) : DateTime.UtcNow.AddHours(72)) : null,
+                        TokenExternoUsadoEn = esLiderExternoAsignado && esInformativo ? DateTime.UtcNow : null,
                         Activo = true,
                         UsuarioCreacion = usuario.Email,
                         FechaCreacion = DateTime.UtcNow,

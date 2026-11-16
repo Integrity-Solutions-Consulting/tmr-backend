@@ -265,7 +265,7 @@ public sealed class PermisosNotificacionService(
         {
             case EventoNotificacionPermiso.SolicitudCorregidaReenviada:
             case EventoNotificacionPermiso.SolicitudCreada:
-                var esExt = string.Equals(p.LiderTipo, "EXT", StringComparison.OrdinalIgnoreCase) && p.EstadoClase != "confirmado";
+                var esExt = string.Equals(p.LiderTipo, "EXT", StringComparison.OrdinalIgnoreCase);
                 AgregarColab();
                 AgregarLider(esExt);
                 await AgregarRrhhAsync();
@@ -285,7 +285,7 @@ public sealed class PermisosNotificacionService(
             case EventoNotificacionPermiso.ConfirmadaPorRrhh:
             case EventoNotificacionPermiso.DevueltaPorRrhh:
                 AgregarColab();
-                AgregarLider(incluirToken: false);
+                AgregarLider(incluirToken: string.Equals(p.LiderTipo, "EXT", StringComparison.OrdinalIgnoreCase));
                 break;
         }
 
@@ -308,12 +308,13 @@ public sealed class PermisosNotificacionService(
         var liderHtml = WebUtility.HtmlEncode(p.LiderNombre);
         var folioHtml = WebUtility.HtmlEncode(folio);
         var esInformativo = p.EstadoClase == "confirmado";
-        var esExterno = string.Equals(p.LiderTipo, "EXT", StringComparison.OrdinalIgnoreCase) && !esInformativo;
-
+        var esExterno = string.Equals(p.LiderTipo, "EXT", StringComparison.OrdinalIgnoreCase);
         var urlColab = $"{frontendUrl}/permisos?solicitud={p.Id}";
         var urlRrhh = $"{frontendUrl}/permisos/rrhh?solicitud={p.Id}";
-        var urlLider = esExterno && !string.IsNullOrWhiteSpace(p.TokenExterno)
-            ? $"{frontendUrl}/permisos/revision-externa?token={Uri.EscapeDataString(p.TokenExterno)}"
+        var urlLider = esExterno
+            ? (!string.IsNullOrWhiteSpace(p.TokenExterno)
+                ? $"{frontendUrl}/permisos/revision-externa?token={Uri.EscapeDataString(p.TokenExterno)}"
+                : "")
             : $"{frontendUrl}/permisos/equipo?solicitud={p.Id}";
 
         (string Asunto, string Titulo, string Mensaje, string CtaUrl, string CtaTexto) config = (evento, rol) switch
@@ -343,13 +344,13 @@ public sealed class PermisosNotificacionService(
                     ? $"[Copia Informativa] Permiso {folio} · {p.Colaborador}"
                     : $"[Acción Requerida] Aprobación de permiso {folio} · {p.Colaborador}",
                 Titulo: esInformativo ? "Copia Informativa de Permiso" : "Solicitud Pendiente de Aprobación",
-                Mensaje: esExterno
-                    ? $"El colaborador <strong>{colabHtml}</strong> ha registrado una solicitud de <strong>{tipoHtml}</strong>. Puedes revisarla y registrar tu decisión directamente desde el siguiente enlace seguro:"
-                    : esInformativo
-                        ? $"El colaborador <strong>{colabHtml}</strong> registró un permiso informativo de <strong>{tipoHtml}</strong>. No requiere aprobación; se envía esta copia para tu conocimiento."
+                Mensaje: esInformativo
+                    ? $"El colaborador <strong>{colabHtml}</strong> registró un permiso informativo de <strong>{tipoHtml}</strong>. No requiere aprobación; se envía esta copia para tu conocimiento."
+                    : esExterno
+                        ? $"El colaborador <strong>{colabHtml}</strong> ha registrado una solicitud de <strong>{tipoHtml}</strong>. Puedes revisarla y registrar tu decisión directamente desde el siguiente enlace seguro:"
                         : $"El colaborador <strong>{colabHtml}</strong> ha registrado una solicitud de <strong>{tipoHtml}</strong> que requiere tu revisión en TMR.",
                 CtaUrl: urlLider,
-                CtaTexto: esExterno ? "Revisar y Aprobar Solicitud" : "Revisar en TMR"),
+                CtaTexto: esInformativo ? (esExterno ? "Ver Ficha y Descargar PDF" : "Revisar en TMR") : (esExterno ? "Revisar y Aprobar Solicitud" : "Revisar en TMR")),
 
             (EventoNotificacionPermiso.SolicitudCreada, _) => (
                 Asunto: esInformativo
@@ -417,8 +418,8 @@ public sealed class PermisosNotificacionService(
                 Mensaje: evento == EventoNotificacionPermiso.ConfirmadaPorRrhh
                     ? $"Talento Humano confirmó definitivamente la solicitud <strong>{folioHtml}</strong> de <strong>{colabHtml}</strong>."
                     : $"Talento Humano devolvió con observaciones la solicitud <strong>{folioHtml}</strong> de <strong>{colabHtml}</strong>.",
-                CtaUrl: p.LiderTipo == "EXT" ? "" : urlLider,
-                CtaTexto: "Ver en TMR")
+                CtaUrl: urlLider,
+                CtaTexto: esExterno ? "Ver Ficha y Descargar PDF" : "Ver en TMR")
         };
 
         var html = RenderizarCorreo(plantilla, p, logoUrl, nombre, config.Titulo, config.Mensaje, config.CtaUrl, config.CtaTexto);
