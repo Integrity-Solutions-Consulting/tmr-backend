@@ -1,5 +1,6 @@
 using FluentValidation;
 using tmr_backend.Features.Colaboradores.DTOs.Request;
+using tmr_backend.Shared.Validation;
 
 namespace tmr_backend.Features.Colaboradores.Validators;
 
@@ -9,6 +10,21 @@ public class ActualizarColaboradorRequestValidator : AbstractValidator<Actualiza
 {
     public ActualizarColaboradorRequestValidator()
     {
+        RuleFor(x => x.Nombres)
+            .Must(x => NombrePersonaRules.IsValid(x))
+            .When(x => x.Nombres is not null)
+            .WithMessage(NombrePersonaRules.Message);
+
+        RuleFor(x => x.Apellidos)
+            .Must(x => NombrePersonaRules.IsValid(x))
+            .When(x => x.Apellidos is not null)
+            .WithMessage(NombrePersonaRules.Message);
+
+        RuleFor(x => x.Telefono)
+            .Must(x => TelefonoRules.IsValid(x))
+            .When(x => !string.IsNullOrWhiteSpace(x.Telefono))
+            .WithMessage(TelefonoRules.Message);
+
         // Las reglas de dominio de los correos se validan en el servicio y solo si el correo
         // cambia, para que los datos antiguos no bloqueen otras ediciones ni "Activar".
         RuleFor(x => x.EmailCorporativo)

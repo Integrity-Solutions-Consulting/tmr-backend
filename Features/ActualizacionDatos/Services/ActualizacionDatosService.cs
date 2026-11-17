@@ -5,6 +5,7 @@ using tmr_backend.Features.ActualizacionDatos.DTOs;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
 using tmr_backend.Infrastructure.Shared;
+using tmr_backend.Shared.Validation;
 
 namespace tmr_backend.Features.ActualizacionDatos.Services;
 
@@ -47,6 +48,9 @@ public sealed class ActualizacionDatosService(ApplicationDbContext db, ICurrentU
     public async Task<long> SaveAsync(ActualizacionRequest input, CancellationToken ct)
     {
         var owner = await GetOwnerAsync(ct) ?? throw new UnauthorizedAccessException("El usuario no tiene un colaborador asociado.");
+        input = NormalizeNames(input);
+        if (!NombrePersonaRules.IsValid(input.Persona.Nombres) || !NombrePersonaRules.IsValid(input.Persona.Apellidos)) throw new ArgumentException(NombrePersonaRules.Message);
+        if (!TelefonoRules.IsValid(input.Persona.Telefono)) throw new ArgumentException(TelefonoRules.Message);
         if (input.Formaciones.Any(x => string.IsNullOrWhiteSpace(x.Nivel) || string.IsNullOrWhiteSpace(x.Institucion) || string.IsNullOrWhiteSpace(x.Titulo))) throw new ArgumentException("Complete los campos obligatorios de formación.");
         ValidateFamilies(input.Familia);
         if (input.Familia?.TieneHijos == "No" && input.Familia.Familiares.Count > 0)
@@ -74,7 +78,17 @@ public sealed class ActualizacionDatosService(ApplicationDbContext db, ICurrentU
         if(approve){var e=await db.TblAdministracionEmpleados.Include(x=>x.IdpersonaNavigation).SingleAsync(x=>x.Id==s.IdEmpleado,ct);var d=s.Detalles.ToDictionary(x=>x.Campo,x=>x.ValorPropuesto);if(d.TryGetValue("Nombres",out var v))e.IdpersonaNavigation.Nombres=v!;if(d.TryGetValue("Apellidos",out v))e.IdpersonaNavigation.Apellidos=v!;if(d.TryGetValue("Email",out v))e.IdpersonaNavigation.Email=v;if(d.TryGetValue("Telefono",out v))e.IdpersonaNavigation.Telefono=v;if(d.TryGetValue("Direccion",out v))e.IdpersonaNavigation.Direccion=v;var fs=await db.Set<ColaboradorFormacion>().Where(x=>x.IdEmpleado==s.IdEmpleado).ToListAsync(ct);fs.ForEach(x=>x.Activo=false);var cs=await db.Set<ColaboradorCertificacion>().Where(x=>x.IdEmpleado==s.IdEmpleado).ToListAsync(ct);cs.ForEach(x=>x.Activo=false);db.AddRange(s.Formaciones.Select(x=>new ColaboradorFormacion{IdEmpleado=s.IdEmpleado,Nivel=x.Nivel,Institucion=x.Institucion,Titulo=x.Titulo,FechaInicio=x.FechaInicio,FechaFin=x.FechaFin,Activo=true}));db.AddRange(s.Certificaciones.Select(x=>new ColaboradorCertificacion{IdEmpleado=s.IdEmpleado,Nombre=x.Nombre,EntidadEmisora=x.EntidadEmisora,FechaEmision=x.FechaEmision,FechaVencimiento=x.FechaVencimiento,Activo=true}));var info=await db.Set<ColaboradorInformacionFamiliar>().SingleOrDefaultAsync(x=>x.IdEmpleado==s.IdEmpleado,ct)??new ColaboradorInformacionFamiliar{IdEmpleado=s.IdEmpleado};var proposed=JsonSerializer.Deserialize<ActualizacionRequest>(s.DatosPropuestosJson,JsonOptions);info.EstadoCivil=proposed?.Familia?.EstadoCivil;info.TieneHijos=proposed?.Familia?.TieneHijos;info.TieneDiscapacidad=proposed?.Familia?.TieneDiscapacidad;info.TipoDiscapacidad=proposed?.Familia?.TipoDiscapacidad;info.PorcentajeDiscapacidad=proposed?.Familia?.PorcentajeDiscapacidad;if(db.Entry(info).State==EntityState.Detached)db.Add(info);var old=await db.Set<ColaboradorFamiliar>().Where(x=>x.IdEmpleado==s.IdEmpleado).ToListAsync(ct);old.ForEach(x=>x.Activo=false);db.AddRange(s.Familiares.Select(x=>new ColaboradorFamiliar{IdEmpleado=s.IdEmpleado,TipoRelacion=x.TipoRelacion,Nombres=x.Nombres,Apellidos=x.Apellidos,FechaNacimiento=x.FechaNacimiento,TieneDiscapacidad=x.TieneDiscapacidad,TipoDiscapacidad=x.TipoDiscapacidad,PorcentajeDiscapacidad=x.PorcentajeDiscapacidad,Activo=true}));}
         await db.SaveChangesAsync(ct);await tx.CommitAsync(ct);return Results.NoContent(); }
 
-    private static void ValidateFamilies(InformacionFamiliarRequest? f){if(f is null)return;if(f.TieneHijos is not null && f.TieneHijos is not ("Si" or "No" or "NoInformado"))throw new ArgumentException("Tiene hijos debe ser Sí, No o No informado.");foreach(var x in f.Familiares){if(string.IsNullOrWhiteSpace(x.TipoRelacion)||string.IsNullOrWhiteSpace(x.Nombres)||string.IsNullOrWhiteSpace(x.Apellidos))throw new ArgumentException("Complete los datos obligatorios de cada familiar.");if(x.PorcentajeDiscapacidad is < 0 or > 100)throw new ArgumentException("El porcentaje de discapacidad debe estar entre 0 y 100.");}}
+    private static ActualizacionRequest NormalizeNames(ActualizacionRequest input)
+    {
+        var family = input.Familia is null ? null : input.Familia with
+        {
+            Familiares = input.Familia.Familiares.Select(NormalizeFamilyNames).ToList(),
+            Pareja = input.Familia.Pareja is null ? null : NormalizeFamilyNames(input.Familia.Pareja)
+        };
+        return input with { Persona = input.Persona with { Nombres = NombrePersonaRules.Normalize(input.Persona.Nombres), Apellidos = NombrePersonaRules.Normalize(input.Persona.Apellidos), Telefono = TelefonoRules.Normalize(input.Persona.Telefono) }, Familia = family };
+    }
+    private static FamiliarRequest NormalizeFamilyNames(FamiliarRequest x) => x with { Nombres = NombrePersonaRules.Normalize(x.Nombres), Apellidos = NombrePersonaRules.Normalize(x.Apellidos) };
+    private static void ValidateFamilies(InformacionFamiliarRequest? f){if(f is null)return;if(f.TieneHijos is not null && f.TieneHijos is not ("Si" or "No" or "NoInformado"))throw new ArgumentException("Tiene hijos debe ser Sí, No o No informado.");foreach(var x in f.Familiares){if(string.IsNullOrWhiteSpace(x.TipoRelacion)||!NombrePersonaRules.IsValid(x.Nombres)||!NombrePersonaRules.IsValid(x.Apellidos))throw new ArgumentException(NombrePersonaRules.Message);if(x.PorcentajeDiscapacidad is < 0 or > 100)throw new ArgumentException("El porcentaje de discapacidad debe estar entre 0 y 100.");}if(f.Pareja is not null && (!NombrePersonaRules.IsValid(f.Pareja.Nombres,false)||!NombrePersonaRules.IsValid(f.Pareja.Apellidos,false)))throw new ArgumentException(NombrePersonaRules.Message);}
     private static FamiliarResponse ToFamilyResponse(ColaboradorFamiliar x)=>new(x.Id,x.TipoRelacion,x.Nombres,x.Apellidos,x.FechaNacimiento,Age(x.FechaNacimiento),x.TieneDiscapacidad,x.TipoDiscapacidad,x.PorcentajeDiscapacidad);
     private static FamiliarResponse ToFamilyResponse(ActualizacionFamiliar x)=>new(x.Id,x.TipoRelacion,x.Nombres,x.Apellidos,x.FechaNacimiento,Age(x.FechaNacimiento),x.TieneDiscapacidad,x.TipoDiscapacidad,x.PorcentajeDiscapacidad);
     private static int? Age(DateOnly? date){if(date is null)return null;var today=DateOnly.FromDateTime(DateTime.UtcNow);var age=today.Year-date.Value.Year;if(today<date.Value.AddYears(age))age--;return age;}

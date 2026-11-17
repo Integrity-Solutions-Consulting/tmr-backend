@@ -1,6 +1,7 @@
 using FluentValidation;
 using tmr_backend.Features.Colaboradores.Domain;
 using tmr_backend.Features.Colaboradores.DTOs.Request;
+using tmr_backend.Shared.Validation;
 
 namespace tmr_backend.Features.Colaboradores.Validators;
 
@@ -27,12 +28,10 @@ public class CrearColaboradorRequestValidator : AbstractValidator<CrearColaborad
             .When(x => x.TipoPersona == "NATURAL");
 
         RuleFor(x => x.Nombres)
-            .NotEmpty().WithMessage("Los nombres son requeridos.")
-            .MaximumLength(100).WithMessage("Los nombres no pueden superar los 100 caracteres.");
+            .Must(x => NombrePersonaRules.IsValid(x)).WithMessage(NombrePersonaRules.Message);
 
         RuleFor(x => x.Apellidos)
-            .NotEmpty().WithMessage("Los apellidos son requeridos.")
-            .MaximumLength(100).WithMessage("Los apellidos no pueden superar los 100 caracteres.");
+            .Must(x => NombrePersonaRules.IsValid(x)).WithMessage(NombrePersonaRules.Message);
 
         // Debe existir al menos un correo: personal o institucional.
         RuleFor(x => x)
@@ -56,7 +55,7 @@ public class CrearColaboradorRequestValidator : AbstractValidator<CrearColaborad
             .When(x => !string.IsNullOrWhiteSpace(x.EmailCorporativo));
 
         RuleFor(x => x.Telefono)
-            .MaximumLength(20).WithMessage("El teléfono no puede superar los 20 caracteres.")
+            .Must(x => TelefonoRules.IsValid(x)).WithMessage(TelefonoRules.Message)
             .When(x => !string.IsNullOrWhiteSpace(x.Telefono));
 
         RuleFor(x => x.Direccion)
