@@ -7,6 +7,8 @@ using tmr_backend.Features.ActualizacionDatos.Services;
 using tmr_backend.Features.ActualizacionDatos.Storage;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Shared;
+using tmr_backend.Shared.Validation;
+using tmr_backend.Shared.Wrappers;
 
 namespace tmr_backend.Features.ActualizacionDatos.Endpoints;
 
@@ -30,7 +32,7 @@ public static class ActualizacionDatosEndpoints
                 Extensions = { ["code"] = inactive ? "EMPLOYEE_INACTIVE" : "EMPLOYEE_LINK_MISSING" }
             });
         });
-        mine.MapPut("", async (ActualizacionRequest request, ActualizacionDirectaService service, CancellationToken ct) => { try { return Results.Ok(new { version = await service.SaveAsync(request, ct) }); } catch (DbUpdateConcurrencyException ex) { return Results.Conflict(new ProblemDetails { Detail = ex.Message, Status = 409 }); } catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { return Results.BadRequest(new ProblemDetails { Detail=ex.Message, Status=400 }); } });
+        mine.MapPut("", async (ActualizacionRequest request, ActualizacionDirectaService service, CancellationToken ct) => { try { return Results.Ok(new { version = await service.SaveAsync(request, ct) }); } catch (DbUpdateConcurrencyException ex) { return Results.Conflict(new ProblemDetails { Detail = ex.Message, Status = 409 }); } catch (FieldValidationException ex) { return Results.BadRequest(ApiResponse<object>.Fail(400, "Error de validación", ex.Errors)); } catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { return Results.BadRequest(new ProblemDetails { Detail=ex.Message, Status=400 }); } });
         mine.MapGet("/solicitudes", async (ActualizacionDirectaService service, CancellationToken ct) => Results.Ok(await service.SolicitudesAsync(ct)));
         mine.MapPost("/solicitudes", async (CrearSolicitudRequest request, ActualizacionDirectaService service, CancellationToken ct) => { try { return Results.Ok(new { id = await service.CrearSolicitudAsync(request.Asunto, request.Descripcion, request.Enviar, ct) }); } catch (ArgumentException ex) { return Results.BadRequest(new { message = ex.Message }); } });
         mine.MapPost("/solicitudes/{id:long}/archivos", async (long id, IFormFile file, ApplicationDbContext db, IFileStorage storage, ActualizacionDirectaService service, CancellationToken ct) =>

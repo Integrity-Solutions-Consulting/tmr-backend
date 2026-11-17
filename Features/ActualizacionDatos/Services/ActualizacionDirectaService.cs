@@ -6,6 +6,8 @@ using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
 using tmr_backend.Infrastructure.Shared;
 using tmr_backend.Features.ActualizacionDatos.Storage;
+using tmr_backend.Shared.Validation;
+using tmr_backend.Shared.Wrappers;
 
 namespace tmr_backend.Features.ActualizacionDatos.Services;
 
@@ -53,7 +55,7 @@ public sealed class ActualizacionDirectaService(ApplicationDbContext db, ICurren
         }
         var employee = await db.TblAdministracionEmpleados.Include(x => x.IdpersonaNavigation).SingleAsync(x => x.Id == owner.Employee.Id, ct);
         var person = employee.IdpersonaNavigation;
-        person.Nombres = input.Persona.Nombres.Trim(); person.Apellidos = input.Persona.Apellidos.Trim(); person.Email = input.Persona.Email?.Trim(); person.Telefono = input.Persona.Telefono?.Trim(); person.Direccion = input.Persona.Direccion?.Trim(); person.Fechamodificacion = DateTime.UtcNow; person.Usuariomodificacion = currentUser.Email;
+        person.Nombres = NombrePersonaRules.Normalize(input.Persona.Nombres); person.Apellidos = NombrePersonaRules.Normalize(input.Persona.Apellidos); person.Email = input.Persona.Email?.Trim(); person.Telefono = TelefonoRules.Normalize(input.Persona.Telefono); person.Direccion = input.Persona.Direccion?.Trim(); person.Fechamodificacion = DateTime.UtcNow; person.Usuariomodificacion = currentUser.Email;
         var info = await db.Set<ColaboradorInformacionFamiliar>().SingleOrDefaultAsync(x => x.IdEmpleado == employee.Id, ct) ?? new ColaboradorInformacionFamiliar { IdEmpleado = employee.Id };
         info.EstadoCivil = input.Familia?.EstadoCivil; info.TieneHijos = NormalizeTriState(input.Familia?.TieneHijos); info.TieneDiscapacidad = NormalizeTriState(input.Persona.TieneDiscapacidad); info.TipoDiscapacidad = IsYes(input.Persona.TieneDiscapacidad) ? input.Persona.TipoDiscapacidad : null; info.PorcentajeDiscapacidad = IsYes(input.Persona.TieneDiscapacidad) ? input.Persona.PorcentajeDiscapacidad : null;
         if (db.Entry(info).State == EntityState.Detached) db.Add(info);
@@ -159,27 +161,59 @@ public sealed class ActualizacionDirectaService(ApplicationDbContext db, ICurren
         if (family is null) return;
         var all = family.Familiares.Concat(family.Pareja is null ? [] : [family.Pareja]).ToList(); var rows = await db.Set<ColaboradorFamiliar>().Where(x => x.IdEmpleado == id && x.Activo).ToListAsync(ct);
         foreach (var row in rows.Where(r => r.TipoRelacion == "Hijo" && !all.Any(v => v.Id == r.Id || (!string.IsNullOrWhiteSpace(v.Clave) && v.Clave == r.Clave)))) row.Activo = false;
-        foreach (var x in all) { var row = rows.FirstOrDefault(r => x.Id == r.Id || (!string.IsNullOrWhiteSpace(x.Clave) && x.Clave == r.Clave)) ?? new ColaboradorFamiliar { IdEmpleado = id, Clave = string.IsNullOrWhiteSpace(x.Clave) ? Guid.NewGuid().ToString("N") : x.Clave! }; row.TipoRelacion = x.TipoRelacion; row.Nombres = x.Nombres.Trim(); row.Apellidos = x.Apellidos.Trim(); row.Identificacion = x.Identificacion?.Trim(); row.FechaNacimiento = x.FechaNacimiento; row.TieneDiscapacidad = x.TieneDiscapacidad; row.TipoDiscapacidad = x.TipoDiscapacidad; row.PorcentajeDiscapacidad = x.PorcentajeDiscapacidad; row.Activo = true; if (row.Id == 0) db.Add(row); }
+        foreach (var x in all) { var row = rows.FirstOrDefault(r => x.Id == r.Id || (!string.IsNullOrWhiteSpace(x.Clave) && x.Clave == r.Clave)) ?? new ColaboradorFamiliar { IdEmpleado = id, Clave = string.IsNullOrWhiteSpace(x.Clave) ? Guid.NewGuid().ToString("N") : x.Clave! }; row.TipoRelacion = x.TipoRelacion; row.Nombres = NombrePersonaRules.Normalize(x.Nombres); row.Apellidos = NombrePersonaRules.Normalize(x.Apellidos); row.Identificacion = x.Identificacion?.Trim(); row.FechaNacimiento = x.FechaNacimiento; row.TieneDiscapacidad = x.TieneDiscapacidad; row.TipoDiscapacidad = x.TipoDiscapacidad; row.PorcentajeDiscapacidad = x.PorcentajeDiscapacidad; row.Activo = true; if (row.Id == 0) db.Add(row); }
     }
 
     private static void Validate(ActualizacionRequest x)
     {
-        if (string.IsNullOrWhiteSpace(x.Persona.Nombres) || string.IsNullOrWhiteSpace(x.Persona.Apellidos)) throw new ArgumentException("Nombres y apellidos son obligatorios.");
-        if (x.Persona.PorcentajeDiscapacidad is < 0 or > 100) throw new ArgumentException("El porcentaje de discapacidad debe estar entre 0 y 100.");
-        if (x.Formaciones.Any(v => string.IsNullOrWhiteSpace(v.Nivel) || string.IsNullOrWhiteSpace(v.Institucion) || string.IsNullOrWhiteSpace(v.Titulo))) throw new ArgumentException("Completa los campos obligatorios de formación.");
-        if (x.Certificaciones.Any(v => string.IsNullOrWhiteSpace(v.Nombre) || string.IsNullOrWhiteSpace(v.EntidadEmisora))) throw new ArgumentException("Completa los campos obligatorios de certificación.");
+        var errors = new List<ApiError>();
+        void Add(string field, string message) => errors.Add(new ApiError(field, message, "VALIDATION_ERROR"));
+
+        if (!NombrePersonaRules.IsValid(x.Persona.Nombres)) Add("persona.nombres", NombrePersonaRules.Message);
+        if (!NombrePersonaRules.IsValid(x.Persona.Apellidos)) Add("persona.apellidos", NombrePersonaRules.Message);
+        if (!TelefonoRules.IsValid(x.Persona.Telefono)) Add("persona.telefono", TelefonoRules.Message);
+        if (!string.IsNullOrWhiteSpace(x.Persona.Email) && !System.Net.Mail.MailAddress.TryCreate(x.Persona.Email.Trim(), out _)) Add("persona.email", "Ingresa un correo electrónico válido");
+        if (x.Persona.PorcentajeDiscapacidad is < 0 or > 100) Add("persona.porcentajeDiscapacidad", "El porcentaje debe estar entre 0 y 100.");
+
+        for (var i = 0; i < x.Formaciones.Count; i++)
+        {
+            var formation = x.Formaciones[i];
+            if (string.IsNullOrWhiteSpace(formation.Nivel)) Add($"formaciones[{i}].nivel", "Este campo es obligatorio.");
+            if (string.IsNullOrWhiteSpace(formation.Institucion)) Add($"formaciones[{i}].institucion", "Este campo es obligatorio.");
+            if (string.IsNullOrWhiteSpace(formation.Titulo)) Add($"formaciones[{i}].titulo", "Este campo es obligatorio.");
+        }
+        for (var i = 0; i < x.Certificaciones.Count; i++)
+        {
+            var certification = x.Certificaciones[i];
+            if (string.IsNullOrWhiteSpace(certification.Nombre)) Add($"certificaciones[{i}].nombre", "Este campo es obligatorio.");
+            if (string.IsNullOrWhiteSpace(certification.EntidadEmisora)) Add($"certificaciones[{i}].entidadEmisora", "Este campo es obligatorio.");
+        }
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        foreach (var certification in x.Certificaciones)
+        for (var i = 0; i < x.Certificaciones.Count; i++)
         {
-            if (certification.FechaEmision > today) throw new ArgumentException("La fecha de emisión de una certificación no puede ser futura.");
-            if (certification.FechaVencimiento is not null && certification.FechaVencimiento < certification.FechaEmision) throw new ArgumentException("El vencimiento no puede ser anterior a la fecha de emisión.");
+            var certification = x.Certificaciones[i];
+            if (certification.FechaEmision > today) Add($"certificaciones[{i}].fechaEmision", "La fecha de emisión no puede ser futura.");
+            if (certification.FechaVencimiento is not null && certification.FechaVencimiento < certification.FechaEmision) Add($"certificaciones[{i}].fechaVencimiento", "El vencimiento no puede ser anterior a la fecha de emisión.");
         }
-        foreach (var family in (x.Familia?.Familiares ?? []).Append(x.Familia?.Pareja).Where(v => v is not null).Select(v => v!))
+        for (var i = 0; i < (x.Familia?.Familiares.Count ?? 0); i++)
         {
-            if (family.FechaNacimiento > today) throw new ArgumentException("La fecha de nacimiento no puede ser futura.");
-            if (!string.IsNullOrWhiteSpace(family.Identificacion) && !System.Text.RegularExpressions.Regex.IsMatch(family.Identificacion, "^\\d{10}$")) throw new ArgumentException("La identificación debe contener exactamente 10 dígitos.");
-            if (family.PorcentajeDiscapacidad is < 0 or > 100) throw new ArgumentException("El porcentaje de discapacidad debe estar entre 0 y 100.");
+            var family = x.Familia!.Familiares[i];
+            var prefix = $"familia.familiares[{i}]";
+            if (!NombrePersonaRules.IsValid(family.Nombres)) Add($"{prefix}.nombres", NombrePersonaRules.Message);
+            if (!NombrePersonaRules.IsValid(family.Apellidos)) Add($"{prefix}.apellidos", NombrePersonaRules.Message);
+            if (family.FechaNacimiento > today) Add($"{prefix}.fechaNacimiento", "La fecha de nacimiento no puede ser futura.");
+            if (!string.IsNullOrWhiteSpace(family.Identificacion) && !System.Text.RegularExpressions.Regex.IsMatch(family.Identificacion, "^\\d{10}$")) Add($"{prefix}.identificacion", "La identificación debe contener exactamente 10 dígitos.");
+            if (family.PorcentajeDiscapacidad is < 0 or > 100) Add($"{prefix}.porcentajeDiscapacidad", "El porcentaje debe estar entre 0 y 100.");
         }
+        var partner = x.Familia?.Pareja;
+        if (partner is not null)
+        {
+            if (!NombrePersonaRules.IsValid(partner.Nombres, false)) Add("familia.pareja.nombres", NombrePersonaRules.Message);
+            if (!NombrePersonaRules.IsValid(partner.Apellidos, false)) Add("familia.pareja.apellidos", NombrePersonaRules.Message);
+            if (partner.FechaNacimiento > today) Add("familia.pareja.fechaNacimiento", "La fecha de nacimiento no puede ser futura.");
+            if (!string.IsNullOrWhiteSpace(partner.Identificacion) && !System.Text.RegularExpressions.Regex.IsMatch(partner.Identificacion, "^\\d{10}$")) Add("familia.pareja.identificacion", "La identificación debe contener exactamente 10 dígitos.");
+        }
+        if (errors.Count > 0) throw new FieldValidationException(errors);
     }
     private static InformacionFamiliarRequest? NormalizeFamily(InformacionFamiliarRequest? family)
     {
