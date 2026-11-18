@@ -164,7 +164,8 @@ public static class TimeReportEndpoints
                     ep.IdproyectoNavigation.Nombre,
                     ep.IdproyectoNavigation.Codigo,
                     ep.Fechaasignacion,
-                    ep.Fechafinasignacion
+                    ep.Fechafinasignacion,
+                    FinProyecto = ep.IdproyectoNavigation.Fechafinreal ?? ep.IdproyectoNavigation.Fechafinplaneada
                 })
                 .ToListAsync();
             var salidaColaborador = empleado.Activo ? null : empleado.Fechaterminacion;
@@ -176,7 +177,8 @@ public static class TimeReportEndpoints
                     g.First().Codigo,
                     g.Any(a => a.Fechaasignacion == null) ? null : g.Min(a => a.Fechaasignacion),
                     g.Any(a => a.Fechafinasignacion == null) ? null : g.Max(a => a.Fechafinasignacion),
-                    salidaColaborador))
+                    salidaColaborador,
+                    g.First().FinProyecto))
                 .ToList();
             return Results.Ok(proyectosAsignados);
         });
@@ -239,7 +241,8 @@ public static class TimeReportEndpoints
                     ep.IdproyectoNavigation.Nombre,
                     ep.IdproyectoNavigation.Codigo,
                     ep.Fechaasignacion,
-                    ep.Fechafinasignacion
+                    ep.Fechafinasignacion,
+                    FinProyecto = ep.IdproyectoNavigation.Fechafinreal ?? ep.IdproyectoNavigation.Fechafinplaneada
                 })
                 .ToListAsync();
             if (asignaciones.Count == 0) return Results.Ok(new CompletarLiderDto(false));
@@ -256,7 +259,8 @@ public static class TimeReportEndpoints
                 asignaciones[0].Codigo,
                 asignaciones.Any(a => a.Fechaasignacion == null) ? null : asignaciones.Min(a => a.Fechaasignacion),
                 asignaciones.Any(a => a.Fechafinasignacion == null) ? null : asignaciones.Max(a => a.Fechafinasignacion),
-                salidaColaborador)));
+                salidaColaborador,
+                asignaciones[0].FinProyecto)));
         });
 
         groupActividades.MapGet("/resumen", async (int idEmpleado, int? anio, int? mes, int? idProyecto, ClaimsPrincipal user, ApplicationDbContext db) =>
@@ -330,6 +334,11 @@ public static class TimeReportEndpoints
                 && await ValidarAsignacionAsync(db, request.IdEmpleado, request.IdProyecto.Value, request.FechaActividad, idLiderRegistro) is { } errorAsignacion)
                 return Results.BadRequest(new { Mensaje = errorAsignacion });
 
+            // TC-007/TC-009: no se registran horas después de la fecha fin del proyecto (aunque siga activo).
+            if (request.IdProyecto.HasValue
+                && await ValidarFinProyectoAsync(db, request.IdProyecto.Value, request.FechaActividad) is { } errorFinProyecto)
+                return Results.BadRequest(new { Mensaje = errorFinProyecto });
+
             var nuevaActividad = new tmr_backend.Infrastructure.Database.Entities.TblTimeReportActividadDiarium
             {
                 Idempleado = request.IdEmpleado,
@@ -385,6 +394,12 @@ public static class TimeReportEndpoints
                 && (request.IdProyecto != actividad.Idproyecto || request.FechaActividad != actividad.Fechaactividad)
                 && await ValidarAsignacionAsync(db, actividad.Idempleado, request.IdProyecto.Value, request.FechaActividad, esPropia ? null : actividad.Idliderregistro) is { } errorAsignacion)
                 return Results.BadRequest(new { Mensaje = errorAsignacion });
+
+            // TC-007/TC-009: misma regla al mover la actividad a otro proyecto o fecha (si no cambian, se permite corregirla).
+            if (request.IdProyecto.HasValue
+                && (request.IdProyecto != actividad.Idproyecto || request.FechaActividad != actividad.Fechaactividad)
+                && await ValidarFinProyectoAsync(db, request.IdProyecto.Value, request.FechaActividad) is { } errorFinProyecto)
+                return Results.BadRequest(new { Mensaje = errorFinProyecto });
 
             actividad.Idproyecto = request.IdProyecto;
             actividad.Idtipoactividad = request.IdTipoActividad;
@@ -718,6 +733,20 @@ public static class TimeReportEndpoints
                 : $"desde el {a.Fechaasignacion:dd/MM/yyyy}"));
         return $"El {fecha:dd/MM/yyyy} no estaba asignado a este proyecto (su asignación rige {vigencias}). " +
                "Si trabajó en esa fecha, pida a su líder que corrija la fecha de asignación.";
+    }
+
+    // TC-007/TC-009: la fecha fin del proyecto (real o, si no hay, la planificada) es el último día en que se pueden
+    // registrar horas, sin importar su estado. Se mantiene TR-004: un proyecto Inactivo admite horas atrasadas hasta esa fecha.
+    private static async Task<string?> ValidarFinProyectoAsync(ApplicationDbContext db, int idProyecto, DateOnly fecha)
+    {
+        var proyecto = await db.TblTimeReportProyectos
+            .AsNoTracking()
+            .Where(p => p.Id == idProyecto)
+            .Select(p => new { p.Nombre, Fin = p.Fechafinreal ?? p.Fechafinplaneada })
+            .FirstOrDefaultAsync();
+
+        if (proyecto?.Fin is not { } fin || fecha <= fin) return null;
+        return $"El proyecto {proyecto.Nombre} finalizó el {fin:dd/MM/yyyy}. No puede registrar actividades posteriores a esa fecha.";
     }
 
     private static async Task<string?> ValidarFechaSalidaAsync(ApplicationDbContext db, int idEmpleado, DateOnly fecha)

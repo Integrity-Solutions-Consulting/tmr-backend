@@ -113,6 +113,16 @@ public static class ProyectosEndpoints
                 return Results.BadRequest(new { message = errorEstadoAsignacion });
 
             var idEstadoProyectoActivo = await ObtenerOCrearEstadoProyectoActivoAsync(db);
+            var idEstadoProyecto = request.IdEstadoProyecto ?? idEstadoProyectoActivo;
+
+            // TC-009: un proyecto Cancelado o Completado queda Inactivo (no puede estar "cancelado y activo a la vez").
+            var activo = request.Estado is null ? true : EsEstadoActivo(request.Estado);
+            if (await EsEstadoDeCierreAsync(db, idEstadoProyecto))
+                activo = false;
+
+            // TC-008: un proyecto Inactivo no admite recursos nuevos.
+            if (!activo && lideres.Any(l => l.Recursos is { Count: > 0 }))
+                return Results.BadRequest(new { message = MensajeRecursoProyectoInactivo });
 
             var proyecto = new TblTimeReportProyecto
             {
@@ -121,14 +131,14 @@ public static class ProyectosEndpoints
                 Descripcion = request.Descripcion,
                 Idcliente = ids.IdCliente,
                 Idtipoproyecto = ids.IdTipoProyecto,
-                Idestadoproyecto = request.IdEstadoProyecto ?? idEstadoProyectoActivo,
+                Idestadoproyecto = idEstadoProyecto,
                 Fechainicioplaneada = request.FechaInicio,
                 Fechafinplaneada = request.FechaFin,
                 Fechainicioreal = request.FechaInicioReal,
                 Fechafinreal = request.FechaFinReal,
                 Presupuesto = request.Presupuesto,
                 Horasasignadas = request.Horas,
-                Activo = request.Estado is null ? true : EsEstadoActivo(request.Estado),
+                Activo = activo,
                 Usuariocreacion = UsuarioSistema,
                 Fechacreacion = DateTime.UtcNow,
                 Ipcreacion = IpSistema,
@@ -209,6 +219,10 @@ public static class ProyectosEndpoints
                 proyecto.Activo = request.Activo.Value;
             }
 
+            // TC-009: un proyecto Cancelado o Completado queda Inactivo (no puede estar "cancelado y activo a la vez").
+            if (await EsEstadoDeCierreAsync(db, proyecto.Idestadoproyecto))
+                proyecto.Activo = false;
+
             proyecto.Usuariomodificacion = UsuarioSistema;
             proyecto.Fechamodificacion = DateTime.UtcNow;
             proyecto.Ipmodificacion = IpSistema;
@@ -217,6 +231,11 @@ public static class ProyectosEndpoints
                 l.IdLider.HasValue ||
                 !string.IsNullOrWhiteSpace(l.Lider) ||
                 (l.Recursos != null && l.Recursos.Count > 0));
+
+            // TC-008: en un proyecto Inactivo se pueden editar los recursos que ya tenía, pero no agregar nuevos.
+            if (tieneAsignaciones && !proyecto.Activo
+                && await TieneRecursosNuevosAsync(db, id, lideres))
+                return Results.BadRequest(new { message = MensajeRecursoProyectoInactivo });
 
             if (tieneAsignaciones)
                 await GuardarAsignaciones(id, lideres, db);
@@ -476,6 +495,33 @@ public static class ProyectosEndpoints
         if (string.IsNullOrWhiteSpace(estado)) return false;
         var v = estado.Trim().ToUpperInvariant();
         return v == "ACTIVO" || v == "ACT" || v == "A" || v == "TRUE" || v == "1";
+    }
+
+    private const string MensajeRecursoProyectoInactivo =
+        "No se pueden agregar recursos nuevos a un proyecto inactivo, cancelado o completado.";
+
+    // Estados del catálogo EPR que cierran el proyecto: Cancelado (CAN) y Completado (COM).
+    private static readonly string[] CodigosEstadoCierre = ["CAN", "COM"];
+
+    private static Task<bool> EsEstadoDeCierreAsync(ApplicationDbContext db, int idEstadoProyecto) =>
+        db.TblAdministracionCatalogoDetalles
+            .AsNoTracking()
+            .AnyAsync(d => d.Id == idEstadoProyecto
+                && d.Codigovalor != null && CodigosEstadoCierre.Contains(d.Codigovalor));
+
+    // Hay un recurso nuevo si en la solicitud aparece un colaborador o proveedor que hoy no está asignado al proyecto.
+    private static async Task<bool> TieneRecursosNuevosAsync(ApplicationDbContext db, int idProyecto, List<ProyectoLiderRequest> lideres)
+    {
+        var actuales = await db.TblTimeReportAsignacionProyectos
+            .AsNoTracking()
+            .Where(a => a.Idproyecto == idProyecto && a.Activo && (a.Idempleado != null || a.Idproveedor != null))
+            .Select(a => new { a.Idempleado, a.Idproveedor })
+            .ToListAsync();
+
+        return lideres
+            .SelectMany(l => l.Recursos ?? [])
+            .Where(r => r.IdEmpleado.HasValue || r.IdProveedor.HasValue)
+            .Any(r => !actuales.Any(a => a.Idempleado == r.IdEmpleado && a.Idproveedor == r.IdProveedor));
     }
 
     private static async Task<int> ObtenerOCrearEstadoProyectoActivoAsync(ApplicationDbContext db)
