@@ -21,7 +21,7 @@ public class DateOnlyJsonConverter : JsonConverter<DateOnly?>
         if (DateOnly.TryParseExact(valor, Formatos, CultureInfo.InvariantCulture, DateTimeStyles.None, out var fecha))
             return fecha;
 
-        return null;
+        throw new JsonException("La fecha no es válida. Usa el formato yyyy-MM-dd.");
     }
 
     public override void Write(Utf8JsonWriter writer, DateOnly? value, JsonSerializerOptions options)

@@ -8,6 +8,7 @@ using System.Text;
 using tmr_backend.Features.Auth.DTOs.Request;
 using tmr_backend.Features.Auth.DTOs.Response;
 using tmr_backend.Features.Auth.Mappings;
+using tmr_backend.Features.Permisos.Services;
 using tmr_backend.Features.TimeReport.Services;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
@@ -154,6 +155,10 @@ public sealed class AuthService(
             throw new ValidationException(validation.Errors);
 
         var normalizedUser = request.User.ToLowerInvariant();
+        if (normalizedUser.EndsWith("@tmr.com", StringComparison.OrdinalIgnoreCase))
+        {
+            await SincronizadorCuentasPermisos.AsegurarCuentasSincronizadasAsync(db, null, ct);
+        }
 
         var usuario = await db.TblAutenticacionUsuarios
             .Include(u => u.IdpersonaNavigation)

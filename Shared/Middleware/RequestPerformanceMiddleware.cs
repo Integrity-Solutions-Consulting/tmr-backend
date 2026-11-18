@@ -31,6 +31,11 @@ public sealed class RequestPerformanceMiddleware(
 
         await next(context);
 
+        // Las conexiones en vivo (Server-Sent Events: campana, corte, estado de avisos) duran a propósito mientras
+        // el usuario tiene la app abierta; no son solicitudes lentas y solo llenaban el log de advertencias.
+        if (EsConexionEnVivo(context))
+            return;
+
         var totalMs = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
         if (totalMs >= _slowRequestThresholdMs)
         {
@@ -43,4 +48,8 @@ public sealed class RequestPerformanceMiddleware(
                 context.TraceIdentifier);
         }
     }
+
+    private static bool EsConexionEnVivo(HttpContext context) =>
+        context.Response.ContentType?.StartsWith("text/event-stream", StringComparison.OrdinalIgnoreCase) == true
+        || context.Request.Headers.Accept.ToString().Contains("text/event-stream", StringComparison.OrdinalIgnoreCase);
 }

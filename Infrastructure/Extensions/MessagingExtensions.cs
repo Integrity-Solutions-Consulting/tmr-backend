@@ -22,6 +22,10 @@ public static class MessagingExtensions
         // 3. El bus: scoped, porque usa el DbContext
         services.AddScoped<IEventBus, EventBus>();
 
+        // 3b. Avisa al dispatcher de los eventos publicados en una transacción cuando esta se confirma.
+        //     Debe agregarse al DbContext con AddInterceptors (ver Program.cs).
+        services.AddSingleton<SenalesOutboxInterceptor>();
+
         // 4. El dispatcher: .NET lo arranca solo en app.Run() y vive mientras el backend esté encendido
         services.AddHostedService<EventDispatcher>();
 

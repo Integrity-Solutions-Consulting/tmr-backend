@@ -15,7 +15,8 @@ public sealed class CurrentUserService : ICurrentUserService
     {
         get
         {
-            var claim = _httpContextAccessor.HttpContext?.User.FindFirst("sub");
+            var claim = _httpContextAccessor.HttpContext?.User.FindFirst("sub")
+                ?? _httpContextAccessor.HttpContext?.User.FindFirst(ClaimTypes.NameIdentifier);
             return claim != null && int.TryParse(claim.Value, out var userId) 
                 ? userId 
                 : 0;

@@ -92,7 +92,7 @@ public class GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExcep
 
         IEnumerable<ApiError> errors = exception is FluentValidation.ValidationException fluentEx
             ? fluentEx.Errors.Select(e => new ApiError(e.PropertyName, e.ErrorMessage, "VALIDATION_ERROR"))
-            : [new ApiError("server", isBusinessException || !env.IsDevelopment() ? exception.Message : exception.ToString(), errorCode)];
+            : [new ApiError("server", isBusinessException ? exception.Message : "Ocurrió un error inesperado", errorCode)];
 
         var code = (int)statusCode;
 

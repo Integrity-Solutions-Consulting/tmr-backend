@@ -63,6 +63,8 @@ public static class NotificacionesModule
         services.AddScoped<IEventHandler<NotificacionEnviada>, RegistrarEnvioHandler>();
         services.AddScoped<IEventHandler<NotificacionFallida>, RegistrarEnvioHandler>();
         services.AddScoped<IEventHandler<NotificacionOmitida>, RegistrarEnvioHandler>();
+        // EnviarCorreoHandler registra el resultado en el mismo paso del envío (sin otra vuelta por la cola)
+        services.AddScoped<RegistrarEnvioHandler>();
 
         // Avisos que agotaron sus reintentos: quedan registrados como Fallido
         services.AddScoped<IEventoFallidoHandler<HorasFaltantesDetectadas>, FalloDefinitivoHandler>();

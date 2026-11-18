@@ -114,13 +114,13 @@ public sealed class ConsultaHorasFaltantes : IConsultaHorasFaltantes
 
             // Lo que decide si se avisa: la fila de Seguimiento desde la que se pidió (ese proyecto, o "Sin Proyecto")
             var calculo = CalcularFila(
-                empleado, inicioPeriodo, finPeriodo, actividades, datos.Feriados, datos.Hoy, jornadas, idProyecto);
+                empleado, inicioPeriodo, finPeriodo, actividades, datos.Feriados, datos.Hoy, jornadas, idProyecto, datos.Solicitudes[empleado.Id]);
             if (!calculo.DebeHoras)
                 continue;
 
             // El correo detalla lo que le falta en cada uno de sus proyectos, no solo en el de la fila
             var desglose = DesglosePorProyecto(
-                empleado, inicioPeriodo, finPeriodo, actividades, datos.Feriados, datos.Hoy, jornadas);
+                empleado, inicioPeriodo, finPeriodo, actividades, datos.Feriados, datos.Hoy, jornadas, datos.Solicitudes[empleado.Id]);
 
             resultado.Add(Crear(empleado, calculo, ConFaltantes(desglose)));
         }
@@ -150,7 +150,7 @@ public sealed class ConsultaHorasFaltantes : IConsultaHorasFaltantes
         {
             var desglose = DesglosePorProyecto(
                 empleado, inicioPeriodo, finPeriodo, datos.Actividades[empleado.Id].ToList(),
-                datos.Feriados, datos.Hoy, datos.Jornadas[empleado.Id]);
+                datos.Feriados, datos.Hoy, datos.Jornadas[empleado.Id], datos.Solicitudes[empleado.Id]);
 
             var faltantes = desglose.Sum(d => d.Calculo.HorasFaltantes);
             if (faltantes <= 0)
@@ -184,6 +184,7 @@ public sealed class ConsultaHorasFaltantes : IConsultaHorasFaltantes
         ILookup<int, TblTimeReportActividadDiarium> Actividades,
         HashSet<DateOnly> Feriados,
         ILookup<int, PeriodoJornada> Jornadas,
+        ILookup<int, SolicitudAprobadaPeriodo> Solicitudes,
         DateOnly Hoy);
 
     private async Task<DatosCalculo> CargarDatosAsync(
@@ -228,11 +229,16 @@ public sealed class ConsultaHorasFaltantes : IConsultaHorasFaltantes
             ? Array.Empty<PeriodoJornada>().ToLookup(_ => 0)
             : await CalculoHorasPeriodo.CargarJornadasAsync(_db, empIds);
 
+        var solicitudes = empIds.Count == 0
+            ? Array.Empty<SolicitudAprobadaPeriodo>().ToLookup(_ => 0)
+            : await CalculoHorasPeriodo.CargarSolicitudesAprobadasAsync(_db, inicioPeriodo, finPeriodo, empIds);
+
         return new DatosCalculo(
             empleados,
             actividades,
             FeriadosDelPeriodo(feriadosDb, inicioPeriodo, finPeriodo),
             jornadas,
+            solicitudes,
             CalculoHorasPeriodo.HoyEcuador());
     }
 
@@ -250,7 +256,8 @@ public sealed class ConsultaHorasFaltantes : IConsultaHorasFaltantes
         IReadOnlyCollection<TblTimeReportActividadDiarium> actividades,
         ICollection<DateOnly> feriados,
         DateOnly hoy,
-        IEnumerable<PeriodoJornada>? jornadas)
+        IEnumerable<PeriodoJornada>? jornadas,
+        IEnumerable<SolicitudAprobadaPeriodo>? solicitudes = null)
     {
         var todas = empleado.TblTimeReportAsignacionProyectos;
         var asignaciones = todas
@@ -264,7 +271,7 @@ public sealed class ConsultaHorasFaltantes : IConsultaHorasFaltantes
 
         if (asignaciones.Count == 0)
             return [new DesgloseProyecto(null, "Sin proyecto",
-                CalcularFila(empleado, inicioPeriodo, finPeriodo, actividades, feriados, hoy, jornadas, idProyecto: null))];
+                CalcularFila(empleado, inicioPeriodo, finPeriodo, actividades, feriados, hoy, jornadas, idProyecto: null, solicitudes: solicitudes))];
 
         return asignaciones
             .Select(g => new DesgloseProyecto(
@@ -272,7 +279,8 @@ public sealed class ConsultaHorasFaltantes : IConsultaHorasFaltantes
                 g.First().IdproyectoNavigation?.Nombre ?? $"Proyecto {g.Key}",
                 Calcular(empleado, inicioPeriodo, finPeriodo,
                     actividades.Where(a => a.Idproyecto == g.Key), feriados, hoy, jornadas,
-                    g.Select(ep => new VigenciaAsignacion(ep.Fechaasignacion, ep.Fechafinasignacion)).ToList())))
+                    g.Select(ep => new VigenciaAsignacion(ep.Fechaasignacion, ep.Fechafinasignacion)).ToList(),
+                    solicitudes, g.Key)))
             .ToList();
     }
 
@@ -288,10 +296,11 @@ public sealed class ConsultaHorasFaltantes : IConsultaHorasFaltantes
         ICollection<DateOnly> feriados,
         DateOnly hoy,
         IEnumerable<PeriodoJornada>? jornadas,
-        int? idProyecto)
+        int? idProyecto,
+        IEnumerable<SolicitudAprobadaPeriodo>? solicitudes = null)
     {
         if (idProyecto is null)
-            return Calcular(empleado, inicioPeriodo, finPeriodo, actividades, feriados, hoy, jornadas, vigencias: null);
+            return Calcular(empleado, inicioPeriodo, finPeriodo, actividades, feriados, hoy, jornadas, vigencias: null, solicitudes: solicitudes, idProyectoFiltro: null);
 
         var vigencias = empleado.TblTimeReportAsignacionProyectos
             .Where(ep => ep.Idproyecto == idProyecto)
@@ -299,7 +308,7 @@ public sealed class ConsultaHorasFaltantes : IConsultaHorasFaltantes
             .ToList();
 
         return Calcular(empleado, inicioPeriodo, finPeriodo,
-            actividades.Where(a => a.Idproyecto == idProyecto), feriados, hoy, jornadas, vigencias);
+            actividades.Where(a => a.Idproyecto == idProyecto), feriados, hoy, jornadas, vigencias, solicitudes: solicitudes, idProyectoFiltro: idProyecto);
     }
 
     private static ResultadoHorasFaltantes Calcular(
@@ -310,11 +319,13 @@ public sealed class ConsultaHorasFaltantes : IConsultaHorasFaltantes
         ICollection<DateOnly> feriados,
         DateOnly hoy,
         IEnumerable<PeriodoJornada>? jornadas,
-        IReadOnlyCollection<VigenciaAsignacion>? vigencias)
+        IReadOnlyCollection<VigenciaAsignacion>? vigencias,
+        IEnumerable<SolicitudAprobadaPeriodo>? solicitudes = null,
+        int? idProyectoFiltro = null)
     {
         // CalculoHorasPeriodo aplica 6 h por día si el contrato vigente es pasantía (PAS) y 8 h en otro caso
         var horas = CalculoHorasPeriodo.Calcular(
-            empleado, inicioPeriodo, finPeriodo, actividades, feriados, hoy, jornadas, vigencias);
+            empleado, inicioPeriodo, finPeriodo, actividades, feriados, hoy, jornadas, vigencias, solicitudes, idProyectoFiltro);
 
         return new ResultadoHorasFaltantes(
             empleado.Id,

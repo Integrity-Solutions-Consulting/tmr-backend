@@ -200,7 +200,9 @@ VALUES
     ('NACIMIENTO_HIJO',        'NAC', 'Nacimiento de un Hijo/a',      'Licencia por paternidad / nacimiento',    FALSE, 5, TRUE),
     ('OTROS',                  'OTR', 'Otros',                        'Otros permisos laborales o personales',   FALSE, 6, TRUE),
     ('MATERNIDAD',             'MTR', 'Maternidad',                   'Licencia legal por maternidad',           FALSE, 7, TRUE),
-    ('FALLECIMIENTO_FAMILIAR', 'FAL', 'Fallecimiento de un familiar', 'Licencia por calamidad doméstica / duelo',FALSE, 8, TRUE)
+    ('FALLECIMIENTO_FAMILIAR', 'FAL', 'Fallecimiento de un familiar', 'Licencia por calamidad doméstica / duelo',FALSE, 8, TRUE),
+    ('CALAMIDAD_DOMESTICA',    'CAL', 'Calamidad doméstica',          'Permiso por calamidad doméstica (informativo)', FALSE, 9, TRUE),
+    ('ACCIDENTE',              'ACC', 'Accidente',                    'Permiso por accidente (informativo)',     FALSE, 10, TRUE)
 ON CONFLICT (codigo) DO UPDATE
 SET codigo_corto     = EXCLUDED.codigo_corto,
     nombre           = EXCLUDED.nombre,

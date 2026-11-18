@@ -34,10 +34,10 @@ public class EventDispatcher : BackgroundService
     // .NET llama a este método al arrancar el backend, y vive mientras el backend esté encendido
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // 1. Recuperar los eventos que quedaron pendientes si el backend se cayó
-        await ReencolarPendientesAsync(stoppingToken);
-
-        // 2. Escuchar el canal: espera sin consumir CPU hasta que llegue un Id
+        // 1. La recuperación de pendientes (los que quedaron si el backend se cayó) corre aparte: una al arrancar y
+        //    luego cada cierto tiempo. Antes se esperaba la primera antes de escuchar el canal, y con la base lenta
+        //    al arrancar los eventos nuevos quedaban casi dos minutos sin procesar.
+        // 2. Escuchar el canal de inmediato: espera sin consumir CPU hasta que llegue un Id
         using var recoveryCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         var recovery = RecuperarPeriodicamenteAsync(recoveryCancellation.Token);
         try
@@ -182,16 +182,24 @@ public class EventDispatcher : BackgroundService
 
     private async Task RecuperarPeriodicamenteAsync(CancellationToken ct)
     {
-        using var timer = new PeriodicTimer(_esperaEntreReintentos);
         try
         {
+            // Una vez al arrancar (sin frenar al lector del canal) y luego cada _esperaEntreReintentos
+            await ReencolarPendientesAsync(ct);
+
+            using var timer = new PeriodicTimer(_esperaEntreReintentos);
             while (await timer.WaitForNextTickAsync(ct)) await ReencolarPendientesAsync(ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
     }
 
+    // Tope para la consulta de pendientes: si la base no responde, se reintenta en la próxima vuelta
+    private static readonly TimeSpan TiempoMaximoRecuperacion = TimeSpan.FromSeconds(20);
+
     private async Task ReencolarPendientesAsync(CancellationToken ct)
     {
+        using var limite = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        limite.CancelAfter(TiempoMaximoRecuperacion);
         try
         {
             using var scope = _scopeFactory.CreateScope();
@@ -201,7 +209,7 @@ public class EventDispatcher : BackgroundService
                 .Where(e => e.Estado == EstadoEvento.Pendiente)
                 .OrderBy(e => e.FechaCreacion)
                 .Select(e => e.Id)
-                .ToListAsync(ct);
+                .ToListAsync(limite.Token);
 
             foreach (var id in pendientes)
                 await _canal.Writer.WriteAsync(id, ct);
@@ -209,9 +217,19 @@ public class EventDispatcher : BackgroundService
             if (pendientes.Count > 0)
                 _logger.LogInformation("Se reencolaron {Cantidad} eventos pendientes", pendientes.Count);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning(
+                "La consulta de eventos pendientes del Outbox superó {Segundos} s; se reintenta en la próxima vuelta",
+                TiempoMaximoRecuperacion.TotalSeconds);
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error al reencolar eventos pendientes del Outbox al iniciar el servicio");
+            _logger.LogError(ex, "Error al reencolar eventos pendientes del Outbox");
         }
     }
 }

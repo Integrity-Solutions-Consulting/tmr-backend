@@ -8,6 +8,7 @@ using tmr_backend.Features.TimeReport.Services;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Shared.Extensions;
 using tmr_backend.Infrastructure.Database.Entities;
+using tmr_backend.Shared.Validation;
 
 namespace tmr_backend.Features.Colaboradores.Services;
 
@@ -204,8 +205,8 @@ public sealed class ColaboradorService(
                 Idgenero = request.IdGenero,
                 Idnacionalidad = request.IdNacionalidad,
                 Tipopersona = request.TipoPersona,
-                Nombres = request.Nombres.Trim(),
-                Apellidos = request.Apellidos.Trim(),
+                Nombres = NombrePersonaRules.Normalize(request.Nombres),
+                Apellidos = NombrePersonaRules.Normalize(request.Apellidos),
                 Fechanacimiento = request.FechaNacimiento,
                 Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim(),
                 Telefono = string.IsNullOrWhiteSpace(request.Telefono) ? null : request.Telefono.Trim(),
@@ -317,10 +318,10 @@ public sealed class ColaboradorService(
             persona.Numeroidentificacion = request.NumeroIdentificacion.Trim();
 
         if (!string.IsNullOrWhiteSpace(request.Nombres))
-            persona.Nombres = request.Nombres.Trim();
+            persona.Nombres = NombrePersonaRules.Normalize(request.Nombres);
 
         if (!string.IsNullOrWhiteSpace(request.Apellidos))
-            persona.Apellidos = request.Apellidos.Trim();
+            persona.Apellidos = NombrePersonaRules.Normalize(request.Apellidos);
 
         persona.Fechanacimiento = request.FechaNacimiento;
         persona.Idgenero = request.IdGenero;

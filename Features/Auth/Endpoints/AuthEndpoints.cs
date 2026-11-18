@@ -5,6 +5,7 @@ using tmr_backend.Features.Auth.DTOs.Request;
 using tmr_backend.Features.Auth.DTOs.Response;
 using tmr_backend.Features.Auth.Services;
 using tmr_backend.Shared.Wrappers;
+using tmr_backend.Infrastructure.Security;
 
 namespace tmr_backend.Features.Auth;
 
@@ -94,6 +95,14 @@ public static class AuthEndpoints
             .RequireAuthorization()
             .Produces<ApiResponse<string[]>>(StatusCodes.Status200OK)
             .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
+
+        group.MapGet("/permissions", async (HttpContext context, IPermissionService permissionService, CancellationToken ct) =>
+        {
+            var sub = context.User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+            return int.TryParse(sub, out var userId)
+                ? Results.Ok(await permissionService.GetUserPermissionsAsync(userId, ct))
+                : Results.Unauthorized();
+        }).WithName("GetPermissions").RequireAuthorization();
     }
 
     // ─────────────────────────────────────────────────────────────────────────

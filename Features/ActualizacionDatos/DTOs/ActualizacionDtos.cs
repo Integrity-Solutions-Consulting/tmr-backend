@@ -1,0 +1,21 @@
+using Microsoft.AspNetCore.Http;
+
+namespace tmr_backend.Features.ActualizacionDatos.DTOs;
+
+public sealed record PersonaPropuesta(string Nombres, string Apellidos, string? Email, string? Telefono, string? Direccion, string? EstadoCivil = null, string? TieneDiscapacidad = null, string? TipoDiscapacidad = null, decimal? PorcentajeDiscapacidad = null);
+public sealed record DocumentoResponse(long Id, string NombreOriginal, string ContentType, long Tamano, DateTime Fecha, string Seccion, long? ReferenciaId = null, string? ReferenciaClave = null);
+public sealed record FamiliarRequest(string TipoRelacion, string Nombres, string Apellidos, DateOnly? FechaNacimiento, string? TieneDiscapacidad, string? TipoDiscapacidad, decimal? PorcentajeDiscapacidad, long? Id = null, string? Clave = null, string? Identificacion = null, IReadOnlyList<DocumentoResponse>? Archivos = null, bool LimpiarDiscapacidad = false);
+public sealed record InformacionFamiliarRequest(string? EstadoCivil, string? TieneHijos, string? TieneDiscapacidad, string? TipoDiscapacidad, decimal? PorcentajeDiscapacidad, IReadOnlyList<FamiliarRequest> Familiares, FamiliarRequest? Pareja = null, bool LimpiarHijos = false, bool LimpiarPareja = false, IReadOnlyList<string>? ClavesHijosAEliminar = null, string? ClaveParejaAEliminar = null);
+public sealed record FormacionRequest(string Nivel, string Institucion, string Titulo, DateOnly? FechaInicio, DateOnly? FechaFin, long? Id = null, string? Clave = null, IReadOnlyList<DocumentoResponse>? Archivos = null);
+public sealed record CertificacionRequest(string Nombre, string EntidadEmisora, DateOnly FechaEmision, DateOnly? FechaVencimiento, long? Id = null, string? Clave = null, IReadOnlyList<DocumentoResponse>? Archivos = null);
+public sealed record ActualizacionRequest(PersonaPropuesta Persona, IReadOnlyList<FormacionRequest> Formaciones, IReadOnlyList<CertificacionRequest> Certificaciones, bool Enviar = false, InformacionFamiliarRequest? Familia = null, long? ControlVersion = null, bool LimpiarDiscapacidad = false);
+public sealed record RevisionRequest(string? Observacion, int Version);
+public sealed record SolicitudLista(long Id, int IdEmpleado, string Colaborador, string Estado, DateTime Fechamodificacion, string? Observacion, int Version);
+public sealed record ArchivoResponse(long Id, string NombreOriginal, string ContentType, long Tamano, DateTime Fecha);
+public sealed record SolicitudPropiaResponse(long Id, string Asunto, string Descripcion, DateTime FechaCreacion, DateTime? FechaEnvio, bool Enviada, IReadOnlyList<DocumentoResponse> Archivos);
+public sealed record MiDatosResponse(long? SolicitudId, string Estado, string? Observacion, PersonaPropuesta Persona, IReadOnlyList<FormacionRequest> Formaciones, IReadOnlyList<CertificacionRequest> Certificaciones, IReadOnlyList<ArchivoResponse> Archivos, InformacionFamiliarResponse? Familia = null, long ControlVersion = 0, IReadOnlyList<SolicitudPropiaResponse>? Solicitudes = null, SolicitudDetalleResponse? SolicitudPendienteRecuperable = null);
+public sealed record InformacionFamiliarResponse(string? EstadoCivil, string? TieneHijos, string? TieneDiscapacidad, string? TipoDiscapacidad, decimal? PorcentajeDiscapacidad, IReadOnlyList<FamiliarResponse> Familiares, FamiliarResponse? Pareja = null);
+public sealed record FamiliarResponse(long? Id, string TipoRelacion, string Nombres, string Apellidos, DateOnly? FechaNacimiento, int? Edad, string? TieneDiscapacidad, string? TipoDiscapacidad, decimal? PorcentajeDiscapacidad, string? Identificacion = null, string? Clave = null, IReadOnlyList<DocumentoResponse>? Archivos = null);
+public sealed record SolicitudDetalleResponse(long Id, int IdEmpleado, string Colaborador, string Estado, int Version, string? Observacion, IReadOnlyList<ActualizacionDetalleResponse> Cambios, IReadOnlyList<FormacionRequest> Formaciones, IReadOnlyList<CertificacionRequest> Certificaciones, IReadOnlyList<ArchivoResponse> Archivos, InformacionFamiliarResponse? Familia = null);
+public sealed record ActualizacionDetalleResponse(string Seccion, string Campo, string? ValorVigente, string? ValorPropuesto);
+public sealed record CrearSolicitudRequest(string Asunto, string Descripcion, bool Enviar = false);

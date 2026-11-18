@@ -11,17 +11,15 @@ public static class PermisoAvisoVigencia
             evento.VersionSolicitud.Value.Ticks / 10 != (solicitud.FechaModificacion ?? solicitud.FechaCreacion).Ticks / 10) return false;
         var esperado = evento.EstadoSolicitud ?? evento.Evento switch
         {
-            EventoNotificacionPermiso.SolicitudCreada or EventoNotificacionPermiso.ReenvioMagicLink => "PENDIENTE_JEFE",
+            EventoNotificacionPermiso.SolicitudCreada or EventoNotificacionPermiso.SolicitudCorregidaReenviada or EventoNotificacionPermiso.ReenvioMagicLink => "PENDIENTE_JEFE",
             EventoNotificacionPermiso.AprobadaPorLider => "PENDIENTE_TH",
             EventoNotificacionPermiso.RechazadaPorLider => "RECHAZADA",
             EventoNotificacionPermiso.ConfirmadaPorRrhh => "APROBADA",
             _ => "OBSERVADA"
         };
-        if (solicitud.Estado.Codigo != esperado) return false;
-        if (evento.IncluirTokenExterno)
-            return !solicitud.TokenExternoUsadoEn.HasValue && solicitud.TokenExternoExpira > DateTime.UtcNow
-                && !string.IsNullOrWhiteSpace(solicitud.TokenExterno)
-                && (evento.Instantanea is null || evento.Instantanea.TokenExterno == solicitud.TokenExterno);
+        if (solicitud.Estado.Codigo != esperado)
+            return false;
+        if (evento.IncluirTokenExterno) { var reqSinUso = solicitud.Estado.Codigo == "PENDIENTE_JEFE"; return (!reqSinUso || !solicitud.TokenExternoUsadoEn.HasValue) && solicitud.TokenExternoExpira > DateTime.UtcNow && !string.IsNullOrWhiteSpace(solicitud.TokenExterno) && (evento.Instantanea is null || evento.Instantanea.TokenExterno == solicitud.TokenExterno); }
         return true;
     }
 }

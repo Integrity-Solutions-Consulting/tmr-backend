@@ -50,6 +50,8 @@ public static partial class PermisosEndpoints
             if (currentUser.UserId <= 0)
                 return Results.Json(ApiResponse<object>.Fail(401, "Sesión no válida.", []), statusCode: 401);
 
+            await SincronizadorCuentasPermisos.AsegurarCuentasSincronizadasAsync(db, null, ct);
+
             var usuario = await db.TblAutenticacionUsuarios
                 .AsNoTracking()
                 .Include(u => u.IdpersonaNavigation)
@@ -311,7 +313,9 @@ public static partial class PermisosEndpoints
                 TotalDias: ParseDec("totalDias"),
                 TotalHoras: ParseDec("totalHoras"),
                 Motivo: form["motivo"].FirstOrDefault() ?? "",
-                IdUsuarioRrhh: ParseInt("idUsuarioRrhh"));
+                IdUsuarioRrhh: ParseInt("idUsuarioRrhh"),
+                IdSolicitudObservada: ParseInt("idSolicitudObservada"),
+                VersionSolicitud: form["versionSolicitud"].FirstOrDefault());
 
             var archivos = form.Files.Where(f => f.Length > 0).ToList();
             return await CrearSolicitudInternaAsync(
@@ -487,7 +491,9 @@ public static partial class PermisosEndpoints
                 if (!actor.IdLider.HasValue)
                     return Results.Ok(ApiResponse<IReadOnlyList<PermisoItemDto>>.Ok([]));
 
-                query = query.Where(s => s.IdLider == actor.IdLider.Value);
+                var idLiderActor = actor.IdLider.Value;
+                query = query.Where(s => s.IdLider == idLiderActor
+                                         || (s.IdLider == null && s.AsignacionProyecto != null && s.AsignacionProyecto.Idlider == idLiderActor));
             }
 
             var lista = await query
@@ -518,16 +524,21 @@ public static partial class PermisosEndpoints
 
             var solicitud = await db.TblTimeReportSolicitudes
                 .Include(s => s.Estado)
+                .Include(s => s.AsignacionProyecto)
                 .FirstOrDefaultAsync(s => s.Id == id && s.Activo, ct);
 
             if (solicitud is null)
                 return Results.NotFound(ApiResponse<object>.Fail(404, "Solicitud no encontrada.", []));
 
-            if (!actor.EsAdmin && (!actor.IdLider.HasValue || solicitud.IdLider != actor.IdLider.Value))
+            var idLiderEfectivo = solicitud.IdLider ?? solicitud.AsignacionProyecto?.Idlider;
+            if (!actor.EsAdmin && (!actor.IdLider.HasValue || idLiderEfectivo != actor.IdLider.Value))
                 return Results.Json(ApiResponse<object>.Fail(403, "Esta solicitud no pertenece a tu bandeja de líder.", []), statusCode: 403);
 
-            // Nadie aprueba su propia solicitud, ni siquiera un administrador
-            if (actor.IdEmpleado.HasValue && solicitud.IdEmpleado == actor.IdEmpleado.Value)
+            if (request.VersionSolicitud != VersionActualSolicitud(solicitud))
+                return Results.Conflict(ApiResponse<object>.Fail(409, "La solicitud cambió. Actualiza y revisa los datos antes de decidir.", []));
+
+            // Un líder no administrador no aprueba su propia solicitud
+            if (!actor.EsAdmin && actor.IdEmpleado.HasValue && solicitud.IdEmpleado == actor.IdEmpleado.Value)
                 return Results.Json(ApiResponse<object>.Fail(403, "No puedes decidir sobre tu propia solicitud.", []), statusCode: 403);
 
             // Máquina de estados estricta: el Jefe Inmediato solo decide cuando está en PENDIENTE_JEFE
@@ -635,13 +646,17 @@ public static partial class PermisosEndpoints
             var solicitud = await db.TblTimeReportSolicitudes
                 .Include(s => s.Estado)
                 .Include(s => s.Revisiones)
+                .Include(s => s.Lider).ThenInclude(l => l!.IdtipoNavigation)
                 .FirstOrDefaultAsync(s => s.Id == id && s.Activo, ct);
 
             if (solicitud is null)
                 return Results.NotFound(ApiResponse<object>.Fail(404, "Solicitud no encontrada.", []));
 
-            // Nadie confirma su propia solicitud, ni siquiera un administrador
-            if (actor.IdEmpleado.HasValue && solicitud.IdEmpleado == actor.IdEmpleado.Value)
+            if (request.VersionSolicitud != VersionActualSolicitud(solicitud))
+                return Results.Conflict(ApiResponse<object>.Fail(409, "La solicitud cambió. Actualiza y revisa los datos antes de decidir.", []));
+
+            // Un usuario de RRHH no administrador no confirma su propia solicitud
+            if (!actor.EsAdmin && actor.IdEmpleado.HasValue && solicitud.IdEmpleado == actor.IdEmpleado.Value)
                 return Results.Json(ApiResponse<object>.Fail(403, "No puedes decidir sobre tu propia solicitud.", []), statusCode: 403);
 
             var accion = (request.Accion ?? "confirmar").Trim().ToLowerInvariant();
@@ -688,6 +703,7 @@ public static partial class PermisosEndpoints
             solicitud.UsuarioModificacion = actor.Email;
             solicitud.FechaModificacion = DateTime.UtcNow;
             solicitud.IpModificacion = ObtenerIpCliente(httpContext);
+            if (EsLiderExterno(solicitud.Lider)) { solicitud.TokenExterno ??= Guid.NewGuid().ToString("N"); solicitud.TokenExternoUsadoEn ??= DateTime.UtcNow; solicitud.TokenExternoExpira = DateTime.UtcNow.AddDays(30); }
 
             db.TblTimeReportSolicitudRevisiones.Add(new TblTimeReportSolicitudRevision
             {
@@ -709,7 +725,7 @@ public static partial class PermisosEndpoints
 
             var correoColab = recargada.Empleado.Emailcorporativo ?? recargada.Empleado.IdpersonaNavigation.Email;
             var correoOk = await NotificarCorreoSeguroAsync(db, notificacionService,
-                dto,
+                dto with { TokenExterno = recargada.TokenExterno },
                 correoColab,
                 confirmar ? EventoNotificacionPermiso.ConfirmadaPorRrhh : EventoNotificacionPermiso.DevueltaPorRrhh,
                 ct);
@@ -735,8 +751,8 @@ public static partial class PermisosEndpoints
 
             var solicitud = await db.TblTimeReportSolicitudes
                 .Include(s => s.Estado)
-                .Include(s => s.Lider)
-                    .ThenInclude(l => l!.IdtipoNavigation)
+                .Include(s => s.Lider).ThenInclude(l => l!.IdtipoNavigation)
+                .Include(s => s.Lider).ThenInclude(l => l!.IdpersonaNavigation)
                 .FirstOrDefaultAsync(s => s.Id == id && s.Activo, ct);
 
             if (solicitud is null)
@@ -744,6 +760,9 @@ public static partial class PermisosEndpoints
 
             if (!EsLiderExterno(solicitud.Lider))
                 return Results.BadRequest(ApiResponse<object>.Fail(400, "El Jefe Inmediato de esta solicitud es interno; no usa enlace externo.", []));
+
+            if (string.IsNullOrWhiteSpace(solicitud.Lider?.IdpersonaNavigation?.Email))
+                return Results.BadRequest(ApiResponse<object>.Fail(400, "El líder externo no tiene un correo electrónico registrado.", []));
 
             if (solicitud.Estado.Codigo != "PENDIENTE_JEFE")
                 return Results.BadRequest(ApiResponse<object>.Fail(400, "La solicitud ya no está pendiente del Jefe Inmediato.", []));
@@ -936,6 +955,9 @@ public static partial class PermisosEndpoints
     // =========================================================================
     // Creación transaccional (Solicitud + MinIO + Adjuntos + Campana SSE)
     // =========================================================================
+    private static string VersionActualSolicitud(TblTimeReportSolicitud s) =>
+        ((s.FechaModificacion ?? s.FechaCreacion).Ticks / 10).ToString(CultureInfo.InvariantCulture);
+
     private static async Task<IResult> CrearSolicitudInternaAsync(
         CrearPermisoRequest request,
         IReadOnlyList<IFormFile> archivosAdjuntos,
@@ -985,12 +1007,23 @@ public static partial class PermisosEndpoints
                 []));
         }
 
+        TblTimeReportSolicitud? corregida = null;
+        if (request.IdSolicitudObservada.HasValue)
+        {
+            corregida = await db.TblTimeReportSolicitudes.Include(s => s.Estado).Include(s => s.Adjuntos)
+                .FirstOrDefaultAsync(s => s.Id == request.IdSolicitudObservada.Value && s.Activo, ct);
+            if (corregida is null || corregida.IdEmpleado != empleado.Id)
+                return Results.Json(ApiResponse<object>.Fail(403, "No puedes editar esta solicitud.", []), statusCode: 403);
+            if (corregida.Estado.Codigo != "OBSERVADA")
+                return Results.BadRequest(ApiResponse<object>.Fail(400, "Solo puedes editar y reenviar solicitudes observadas.", []));
+        }
+
         var motivoLimpio = request.Motivo?.Replace("\0", "").Trim();
         if (string.IsNullOrWhiteSpace(motivoLimpio))
             return Results.BadRequest(ApiResponse<object>.Fail(400, "Por favor escribe el motivo de tu solicitud.", []));
         if (motivoLimpio.Length > 2000)
             return Results.BadRequest(ApiResponse<object>.Fail(400, "El motivo no puede superar los 2000 caracteres.", []));
-        var detalleHorarioLimpio = string.IsNullOrWhiteSpace(request.DetalleHorario) ? null : request.DetalleHorario.Replace("\0", "").Trim();
+        var detalleHorarioLimpio = string.IsNullOrWhiteSpace(request.DetalleHorario) ? "08:30 - 17:30" : request.DetalleHorario.Replace("\0", "").Trim();
         if (detalleHorarioLimpio?.Length > 120)
             return Results.BadRequest(ApiResponse<object>.Fail(400, "El detalle del horario no puede superar los 120 caracteres.", []));
 
@@ -1035,20 +1068,22 @@ public static partial class PermisosEndpoints
             diasHabiles = 0.5m;
             horasTotales = 4m;
         }
-        else if (horario == "OTROS")
+        else if (horario is "OTROS" or "COMPLETA")
         {
             var horasDesdeDetalle = ExtraerHorasDesdeDetalleHorario(detalleHorarioLimpio);
             if (horasDesdeDetalle.HasValue)
             {
-                if (horasDesdeDetalle.Value < 0.5m || horasDesdeDetalle.Value >= 8m)
-                    return Results.BadRequest(ApiResponse<object>.Fail(400, "Revisa el horario: elige horas dentro de la jornada laboral, con la hora de fin posterior al inicio. El permiso debe durar entre 30 minutos y 7 horas y 30 minutos por día.", []));
+                if (horasDesdeDetalle.Value < 0.5m || horasDesdeDetalle.Value > 8m)
+                    return Results.BadRequest(ApiResponse<object>.Fail(400, "Revisa el horario: elige horas dentro de la jornada laboral, con la hora de fin posterior al inicio. El permiso debe durar entre 30 minutos y 8 horas por día.", []));
+                horario = horasDesdeDetalle.Value >= 8m ? "COMPLETA" : "OTROS";
                 horasTotales = Math.Round(horasDesdeDetalle.Value * diasLaborablesRango, 2);
             }
             else if (request.TotalHoras is > 0)
             {
                 horasTotales = Math.Round(request.TotalHoras.Value, 2);
-                if (horasTotales < 0.5m || horasTotales >= diasLaborablesRango * 8m)
-                    return Results.BadRequest(ApiResponse<object>.Fail(400, "Revisa la duración solicitada: debe ser de al menos 30 minutos y menor al total de horas laborables del período.", []));
+                if (horasTotales < 0.5m || horasTotales > diasLaborablesRango * 8m)
+                    return Results.BadRequest(ApiResponse<object>.Fail(400, "Revisa la duración solicitada: debe ser de al menos 30 minutos y hasta 8 horas por día laborable.", []));
+                horario = horasTotales >= diasLaborablesRango * 8m ? "COMPLETA" : "OTROS";
             }
             else
             {
@@ -1079,7 +1114,7 @@ public static partial class PermisosEndpoints
         var traslapePropio = solicitudesMismoEmpleado.FirstOrDefault(s =>
             !(s.FechaInicio == fechaInicio.Value
               && s.FechaFin == fechaFin.Value
-              && ((s.Horario == "MANANA" && horario == "TARDE") || (s.Horario == "TARDE" && horario == "MANANA"))));
+              && (((s.Horario == "MANANA" && horario == "TARDE") || (s.Horario == "TARDE" && horario == "MANANA")) || (s.DiasSolicitados + diasHabiles <= 1m && !string.Equals(s.DetalleHorario, detalleHorarioLimpio, StringComparison.OrdinalIgnoreCase)))));
 
         if (traslapePropio is not null)
         {
@@ -1121,12 +1156,21 @@ public static partial class PermisosEndpoints
                 .Where(s => s.Activo && s.IdEmpleado == empleado.Id)
                 .ToListAsync(ct);
 
-            var diasDisponiblesVacaciones = CalcularDiasVacacionesDisponibles(empleado, solicitudesAnioEmpleado);
+            var anioSolicitado = fechaInicio?.Year ?? DateTime.UtcNow.Year;
+            var diasDisponiblesVacaciones = CalcularDiasVacacionesDisponibles(empleado, solicitudesAnioEmpleado, anioSolicitado);
+            if (diasHabiles > 15m || horasTotales > 120m)
+            {
+                return Results.BadRequest(ApiResponse<object>.Fail(
+                    400,
+                    $"Por política operativa, cada solicitud individual de vacaciones puede ser de hasta 15 días laborables (120 horas). Solicitas {diasHabiles:0.##} día(s) ({horasTotales:0.##} h). Tu saldo disponible total es de {diasDisponiblesVacaciones:0.##} día(s).",
+                    []));
+            }
+
             if (diasHabiles > diasDisponiblesVacaciones)
             {
                 return Results.BadRequest(ApiResponse<object>.Fail(
                     400,
-                    $"No cuentas con suficientes días de vacaciones disponibles. Solicitas {diasHabiles:0.##} día(s), pero tu saldo disponible actual es de {diasDisponiblesVacaciones:0.##} día(s).",
+                    $"No cuentas con suficientes días de vacaciones disponibles para el período {anioSolicitado}. Solicitas {diasHabiles:0.##} día(s) ({horasTotales:0.##} h), pero tu saldo disponible para este año es de {diasDisponiblesVacaciones:0.##} día(s) ({Math.Round(diasDisponiblesVacaciones * 8m, 2):0.##} h).",
                     []));
             }
         }
@@ -1136,7 +1180,7 @@ public static partial class PermisosEndpoints
         if (esNomina
             && tipoPermiso.Codigo == "LICENCIA_ENFERMEDAD"
             && diasHabiles > 1m
-            && archivosAdjuntos.Count == 0)
+            && archivosAdjuntos.Count == 0 && !(corregida?.Adjuntos.Any(a => a.Activo) ?? false))
         {
             return Results.BadRequest(ApiResponse<object>.Fail(
                 400,
@@ -1172,7 +1216,8 @@ public static partial class PermisosEndpoints
             }
         }
 
-        var idEstadoPendiente = await ObtenerIdEstadoSolicitudAsync(db, "PENDIENTE_JEFE", ct);
+        var esInformativo = corregida is null && EsPermisoInformativoSinAprobacion(tipoPermiso.Codigo);
+        var idEstadoPendiente = await ObtenerIdEstadoSolicitudAsync(db, esInformativo ? "APROBADA" : "PENDIENTE_JEFE", ct);
 
         // Resolver asignación de proyecto, cliente y líder (RF-001).
         int? idAsignacion = null;
@@ -1188,7 +1233,7 @@ public static partial class PermisosEndpoints
             .ToListAsync(ct);
 
         // Sin proyecto elegido se usa la asignación activa más reciente del colaborador
-        idProyecto ??= asignacionesEmpleado.FirstOrDefault()?.Idproyecto;
+        idProyecto = asignacionesEmpleado.Count == 0 ? null : (idProyecto != null && asignacionesEmpleado.Any(a => a.Idproyecto == idProyecto.Value) ? idProyecto : asignacionesEmpleado.FirstOrDefault()?.Idproyecto);
 
         if (idProyecto.HasValue)
         {
@@ -1228,7 +1273,7 @@ public static partial class PermisosEndpoints
             }
         }
 
-        if (!idLider.HasValue && idLiderSolicitado.HasValue)
+        if (!idLider.HasValue && idLiderSolicitado.HasValue && asignacionesEmpleado.Count > 0)
         {
             var liderActivo = await db.TblAdministracionLiders
                 .AnyAsync(l => l.Id == idLiderSolicitado.Value && l.Activo, ct);
@@ -1238,8 +1283,20 @@ public static partial class PermisosEndpoints
             idLider = idLiderSolicitado;
         }
 
+        // Si el líder resuelto es la misma persona que solicita el permiso, se envía directamente a Talento Humano
+        // para evitar que la solicitud quede bloqueada esperando autoaprobación del propio líder.
+        if (idLider.HasValue)
+        {
+            var esMismoSolicitante = await db.TblAdministracionLiders
+                .AsNoTracking()
+                .AnyAsync(l => l.Id == idLider.Value && l.Idpersona == empleado.Idpersona, ct);
+            if (esMismoSolicitante)
+                idLider = null;
+        }
+
+        idEstadoPendiente = await ObtenerIdEstadoSolicitudAsync(db, esInformativo ? "APROBADA" : (idLider.HasValue ? "PENDIENTE_JEFE" : "PENDIENTE_TH"), ct);
         var esLiderExternoAsignado = idLider.HasValue && await db.TblAdministracionLiders.AsNoTracking().Include(l => l.IdtipoNavigation).FirstOrDefaultAsync(l => l.Id == idLider.Value && l.Activo, ct) is { } liderEnt && EsLiderExterno(liderEnt);
-        var anio = fechaInicio.Value.Year;
+        var anio = fechaInicio!.Value.Year;
         int nuevaSolicitudId = 0;
         var objetosSubidos = new List<ArchivoAdjuntoSubido>();
 
@@ -1247,10 +1304,20 @@ public static partial class PermisosEndpoints
         {
             try
             {
+                if (corregida is not null)
+                {
+                    await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM time_report.tbl_time_report_solicitud WHERE id = {corregida.Id} FOR UPDATE", ct);
+                    await db.Entry(corregida).ReloadAsync(ct);
+                    if (request.VersionSolicitud != VersionActualSolicitud(corregida))
+                        return Results.Conflict(ApiResponse<object>.Fail(409, "La solicitud cambió. Vuelve a abrirla antes de corregirla.", []));
+                    var observadoId = await ObtenerIdEstadoSolicitudAsync(db, "OBSERVADA", ct);
+                    if (corregida.IdEstado != observadoId)
+                        return Results.BadRequest(ApiResponse<object>.Fail(400, "La solicitud ya no está observada. Actualiza la página.", []));
+                }
                 TblTimeReportSolicitud? nueva = null;
                 for (var intento = 1; intento <= 5; intento++)
                 {
-                    var codigo = await GenerarSiguienteCodigoSolicitudAsync(db, anio, intento - 1, ct);
+                    var codigo = corregida?.Codigo ?? await GenerarSiguienteCodigoSolicitudAsync(db, anio, intento - 1, ct);
                     nueva = new TblTimeReportSolicitud
                     {
                         Codigo = codigo,
@@ -1270,23 +1337,40 @@ public static partial class PermisosEndpoints
                         Horario = horario,
                         DetalleHorario = detalleHorarioLimpio,
                         HorasSolicitadas = horasTotales,
-                        ImpactoTimeReport = "RESTA_META",
+                        ImpactoTimeReport = esInformativo ? "SIN_IMPACTO" : "RESTA_META",
                         TokenExterno = esLiderExternoAsignado ? Guid.NewGuid().ToString("N") : null,
-                        TokenExternoExpira = esLiderExternoAsignado ? DateTime.UtcNow.AddHours(72) : null,
+                        TokenExternoExpira = esLiderExternoAsignado ? (esInformativo ? DateTime.UtcNow.AddDays(30) : DateTime.UtcNow.AddHours(72)) : null,
+                        TokenExternoUsadoEn = esLiderExternoAsignado && esInformativo ? DateTime.UtcNow : null,
                         Activo = true,
                         UsuarioCreacion = usuario.Email,
                         FechaCreacion = DateTime.UtcNow,
                         IpCreacion = ObtenerIpCliente(httpContext)
                     };
 
-                    db.TblTimeReportSolicitudes.Add(nueva);
+                    if (corregida is null)
+                        db.TblTimeReportSolicitudes.Add(nueva);
+                    else
+                    {
+                        nueva.Id = corregida.Id;
+                        nueva.Codigo = corregida.Codigo;
+                        nueva.FechaSolicitud = corregida.FechaSolicitud;
+                        nueva.FechaCreacion = corregida.FechaCreacion;
+                        nueva.UsuarioCreacion = corregida.UsuarioCreacion;
+                        nueva.IpCreacion = corregida.IpCreacion;
+                        nueva.UsuarioModificacion = usuario.Email;
+                        nueva.FechaModificacion = DateTime.UtcNow;
+                        nueva.IpModificacion = ObtenerIpCliente(httpContext);
+                        nueva.TokenExternoUsadoEn = null;
+                        db.Entry(corregida).CurrentValues.SetValues(nueva);
+                        nueva = corregida;
+                    }
                     try
                     {
                         await db.SaveChangesAsync(ct);
                         break;
                     }
                     catch (DbUpdateException ex) when (
-                        intento < 5
+                        corregida is null && intento < 5
                         && ex.InnerException is PostgresException pg
                         && pg.SqlState == PostgresErrorCodes.UniqueViolation)
                     {
@@ -1336,7 +1420,7 @@ public static partial class PermisosEndpoints
                 var correoOk = await NotificarCorreoSeguroAsync(db, notificacionService,
                     dto with { TokenExterno = creada.TokenExterno },
                     correoColab,
-                    EventoNotificacionPermiso.SolicitudCreada, request.IdUsuarioRrhh,
+                    corregida is null ? EventoNotificacionPermiso.SolicitudCreada : EventoNotificacionPermiso.SolicitudCorregidaReenviada, request.IdUsuarioRrhh,
                     ct);
 
                 if (!campanaOk || !correoOk) throw new InvalidOperationException("No se pudo registrar el aviso de la solicitud.");
@@ -1419,7 +1503,7 @@ public static partial class PermisosEndpoints
                     .ThenInclude(u => u!.IdpersonaNavigation);
     }
 
-    internal static PermisoItemDto MapearSolicitudDto(TblTimeReportSolicitud s, string? traslapeAlerta)
+    public static PermisoItemDto MapearSolicitudDto(TblTimeReportSolicitud s, string? traslapeAlerta)
     {
         var persona = s.Empleado.IdpersonaNavigation;
         var colaborador = $"{persona.Apellidos} {persona.Nombres}".Trim();
@@ -1434,17 +1518,23 @@ public static partial class PermisosEndpoints
         var cliente = ObtenerNombreCliente(cliEfectivo);
         var proyecto = proyEfectivo?.Nombre ?? "General ISC";
 
-        var liderNombre = ObtenerNombreLider(liderEfectivo);
+        var liderNombre = liderEfectivo is not null ? ObtenerNombreLider(liderEfectivo) : "Sin líder (Directo a RRHH)";
         var esLiderExt = EsLiderExterno(liderEfectivo);
         var liderTipo = esLiderExt ? "EXT" : "INT";
         var liderCorreo = liderEfectivo?.IdpersonaNavigation?.Email;
 
-        var revLider = s.Revisiones
+        var observaciones = s.Revisiones.Where(r => r.Decision == "OBSERVADO")
+            .OrderByDescending(r => r.FechaRevision);
+        var limiteCiclo = (s.Estado.Codigo == "OBSERVADA" ? observaciones.Skip(1) : observaciones)
+            .Select(r => (DateTime?)r.FechaRevision).FirstOrDefault();
+        var revisionesVigentes = limiteCiclo is null ? s.Revisiones.AsEnumerable()
+            : s.Revisiones.Where(r => r.FechaRevision > limiteCiclo.Value);
+        var revLider = revisionesVigentes
             .Where(r => r.EtapaRevision == "JEFE_INMEDIATO")
             .OrderByDescending(r => r.FechaRevision)
             .FirstOrDefault();
 
-        var revTh = s.Revisiones
+        var revTh = revisionesVigentes
             .Where(r => r.EtapaRevision == "TALENTO_HUMANO")
             .OrderByDescending(r => r.FechaRevision)
             .FirstOrDefault();
@@ -1466,21 +1556,24 @@ public static partial class PermisosEndpoints
         var fechaFinStr = s.FechaFin.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
         var fechaRegresoStr = s.FechaRegreso.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
 
-        var fechasLegible = s.FechaInicio == s.FechaFin
-            ? (!string.IsNullOrWhiteSpace(s.DetalleHorario) ? $"{fechaInicioStr} ({s.DetalleHorario})" : fechaInicioStr)
-            : $"{fechaInicioStr} - {fechaFinStr}";
+        var rangoFechas = s.FechaInicio == s.FechaFin
+            ? fechaInicioStr
+            : $"{fechaInicioStr} al {fechaFinStr}";
+        var fechasLegible = !string.IsNullOrWhiteSpace(s.DetalleHorario)
+            ? $"{rangoFechas} · {s.DetalleHorario}"
+            : rangoFechas;
 
         var fechaAprobStr = revTh?.FechaRevision.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)
                             ?? revLider?.FechaRevision.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)
-                            ?? "Pendiente";
+                            ?? (s.Estado.Codigo == "APROBADA" ? fechaSolicitudStr : "Pendiente");
 
         var totalDias = s.DiasSolicitados;
         var totalHoras = s.HorasSolicitadas ?? (totalDias * 8m);
-        var diasStr = totalDias == 1m
-            ? "1 día laborable"
-            : $"{totalDias.ToString("0.##", CultureInfo.InvariantCulture)} días laborables";
-        var horasStr = $"{totalHoras.ToString("0.##", CultureInfo.InvariantCulture)} horas";
-        var duracionStr = $"{diasStr} ({totalHoras.ToString("0.##", CultureInfo.InvariantCulture)} h)";
+        var diasStr = FormatearDiasYHorasLegible(totalHoras);
+        var horasStr = $"{totalHoras.ToString("0.##", CultureInfo.InvariantCulture)} {(totalHoras == 1m ? "hora" : "horas")}";
+        var duracionStr = totalHoras < 8m
+            ? diasStr
+            : $"{diasStr} · {horasStr}";
 
         var aprobadoLider = revLider?.Decision == "APROBADO" || s.Estado.Codigo is "PENDIENTE_TH" or "APROBADA";
         var confirmadoRrhh = revTh?.Decision == "APROBADO" || s.Estado.Codigo == "APROBADA";
@@ -1494,9 +1587,9 @@ public static partial class PermisosEndpoints
             revLider?.Decision,
             revTh?.Decision);
 
-        var metodoLider = revLider?.MetodoRevision == "MAGIC_LINK_EXTERNO" || (revLider is null && esLiderExt)
+        var metodoLider = EsPermisoInformativoSinAprobacion(s.TipoPermiso.Codigo) ? "Copia informativa" : (liderEfectivo is null ? "Directo a RRHH (Sin proyecto)" : (revLider?.MetodoRevision == "MAGIC_LINK_EXTERNO" || (revLider is null && esLiderExt)
             ? "Magic Link Externo"
-            : "Cuenta TMR Líder";
+            : "Cuenta TMR Líder"));
 
         var responsableRrhh = revTh?.UsuarioRevisor?.IdpersonaNavigation is { } pTh
             ? $"{pTh.Nombres} {pTh.Apellidos}".Trim()
@@ -1573,7 +1666,8 @@ public static partial class PermisosEndpoints
             // El token del magic link nunca sale en respuestas de la API: solo se agrega
             // (con `with`) al DTO que se usa para el correo al líder externo.
             TokenExterno: null,
-            Adjuntos: adjuntosDto);
+            Adjuntos: adjuntosDto,
+            VersionSolicitud: VersionActualSolicitud(s));
     }
 
     // =========================================================================
@@ -1596,6 +1690,8 @@ public static partial class PermisosEndpoints
     {
         if (currentUser.UserId <= 0) return null;
 
+        await SincronizadorCuentasPermisos.AsegurarCuentasSincronizadasAsync(db, null, ct);
+
         var usuario = await db.TblAutenticacionUsuarios
             .AsNoTracking()
             .FirstOrDefaultAsync(u => u.Id == currentUser.UserId && u.Activo, ct);
@@ -1608,13 +1704,34 @@ public static partial class PermisosEndpoints
             .Include(e => e.IdcargoNavigation)
             .FirstOrDefaultAsync(ct);
 
+        if (empleado is null && !string.IsNullOrWhiteSpace(usuario.Email))
+        {
+            var emailLower = usuario.Email.Trim().ToLowerInvariant();
+            empleado = await db.TblAdministracionEmpleados
+                .AsNoTracking()
+                .Where(e => e.Activo && e.Emailcorporativo != null && e.Emailcorporativo.ToLower() == emailLower)
+                .Include(e => e.IdcargoNavigation)
+                .FirstOrDefaultAsync(ct);
+        }
+
         int? idLider = null;
-        if (usuario.Idpersona.HasValue)
+        var idPersonaEfectiva = usuario.Idpersona ?? empleado?.Idpersona;
+        if (idPersonaEfectiva.HasValue)
         {
             var lider = await db.TblAdministracionLiders
                 .AsNoTracking()
-                .FirstOrDefaultAsync(l => l.Idpersona == usuario.Idpersona && l.Activo, ct);
+                .FirstOrDefaultAsync(l => l.Idpersona == idPersonaEfectiva.Value && l.Activo, ct);
             idLider = lider?.Id;
+        }
+
+        if (!idLider.HasValue && !string.IsNullOrWhiteSpace(usuario.Email))
+        {
+            var emailLower = usuario.Email.Trim().ToLowerInvariant();
+            idLider = await db.TblAdministracionLiders
+                .AsNoTracking()
+                .Where(l => l.Activo && l.IdpersonaNavigation.Email != null && l.IdpersonaNavigation.Email.ToLower() == emailLower)
+                .Select(l => (int?)l.Id)
+                .FirstOrDefaultAsync(ct);
         }
 
         bool TieneRol(params string[] nombres) =>
@@ -1648,7 +1765,7 @@ public static partial class PermisosEndpoints
         if (actor.IdEmpleado.HasValue && solicitud.IdEmpleado == actor.IdEmpleado.Value)
             return true;
 
-        if (actor.IdLider.HasValue && solicitud.IdLider == actor.IdLider.Value)
+        if (actor.IdLider.HasValue && (solicitud.IdLider == actor.IdLider.Value || solicitud.AsignacionProyecto?.Idlider == actor.IdLider.Value))
             return true;
 
         return false;
@@ -1694,29 +1811,36 @@ public static partial class PermisosEndpoints
         return (!esServiciosProf, detalle.Valor ?? "Relación de dependencia (Nómina)");
     }
 
+    private static bool EsPermisoInformativoSinAprobacion(string? codigoTipo) =>
+        codigoTipo is "CITAS_MEDICAS" or "CALAMIDAD_DOMESTICA" or "ACCIDENTE" or "FALLECIMIENTO_FAMILIAR"; private static string FormatearDiasYHorasLegible(decimal totalHoras) { var minTot = (int)Math.Round(totalHoras * 60m); var dEnt = minTot / 480; var mRest = minTot % 480; static string FMin(int m) { var h = m / 60; var r = m % 60; return h == 0 ? $"{r} min" : r == 0 ? $"{h} {(h == 1 ? "hora" : "horas")}" : $"{h} {(h == 1 ? "hora" : "horas")} y {r} min"; } if (dEnt <= 0) return FMin(minTot); var etq = $"{dEnt} {(dEnt == 1 ? "día" : "días")}"; return mRest == 0 ? etq : $"{etq} y {FMin(mRest)}"; }
+
     private static decimal CalcularDiasVacacionesDisponibles(
         TblAdministracionEmpleado? empleado,
-        IReadOnlyCollection<TblTimeReportSolicitud> misSolicitudes)
+        IReadOnlyCollection<TblTimeReportSolicitud> misSolicitudes,
+        int? anioObjetivo = null)
     {
         var hoy = CalculoHorasPeriodo.HoyEcuador();
+        var anio = anioObjetivo ?? hoy.Year;
         var diasBaseAnual = 15m;
 
         if (empleado?.Fechaingreso is { } ingreso && ingreso < hoy)
         {
-            var aniosCompletos = hoy.Year - ingreso.Year;
-            if (hoy < ingreso.AddYears(aniosCompletos))
+            var aniosCompletos = anio - ingreso.Year;
+            if (ingreso > new DateOnly(anio, 1, 1))
+                aniosCompletos = 0;
+            else if (hoy < ingreso.AddYears(Math.Max(0, aniosCompletos)))
                 aniosCompletos--;
 
             // Código del Trabajo (Art. 69): 1 día adicional por cada año que exceda de 5, hasta 15 adicionales
             if (aniosCompletos > 5)
-                diasBaseAnual += Math.Min(15, aniosCompletos - 5);
+                diasBaseAnual += Math.Min(15m, aniosCompletos - 5);
         }
 
         var diasVacacionesTomadosAnio = misSolicitudes
             .Where(s => s.TipoPermiso.Codigo == "VACACIONES"
                         && s.Estado.Codigo != "RECHAZADA"
                         && s.Estado.Codigo != "OBSERVADA"
-                        && s.FechaInicio.Year == hoy.Year)
+                        && s.FechaInicio.Year == anio)
             .Sum(s => s.DiasSolicitados);
 
         return Math.Max(0m, diasBaseAnual - diasVacacionesTomadosAnio);
@@ -1753,31 +1877,6 @@ public static partial class PermisosEndpoints
             minutosEfectivos -= 60;
 
         return Math.Round(minutosEfectivos / 60m, 2);
-    }
-
-    private static async Task EmitirNotificacionesInternasPaso1LegacyUnusedAsync(
-        ApplicationDbContext db,
-        INotificacionInternaNotifier sseNotifier,
-        TblTimeReportSolicitud solicitud,
-        PermisoItemDto dto,
-        CancellationToken ct)
-    {
-        var destinatarios = new Dictionary<int, string>();
-
-        // Jefe inmediato interno (si tiene usuario TMR)
-        var personaLiderId = solicitud.Lider?.Idpersona ?? solicitud.AsignacionProyecto?.IdliderNavigation?.Idpersona;
-        if (personaLiderId.HasValue)
-        {
-            var idUsuarioLider = await db.TblAutenticacionUsuarios
-                .AsNoTracking()
-                .Where(u => u.Idpersona == personaLiderId.Value && u.Activo)
-                .Select(u => (int?)u.Id)
-                .FirstOrDefaultAsync(ct);
-
-            if (idUsuarioLider.HasValue)
-                destinatarios[idUsuarioLider.Value] = "/permisos/equipo";
-        }
-
     }
 
     private static async Task EmitirNotificacionesInternasPaso1Async(
@@ -1823,8 +1922,14 @@ public static partial class PermisosEndpoints
             {
                 IdUsuarioDestino = idUsuarioDestino,
                 IdSolicitud = solicitud.Id,
-                Titulo = $"Nueva solicitud {dto.Codigo} ({dto.Tipo})",
-                Mensaje = $"{dto.Colaborador} registró una solicitud para {dto.Fechas}.",
+                Titulo = solicitud.FechaModificacion.HasValue
+                    ? $"Solicitud corregida y reenviada: {dto.Codigo}"
+                    : EsPermisoInformativoSinAprobacion(solicitud.TipoPermiso.Codigo)
+                    ? $"Copia informativa {dto.Codigo} · {dto.Tipo}"
+                    : (!solicitud.IdLider.HasValue ? $"Pendiente confirmación TH: {dto.Codigo} · {dto.Tipo}" : $"Nueva solicitud {dto.Codigo} · {dto.Tipo}"),
+                Mensaje = EsPermisoInformativoSinAprobacion(solicitud.TipoPermiso.Codigo)
+                    ? $"{dto.Colaborador} registró un permiso informativo de {dto.Tipo} para {dto.Fechas}."
+                    : (!solicitud.IdLider.HasValue ? $"{dto.Colaborador} registró una solicitud directa para Talento Humano del {dto.Fechas}." : $"{dto.Colaborador} registró una solicitud para {dto.Fechas}."),
                 UrlDestino = ruta,
                 Leida = false,
                 FechaCreacion = DateTime.UtcNow
@@ -1852,7 +1957,7 @@ public static partial class PermisosEndpoints
             var accionTxt = decision switch
             {
                 "APROBADO" => "aprobada por tu Jefe Inmediato y enviada a Talento Humano",
-                "OBSERVADO" => "observada por tu Jefe Inmediato",
+                "OBSERVADO" => "observada por tu Jefe Inmediato; corrígela y reenvíala desde Mis permisos",
                 _ => "rechazada por tu Jefe Inmediato"
             };
 
@@ -1861,7 +1966,7 @@ public static partial class PermisosEndpoints
                 IdUsuarioDestino = idUsuarioColab.Value,
                 IdSolicitud = solicitud.Id,
                 Titulo = $"Solicitud {dto.Codigo}: {dto.EstadoTexto}",
-                Mensaje = $"Tu solicitud de {dto.Tipo} ({dto.Fechas}) fue {accionTxt}.",
+                Mensaje = $"Tu solicitud de {dto.Tipo} del {dto.Fechas} fue {accionTxt}.",
                 UrlDestino = "/permisos",
                 Leida = false,
                 FechaCreacion = DateTime.UtcNow
@@ -1877,31 +1982,11 @@ public static partial class PermisosEndpoints
             .Distinct()
             .ToListAsync(ct);
 
-        foreach (var idRrhhElegido in idsRrhhElegidos)
-        {
-            if (idRrhhElegido == idUsuarioColab) continue;
-            db.NotificacionesUsuario.Add(new NotificacionUsuario
-            {
-                IdUsuarioDestino = idRrhhElegido,
-                IdSolicitud = solicitud.Id,
-                Titulo = decision == "APROBADO"
-                    ? $"Pendiente confirmación TH: {dto.Codigo}"
-                    : $"Solicitud {dto.Codigo} {dto.EstadoTexto}",
-                Mensaje = $"{dto.LiderNombre} marcó la solicitud de {dto.Colaborador} como {decision}.",
-                UrlDestino = "/permisos/rrhh",
-                Leida = false,
-                FechaCreacion = DateTime.UtcNow
-            });
-            idsNotificados.Add(idRrhhElegido);
-        }
-
         if (idsRrhhElegidos.Count == 0)
-        {
-        var idsRrhh = await ObtenerIdsUsuariosRrhhAsync(db, ct);
-        foreach (var idRrhh in idsRrhh)
-        {
-            if (idRrhh == idUsuarioColab) continue;
+            idsRrhhElegidos = await ObtenerIdsUsuariosRrhhAsync(db, ct);
 
+        foreach (var idRrhh in idsRrhhElegidos.Where(id => id != idUsuarioColab))
+        {
             db.NotificacionesUsuario.Add(new NotificacionUsuario
             {
                 IdUsuarioDestino = idRrhh,
@@ -1917,7 +2002,6 @@ public static partial class PermisosEndpoints
             idsNotificados.Add(idRrhh);
         }
 
-        }
         if (idsNotificados.Count > 0)
         {
             await db.SaveChangesAsync(ct);
@@ -1944,8 +2028,8 @@ public static partial class PermisosEndpoints
                 ? $"Solicitud {dto.Codigo} confirmada en TH"
                 : $"Solicitud {dto.Codigo} observada por TH",
             Mensaje = confirmada
-                ? $"Talento Humano registró y confirmó tu solicitud de {dto.Tipo} ({dto.Fechas})."
-                : TruncarTexto($"Talento Humano devolvió tu solicitud con observaciones: {dto.ObservacionRrhh}", 500),
+                ? $"Talento Humano registró y confirmó tu solicitud de {dto.Tipo} del {dto.Fechas}."
+                : TruncarTexto($"Corrige y reenvía tu solicitud desde Mis permisos. Talento Humano indicó: {dto.ObservacionRrhh}", 500),
             UrlDestino = "/permisos",
             Leida = false,
             FechaCreacion = DateTime.UtcNow
@@ -1993,7 +2077,7 @@ public static partial class PermisosEndpoints
     }
 
     // =========================================================================
-    private static async Task<IReadOnlyList<RrhhDisponiblePermisoDto>> ObtenerCatalogoUsuariosRrhhAsync(
+    internal static async Task<IReadOnlyList<RrhhDisponiblePermisoDto>> ObtenerCatalogoUsuariosRrhhAsync(
         ApplicationDbContext db,
         CancellationToken ct)
     {
@@ -2204,6 +2288,8 @@ public static partial class PermisosEndpoints
             "NAC" or "NACIMIENTO" or "NACIMIENTO_HIJO" => "NACIMIENTO_HIJO",
             "MTR" or "MATERNIDAD" => "MATERNIDAD",
             "FAL" or "FALLECIMIENTO" or "FALLECIMIENTO_FAMILIAR" => "FALLECIMIENTO_FAMILIAR",
+            "CAL" or "CALAMIDAD" or "CALAMIDAD_DOMESTICA" => "CALAMIDAD_DOMESTICA",
+            "ACC" or "ACCIDENTE" or "ACCIDENTES" => "ACCIDENTE",
             _ => "OTROS"
         };
 
