@@ -33,7 +33,9 @@ public record ProyectoLookupDto(
     // entrada y salida de su asignación (null = sin límite) y su salida de la empresa si está Inactivo.
     DateOnly? FechaEntrada = null,
     DateOnly? FechaSalida = null,
-    DateOnly? FechaSalidaColaborador = null
+    DateOnly? FechaSalidaColaborador = null,
+    // Fecha fin del proyecto (real o, si no hay, la planificada): no se registran horas después de ella.
+    DateOnly? FechaFinProyecto = null
 );
 
 public record CalendarioActividadDto(

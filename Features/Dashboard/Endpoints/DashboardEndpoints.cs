@@ -306,7 +306,17 @@ public static class DashboardEndpoints
                 </p>
             </div>";
 
-            await emailService.SendEmailAsync(emailDestino, subject, body);
+            try
+            {
+                await emailService.SendEmailAsync(emailDestino, subject, body);
+            }
+            catch (Exception)
+            {
+                // TC-002: el detalle técnico ya queda en el log de EmailService; al usuario se le explica qué pasó.
+                return Results.Json(
+                    new { Mensaje = $"El servidor de correo no pudo enviar el mensaje a {emailDestino}. Revise la configuración de correo (EmailSettings) o intente más tarde." },
+                    statusCode: StatusCodes.Status502BadGateway);
+            }
 
             return Results.Ok(new { Mensaje = "Notificación enviada exitosamente" });
         }).RequireAuthorization();

@@ -170,6 +170,17 @@ namespace tmr_backend.Features.CargaActividades
                             erroresValidacion.Add($"Fila {filaIndex}: no está asignado al proyecto indicado para esa fecha.");
                             continue;
                         }
+
+                        // TC-007/TC-009: no se cargan horas después de la fecha fin del proyecto (real o planificada).
+                        var finProyecto = await _context.TblTimeReportProyectos
+                            .Where(p => p.Id == proyectoId.Value)
+                            .Select(p => p.Fechafinreal ?? p.Fechafinplaneada)
+                            .FirstOrDefaultAsync(cancellationToken);
+                        if (finProyecto.HasValue && fechaActividad > finProyecto.Value)
+                        {
+                            erroresValidacion.Add($"Fila {filaIndex}: el proyecto finalizó el {finProyecto.Value:dd/MM/yyyy}; no se pueden cargar horas posteriores.");
+                            continue;
+                        }
                     }
                     var codigoRequerimientoNormalizado = string.IsNullOrWhiteSpace(codigoRequerimiento) ? null : codigoRequerimiento.Trim();
                     var descripcionNormalizada = descripcionActividad.Trim();
