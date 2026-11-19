@@ -130,6 +130,7 @@ public sealed class ColaboradorDatosControl
 {
     public int IdEmpleado { get; set; }
     public long Version { get; set; }
+    public string? ConocimientosJson { get; set; }
     public DateTime FechaModificacion { get; set; }
 }
 

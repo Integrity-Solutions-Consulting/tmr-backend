@@ -32,7 +32,7 @@ public static class ActualizacionDatosEndpoints
                 Extensions = { ["code"] = inactive ? "EMPLOYEE_INACTIVE" : "EMPLOYEE_LINK_MISSING" }
             });
         });
-        mine.MapPut("", async (ActualizacionRequest request, ActualizacionDirectaService service, CancellationToken ct) => { try { return Results.Ok(new { version = await service.SaveAsync(request, ct) }); } catch (DbUpdateConcurrencyException ex) { return Results.Conflict(new ProblemDetails { Detail = ex.Message, Status = 409 }); } catch (FieldValidationException ex) { return Results.BadRequest(ApiResponse<object>.Fail(400, "Error de validación", ex.Errors)); } catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { return Results.BadRequest(new ProblemDetails { Detail=ex.Message, Status=400 }); } });
+        mine.MapPut("", async (ActualizacionRequest request, ActualizacionDirectaService service, CancellationToken ct) => { try { var saved = await service.SaveAsync(request, ct); return Results.Ok(new { version = saved.Version, validacionEnviada = saved.ValidacionEnviada }); } catch (DbUpdateConcurrencyException ex) { return Results.Conflict(new ProblemDetails { Detail = ex.Message, Status = 409 }); } catch (FieldValidationException ex) { return Results.BadRequest(ApiResponse<object>.Fail(400, "Error de validación", ex.Errors)); } catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { return Results.BadRequest(new ProblemDetails { Detail=ex.Message, Status=400 }); } });
         mine.MapGet("/solicitudes", async (ActualizacionDirectaService service, CancellationToken ct) => Results.Ok(await service.SolicitudesAsync(ct)));
         mine.MapPost("/solicitudes", async (CrearSolicitudRequest request, ActualizacionDirectaService service, CancellationToken ct) => { try { return Results.Ok(new { id = await service.CrearSolicitudAsync(request.Asunto, request.Descripcion, request.Enviar, ct) }); } catch (ArgumentException ex) { return Results.BadRequest(new { message = ex.Message }); } });
         mine.MapPost("/solicitudes/{id:long}/archivos", async (long id, IFormFile file, ApplicationDbContext db, IFileStorage storage, ActualizacionDirectaService service, CancellationToken ct) =>
@@ -43,14 +43,33 @@ public static class ActualizacionDatosEndpoints
             StoredFile stored; try { stored = await storage.SaveAsync(input, ext, allowed[ext], ct); } catch (Exception ex) { return Results.Problem(ex.Message, statusCode: 500); } var row = new ColaboradorSolicitudArchivo { IdSolicitud = id, NombreOriginal = Path.GetFileName(file.FileName), ContentType = allowed[ext], Tamano = stored.Size, StorageKey = stored.Key, Provider = stored.Provider, Sha256 = stored.Sha256, FechaCreacion = DateTime.UtcNow }; db.Add(row); try { await db.SaveChangesAsync(ct); } catch { await storage.DeleteAsync(stored.Key, ct, stored.Provider); throw; } return Results.Ok(new DocumentoResponse(row.Id, row.NombreOriginal, row.ContentType, row.Tamano, row.FechaCreacion, "Solicitud", id));
         }).DisableAntiforgery();
         mine.MapGet("/solicitudes/{id:long}/archivos/{archivoId:long}", async (long id, long archivoId, ApplicationDbContext db, IFileStorage storage, ActualizacionDirectaService service, CancellationToken ct) => { var owner = await service.Owner(ct); var file = await (from a in db.Set<ColaboradorSolicitudArchivo>() join s in db.Set<ColaboradorSolicitud>() on a.IdSolicitud equals s.Id where a.Id == archivoId && s.Id == id && owner != null && s.IdEmpleado == owner.Value.Employee.Id select a).SingleOrDefaultAsync(ct); if (file is null) return Results.NotFound(); var stream = await storage.OpenReadAsync(file.StorageKey, ct, file.Provider); return stream is null ? Results.NotFound() : Results.File(stream, file.ContentType, file.NombreOriginal); });
-        mine.MapPost("/archivos", async (string seccion, long? referenciaId, string? referenciaClave, long? replaceId, IFormFile file, ApplicationDbContext db, IFileStorage storage, ActualizacionDirectaService service, CancellationToken ct) =>
+        mine.MapPost("/archivos", async (string seccion, long? referenciaId, string? referenciaClave, long? replaceId, IFormFile file, ApplicationDbContext db, IFileStorage storage, LocalFileStorage localStorage, ActualizacionDirectaService service, CancellationToken ct) =>
         {
             if (file.Length == 0 || file.Length > 10 * 1024 * 1024) return Results.BadRequest(new { message = "El archivo debe pesar entre 1 byte y 10 MB." });
             var allowed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [".pdf"] = "application/pdf", [".jpg"] = "image/jpeg", [".jpeg"] = "image/jpeg", [".png"] = "image/png" }; var ext = Path.GetExtension(file.FileName); if (!allowed.ContainsKey(ext)) return Results.BadRequest(new { message = "Solo se admite PDF, JPG o PNG." });
             var owner = await service.Owner(ct); if (owner is null) return Results.Conflict(new { message = "No existe un colaborador activo asociado." });
-            var validSections = new[] { "Discapacidad", "Pareja", "Familiar", "Formacion", "Certificacion" }; if (!validSections.Contains(seccion, StringComparer.OrdinalIgnoreCase)) return Results.BadRequest(new { message = "La sección documental no es válida." });
+            var validSections = new[] { "Discapacidad", "Pareja", "Familiar", "Formacion", "Certificacion", "PartidaNacimiento" }; if (!validSections.Contains(seccion, StringComparer.OrdinalIgnoreCase)) return Results.BadRequest(new { message = "La sección documental no es válida." });
+            if (string.Equals(seccion, "PartidaNacimiento", StringComparison.OrdinalIgnoreCase))
+            {
+                seccion = "PartidaNacimiento";
+                if (replaceId is not null)
+                    return Results.BadRequest(new { message = "Elimina el archivo anterior antes de adjuntar otra partida." });
+                if (referenciaId is not null)
+                {
+                    var child = await db.Set<ColaboradorFamiliar>().AsNoTracking().SingleOrDefaultAsync(x =>
+                        x.IdEmpleado == owner.Value.Employee.Id && x.Id == referenciaId && x.Activo && x.TipoRelacion == "Hijo", ct);
+                    if (child is null)
+                        return Results.BadRequest(new { message = "El hijo no esta disponible." });
+                    referenciaClave = child.Clave;
+                }
+                else if (!Guid.TryParseExact(referenciaClave, "N", out _))
+                {
+                    return Results.BadRequest(new { message = "Agrega la ficha del hijo antes de adjuntar la partida." });
+                }
+            }
             await using var input = file.OpenReadStream(); var head = new byte[8]; var n = await input.ReadAsync(head, ct); input.Position = 0; var real = (ext.Equals(".pdf", StringComparison.OrdinalIgnoreCase) && n >= 4 && head[0] == 0x25 && head[1] == 0x50 && head[2] == 0x44 && head[3] == 0x46) || (ext.Equals(".png", StringComparison.OrdinalIgnoreCase) && n >= 8 && head[0] == 137 && head[1] == 80 && head[2] == 78 && head[3] == 71) || ((ext.Equals(".jpg", StringComparison.OrdinalIgnoreCase) || ext.Equals(".jpeg", StringComparison.OrdinalIgnoreCase)) && n >= 3 && head[0] == 0xff && head[1] == 0xd8 && head[2] == 0xff); if (!real) return Results.BadRequest(new { message = "El contenido no coincide con la extensión." });
-            StoredFile stored; try { stored = await storage.SaveAsync(input, ext, allowed[ext], ct); } catch (Exception ex) { return Results.Problem(ex.Message, statusCode: 500); }
+            IFileStorage uploadStorage = string.Equals(seccion, "Discapacidad", StringComparison.OrdinalIgnoreCase) ? storage : localStorage;
+            StoredFile stored; try { stored = await uploadStorage.SaveAsync(input, ext, allowed[ext], ct); } catch (Exception ex) { return Results.Problem(ex.Message, statusCode: 500); }
             var old = replaceId is null ? null : await db.Set<ColaboradorDocumento>().SingleOrDefaultAsync(x => x.Id == replaceId && x.IdEmpleado == owner.Value.Employee.Id && x.Activo, ct);
             var record = new ColaboradorDocumento { IdEmpleado = owner.Value.Employee.Id, Seccion = seccion, ReferenciaId = referenciaId, ReferenciaClave = referenciaClave, NombreOriginal = Path.GetFileName(file.FileName), ContentType = allowed[ext], Tamano = stored.Size, StorageKey = stored.Key, Provider = stored.Provider, Sha256 = stored.Sha256, FechaCreacion = DateTime.UtcNow, Activo = true }; db.Add(record); if (old is not null) old.Activo = false;
             try { await db.SaveChangesAsync(ct); } catch { await storage.DeleteAsync(stored.Key, ct, stored.Provider); throw; }
