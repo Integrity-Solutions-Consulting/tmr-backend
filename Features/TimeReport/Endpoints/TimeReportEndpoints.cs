@@ -164,7 +164,8 @@ public static class TimeReportEndpoints
                     ep.IdproyectoNavigation.Nombre,
                     ep.IdproyectoNavigation.Codigo,
                     ep.Fechaasignacion,
-                    ep.Fechafinasignacion
+                    ep.Fechafinasignacion,
+                    FinProyecto = ep.IdproyectoNavigation.Fechafinreal ?? ep.IdproyectoNavigation.Fechafinplaneada
                 })
                 .ToListAsync();
             var salidaColaborador = empleado.Activo ? null : empleado.Fechaterminacion;
@@ -176,7 +177,8 @@ public static class TimeReportEndpoints
                     g.First().Codigo,
                     g.Any(a => a.Fechaasignacion == null) ? null : g.Min(a => a.Fechaasignacion),
                     g.Any(a => a.Fechafinasignacion == null) ? null : g.Max(a => a.Fechafinasignacion),
-                    salidaColaborador))
+                    salidaColaborador,
+                    g.First().FinProyecto))
                 .ToList();
             return Results.Ok(proyectosAsignados);
         });
@@ -239,7 +241,8 @@ public static class TimeReportEndpoints
                     ep.IdproyectoNavigation.Nombre,
                     ep.IdproyectoNavigation.Codigo,
                     ep.Fechaasignacion,
-                    ep.Fechafinasignacion
+                    ep.Fechafinasignacion,
+                    FinProyecto = ep.IdproyectoNavigation.Fechafinreal ?? ep.IdproyectoNavigation.Fechafinplaneada
                 })
                 .ToListAsync();
             if (asignaciones.Count == 0) return Results.Ok(new CompletarLiderDto(false));
@@ -256,10 +259,17 @@ public static class TimeReportEndpoints
                 asignaciones[0].Codigo,
                 asignaciones.Any(a => a.Fechaasignacion == null) ? null : asignaciones.Min(a => a.Fechaasignacion),
                 asignaciones.Any(a => a.Fechafinasignacion == null) ? null : asignaciones.Max(a => a.Fechafinasignacion),
-                salidaColaborador)));
+                salidaColaborador,
+                asignaciones[0].FinProyecto)));
         });
 
-        groupActividades.MapGet("/resumen", async (int idEmpleado, int? anio, int? mes, int? idProyecto, ClaimsPrincipal user, ApplicationDbContext db) =>
+        // sm - idsProyecto / incluirSinProyecto (opcionales): filtro de proyectos del calendario de Actividades. El
+        // colaborador elige uno o varios de sus proyectos (y/o "Sin proyecto") y las métricas se calculan solo con ellos:
+        // jornada diaria de una sola vez (como el total), pero contando solo las horas, vigencias y solicitudes de los
+        // proyectos elegidos. Sin ellos (o con idProyecto, que usa Seguimiento) el cálculo es el mismo de antes.
+        groupActividades.MapGet("/resumen", async (int idEmpleado, int? anio, int? mes, int? idProyecto,
+            [Microsoft.AspNetCore.Mvc.FromQuery] int[]? idsProyecto, bool? incluirSinProyecto,
+            ClaimsPrincipal user, ApplicationDbContext db) =>
         {
             // sm - Solo el propio colaborador o quien tiene permiso de Seguimiento (modal "Ver detalle", solo lectura).
             if (!await PuedeVerEmpleadoAsync(user, idEmpleado, db)) return Results.Forbid();
@@ -279,6 +289,42 @@ public static class TimeReportEndpoints
                 .FirstOrDefaultAsync(e => e.Id == idEmpleado);
             // sm - Sin empleado no hay horas: las métricas quedan en 0 (no en guion).
             if (empleado is null) return Results.Ok(new ResumenHorasDto(0m, 0m, 0m));
+
+            var hayFiltroProyectos = idProyecto == null && ((idsProyecto?.Length ?? 0) > 0 || incluirSinProyecto == true);
+            if (hayFiltroProyectos)
+            {
+                var ids = (idsProyecto ?? []).Distinct().ToList();
+                var sinProyecto = incluirSinProyecto == true;
+
+                var actividadesFiltradas = await db.TblTimeReportActividadDiaria
+                    .AsNoTracking()
+                    .Where(a => a.Activo && a.Idempleado == idEmpleado && a.Fechaactividad >= inicio && a.Fechaactividad <= fin
+                        && ((a.Idproyecto != null && ids.Contains(a.Idproyecto.Value)) || (sinProyecto && a.Idproyecto == null)))
+                    .ToListAsync();
+                var feriadosFiltro = await db.TblTimeReportFeriados
+                    .Where(f => f.Activo && f.Fechaferiado >= inicio && f.Fechaferiado <= fin)
+                    .Select(f => f.Fechaferiado)
+                    .ToListAsync();
+                var jornadasFiltro = await CalculoHorasPeriodo.CargarJornadasAsync(db, [idEmpleado]);
+                // sm - Solicitudes generales (sin proyecto) y las de los proyectos elegidos; no las de otros proyectos.
+                var solicitudesFiltro = (await CalculoHorasPeriodo.CargarSolicitudesAprobadasAsync(db, inicio, fin, [idEmpleado]))[idEmpleado]
+                    .Where(s => s.IdProyecto == null || ids.Contains(s.IdProyecto.Value))
+                    .ToList();
+                // sm - Vigencias: solo días entre Entrada y Salida de alguno de los proyectos elegidos. "Sin proyecto" se
+                // mide contra todo el periodo (igual que su fila en Seguimiento), así que con él no se recorta.
+                List<VigenciaAsignacion>? vigenciasFiltro = null;
+                if (!sinProyecto)
+                {
+                    vigenciasFiltro = await db.TblTimeReportAsignacionProyectos
+                        .AsNoTracking()
+                        .Where(ep => ep.Activo && ep.Idempleado == idEmpleado && ids.Contains(ep.Idproyecto))
+                        .Select(ep => new VigenciaAsignacion(ep.Fechaasignacion, ep.Fechafinasignacion))
+                        .ToListAsync();
+                }
+                var calculoFiltro = CalculoHorasPeriodo.Calcular(empleado, inicio, fin, actividadesFiltradas, feriadosFiltro, hoyEcuador,
+                    jornadasFiltro[idEmpleado], vigenciasFiltro, solicitudesFiltro);
+                return Results.Ok(new ResumenHorasDto(calculoFiltro.HorasPorRegistrar, calculoFiltro.HorasRegistradas, calculoFiltro.PromedioPorDia, calculoFiltro.HorasJornada));
+            }
 
             var actividadesPeriodo = await db.TblTimeReportActividadDiaria
                 .AsNoTracking()
@@ -329,6 +375,11 @@ public static class TimeReportEndpoints
             if (request.IdProyecto.HasValue
                 && await ValidarAsignacionAsync(db, request.IdEmpleado, request.IdProyecto.Value, request.FechaActividad, idLiderRegistro) is { } errorAsignacion)
                 return Results.BadRequest(new { Mensaje = errorAsignacion });
+
+            // TC-007/TC-009: no se registran horas después de la fecha fin del proyecto (aunque siga activo).
+            if (request.IdProyecto.HasValue
+                && await ValidarFinProyectoAsync(db, request.IdProyecto.Value, request.FechaActividad) is { } errorFinProyecto)
+                return Results.BadRequest(new { Mensaje = errorFinProyecto });
 
             var nuevaActividad = new tmr_backend.Infrastructure.Database.Entities.TblTimeReportActividadDiarium
             {
@@ -385,6 +436,12 @@ public static class TimeReportEndpoints
                 && (request.IdProyecto != actividad.Idproyecto || request.FechaActividad != actividad.Fechaactividad)
                 && await ValidarAsignacionAsync(db, actividad.Idempleado, request.IdProyecto.Value, request.FechaActividad, esPropia ? null : actividad.Idliderregistro) is { } errorAsignacion)
                 return Results.BadRequest(new { Mensaje = errorAsignacion });
+
+            // TC-007/TC-009: misma regla al mover la actividad a otro proyecto o fecha (si no cambian, se permite corregirla).
+            if (request.IdProyecto.HasValue
+                && (request.IdProyecto != actividad.Idproyecto || request.FechaActividad != actividad.Fechaactividad)
+                && await ValidarFinProyectoAsync(db, request.IdProyecto.Value, request.FechaActividad) is { } errorFinProyecto)
+                return Results.BadRequest(new { Mensaje = errorFinProyecto });
 
             actividad.Idproyecto = request.IdProyecto;
             actividad.Idtipoactividad = request.IdTipoActividad;
@@ -718,6 +775,20 @@ public static class TimeReportEndpoints
                 : $"desde el {a.Fechaasignacion:dd/MM/yyyy}"));
         return $"El {fecha:dd/MM/yyyy} no estaba asignado a este proyecto (su asignación rige {vigencias}). " +
                "Si trabajó en esa fecha, pida a su líder que corrija la fecha de asignación.";
+    }
+
+    // TC-007/TC-009: la fecha fin del proyecto (real o, si no hay, la planificada) es el último día en que se pueden
+    // registrar horas, sin importar su estado. Se mantiene TR-004: un proyecto Inactivo admite horas atrasadas hasta esa fecha.
+    private static async Task<string?> ValidarFinProyectoAsync(ApplicationDbContext db, int idProyecto, DateOnly fecha)
+    {
+        var proyecto = await db.TblTimeReportProyectos
+            .AsNoTracking()
+            .Where(p => p.Id == idProyecto)
+            .Select(p => new { p.Nombre, Fin = p.Fechafinreal ?? p.Fechafinplaneada })
+            .FirstOrDefaultAsync();
+
+        if (proyecto?.Fin is not { } fin || fecha <= fin) return null;
+        return $"El proyecto {proyecto.Nombre} finalizó el {fin:dd/MM/yyyy}. No puede registrar actividades posteriores a esa fecha.";
     }
 
     private static async Task<string?> ValidarFechaSalidaAsync(ApplicationDbContext db, int idEmpleado, DateOnly fecha)

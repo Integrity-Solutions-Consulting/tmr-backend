@@ -59,6 +59,32 @@ var avisoInformativo = new CorreoPermisoEncolado(
     VersionSolicitud: version, EstadoSolicitud: "APROBADA");
 Check(PermisoAvisoVigencia.EsVigente(avisoInformativo, solInformativa), "aviso informativo naciente en APROBADA es vigente");
 
+// Una corrección vuelve al mismo estado, pero invalida avisos de la versión anterior.
+var corregida = new TblTimeReportSolicitud { Activo = true, FechaCreacion = version,
+    FechaModificacion = version.AddMinutes(1), Estado = new TblTimeReportEstadoSolicitud { Codigo = "PENDIENTE_JEFE" },
+    TokenExterno = "nuevo-token", TokenExternoExpira = DateTime.UtcNow.AddHours(72) };
+Check(!PermisoAvisoVigencia.EsVigente(aviso, corregida), "correo del ciclo anterior invalidado aunque el estado coincida");
+var reenvio = aviso with { Evento = EventoNotificacionPermiso.SolicitudCorregidaReenviada,
+    VersionSolicitud = corregida.FechaModificacion, EstadoSolicitud = "PENDIENTE_JEFE" };
+Check(PermisoAvisoVigencia.EsVigente(reenvio, corregida), "correo de corrección vigente");
+var snapshot = PermisosEndpoints.MapearSolicitudDto(solInformativa, null) with { TokenExterno = "token-anterior" };
+Check(!PermisoAvisoVigencia.EsVigente(reenvio with { IncluirTokenExterno = true, Instantanea = snapshot }, corregida), "token anterior rechazado");
+Check(PermisoAvisoVigencia.EsVigente(reenvio with { IncluirTokenExterno = true, Instantanea = snapshot with { TokenExterno = "nuevo-token" } }, corregida), "token nuevo aceptado");
+corregida.Estado.Codigo = "PENDIENTE_TH";
+Check(PermisoAvisoVigencia.EsVigente(reenvio with { EstadoSolicitud = "PENDIENTE_TH" }, corregida), "reenvío directo a TH vigente");
+
+// Dos ciclos de observación no deben recuperar aprobaciones ni comentarios antiguos.
+solInformativa.Estado.Codigo = "PENDIENTE_JEFE";
+solInformativa.Revisiones.Add(new TblTimeReportSolicitudRevision { EtapaRevision = "JEFE_INMEDIATO", Decision = "APROBADO", FechaRevision = version });
+solInformativa.Revisiones.Add(new TblTimeReportSolicitudRevision { EtapaRevision = "TALENTO_HUMANO", Decision = "OBSERVADO", Comentario = "Observación anterior", FechaRevision = version.AddSeconds(1) });
+var pendienteCorregida = PermisosEndpoints.MapearSolicitudDto(solInformativa, null);
+Check(!pendienteCorregida.AprobadoLider && !pendienteCorregida.ConfirmadoRrhh, "corrección reinicia aprobaciones");
+solInformativa.Revisiones.Add(new TblTimeReportSolicitudRevision { EtapaRevision = "JEFE_INMEDIATO", Decision = "OBSERVADO", Comentario = "Observación actual", FechaRevision = version.AddSeconds(2) });
+solInformativa.Estado.Codigo = "OBSERVADA";
+Check(PermisosEndpoints.MapearSolicitudDto(solInformativa, null).Comentarios == "Observación actual", "segunda observación muestra comentario del ciclo actual");
+solInformativa.Revisiones.Clear();
+solInformativa.Estado.Codigo = "APROBADA";
+
 // Verificar formato de Período y Duración sin paréntesis anidados
 var dtoDiaCompleto = PermisosEndpoints.MapearSolicitudDto(solInformativa, null);
 Check(dtoDiaCompleto.Fechas == "11/11/2026 · 08:30 - 17:30", $"formato fecha limpia: {dtoDiaCompleto.Fechas}");

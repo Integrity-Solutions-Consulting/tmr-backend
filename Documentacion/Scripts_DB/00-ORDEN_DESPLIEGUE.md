@@ -66,11 +66,23 @@ sistema. Está excluido del paquete embebido. El script 14 corrige el nombre
 resolviéndolas por nombre en lugar de depender de IDs numéricos históricos.
 
 No combinar esta ruta con `EnsureCreated` ni `dotnet ef database update`.
-La única migración EF (`20260527194023_InitialCreate`) es histórica: no contiene
+La migración EF `20260527194023_InitialCreate` es histórica: no contiene
 password reset, historial de contratos, estado de asignación ni tabla oficial
 de tipos de proveedor, ni instala funciones/triggers/catálogos SQL. **EF por sí
 solo no prepara el sistema actual**. Se conserva su historial; la ruta soportada
 para una instalación nueva es el paquete SQL.
+
+Después del paquete SQL, aplicar las migraciones EF posteriores (tablas del
+módulo de actualización de datos de colaboradores: `tbl_actualizacion_*` y
+`tbl_colaborador_*`):
+
+```bash
+docker compose run --rm backend --apply-migrations
+```
+
+Marca `InitialCreate` como aplicada si el esquema ya existe y aplica solo las
+migraciones pendientes (son `IF NOT EXISTS`). Sin este paso `--verify-database`
+falla con "Esquema incompleto".
 
 ## 3. Inicializar datos indispensables
 

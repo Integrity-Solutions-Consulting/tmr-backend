@@ -36,7 +36,8 @@ public class ActualizarClienteRequestValidator : AbstractValidator<ActualizarCli
 
         RuleFor(x => x.Telefono)
             .NotEmpty().WithMessage("El teléfono es requerido.")
-            .MaximumLength(20).WithMessage("El teléfono no puede superar los 20 caracteres.");
+            .Matches(@"^(\+\d{1,15}|\d{1,10})$")
+            .WithMessage("El teléfono debe tener máximo 10 dígitos (o hasta 15 dígitos con prefijo internacional +).");
 
         RuleFor(x => x.Direccion)
             .NotEmpty().WithMessage("La dirección es requerida.")

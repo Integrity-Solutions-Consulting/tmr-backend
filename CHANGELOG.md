@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.8.2](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.8.1...v1.8.2) (2026-11-11)
+
+
+### Bug Fixes
+
+* **permisos:** asegurar notificaciones y seguimiento de envios ([0fffdc1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/0fffdc1deba4fb37c9f7005bcf5b7aca89636e5c))
+* **permisos:** retornar solo proyectos donde el colaborador esta enrolado ([eec0d3a](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/eec0d3abd7920bc3978d0f31b537718bab74a20b))
+* **permisos:** soportar descarga externa de respaldos ([239f224](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/239f224cef72b531cf895781c214c590d147e22b))
+* Se modifica el endpoint ([9a88f22](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/9a88f22f6903589fc22f3e0b2ec6af4f59fdd5da))
+
 ## [1.8.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.8.0...v1.8.1) (2026-11-10)
 
 
