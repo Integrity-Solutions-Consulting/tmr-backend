@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.9.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.9.0...v1.9.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* Añadir filtrado en Actividades ([62a0e9c](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/62a0e9c25204b5541bb510ac14e925d287a38aca))
+* Historial ([a995e7e](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/a995e7ead5dadb3d601776ae342985d174920f04))
+
 ## [1.9.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.8.2...v1.9.0) (2026-11-18)
 
 
