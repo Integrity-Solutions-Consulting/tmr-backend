@@ -91,8 +91,17 @@ public static class DatabaseInstaller
             .Where(x => x.Contains(".Scripts_DB.") && x.EndsWith(".sql", StringComparison.Ordinal))
             .Where(x => Regex.IsMatch(x[(x.IndexOf(".Scripts_DB.", StringComparison.Ordinal) + 12)..], @"^\d{2}-"))
             .Order(StringComparer.Ordinal).ToArray();
-        if (resources.Length != 21)
-            throw new InvalidOperationException("El paquete debe contener los scripts 01–22, excluyendo 06.");
+        // Antes se exigía una cantidad fija (21) y cada script nuevo rompía el despliegue. Ahora se valida que la
+        // secuencia sea completa: del 01 al último, sin el 06 (no se embebe), sin huecos ni números repetidos.
+        var numeros = resources
+            .Select(x => int.Parse(x.Substring(x.IndexOf(".Scripts_DB.", StringComparison.Ordinal) + 12, 2)))
+            .ToList();
+        var ultimo = numeros.Count > 0 ? numeros.Max() : 0;
+        var esperados = Enumerable.Range(1, ultimo).Where(n => n != 6).ToList();
+        if (ultimo < 22 || !numeros.SequenceEqual(esperados))
+            throw new InvalidOperationException(
+                $"El paquete debe contener los scripts 01–{Math.Max(ultimo, 22):D2} en secuencia, excluyendo 06. " +
+                $"Encontrados: {string.Join(", ", numeros.Select(n => n.ToString("D2")))}.");
 
         foreach (var resource in resources)
         {
