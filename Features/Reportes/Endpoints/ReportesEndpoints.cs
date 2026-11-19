@@ -17,6 +17,9 @@ public static class ReportesEndpoints
             .WithTags("Reportes")
             .RequireAuthorization();
 
+        // Reportes "Por Colaborador" y "Por Cliente" (historial de asignaciones).
+        ReportesHistorialEndpoints.MapReportesHistorial(group);
+
         // 0. Test DB Connection
         group.MapGet("/test-db", async (ApplicationDbContext db) =>
         {
