@@ -69,6 +69,10 @@ jobs:
             docker run --rm --network host \
               -e ConnectionStrings__DefaultConnection \
               build-validation:pr-${{ github.event.pull_request.number }} --prepare-database
+            # Tablas del módulo de actualización de datos de colaboradores (migraciones EF posteriores a InitialCreate).
+            docker run --rm --network host \
+              -e ConnectionStrings__DefaultConnection \
+              build-validation:pr-${{ github.event.pull_request.number }} --apply-migrations
             docker run --rm --network host \
               -e ConnectionStrings__DefaultConnection \
               -e Bootstrap__AdminEmail -e Bootstrap__AdminIdentification \
