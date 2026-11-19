@@ -263,7 +263,13 @@ public static class TimeReportEndpoints
                 asignaciones[0].FinProyecto)));
         });
 
-        groupActividades.MapGet("/resumen", async (int idEmpleado, int? anio, int? mes, int? idProyecto, ClaimsPrincipal user, ApplicationDbContext db) =>
+        // sm - idsProyecto / incluirSinProyecto (opcionales): filtro de proyectos del calendario de Actividades. El
+        // colaborador elige uno o varios de sus proyectos (y/o "Sin proyecto") y las métricas se calculan solo con ellos:
+        // jornada diaria de una sola vez (como el total), pero contando solo las horas, vigencias y solicitudes de los
+        // proyectos elegidos. Sin ellos (o con idProyecto, que usa Seguimiento) el cálculo es el mismo de antes.
+        groupActividades.MapGet("/resumen", async (int idEmpleado, int? anio, int? mes, int? idProyecto,
+            [Microsoft.AspNetCore.Mvc.FromQuery] int[]? idsProyecto, bool? incluirSinProyecto,
+            ClaimsPrincipal user, ApplicationDbContext db) =>
         {
             // sm - Solo el propio colaborador o quien tiene permiso de Seguimiento (modal "Ver detalle", solo lectura).
             if (!await PuedeVerEmpleadoAsync(user, idEmpleado, db)) return Results.Forbid();
@@ -283,6 +289,42 @@ public static class TimeReportEndpoints
                 .FirstOrDefaultAsync(e => e.Id == idEmpleado);
             // sm - Sin empleado no hay horas: las métricas quedan en 0 (no en guion).
             if (empleado is null) return Results.Ok(new ResumenHorasDto(0m, 0m, 0m));
+
+            var hayFiltroProyectos = idProyecto == null && ((idsProyecto?.Length ?? 0) > 0 || incluirSinProyecto == true);
+            if (hayFiltroProyectos)
+            {
+                var ids = (idsProyecto ?? []).Distinct().ToList();
+                var sinProyecto = incluirSinProyecto == true;
+
+                var actividadesFiltradas = await db.TblTimeReportActividadDiaria
+                    .AsNoTracking()
+                    .Where(a => a.Activo && a.Idempleado == idEmpleado && a.Fechaactividad >= inicio && a.Fechaactividad <= fin
+                        && ((a.Idproyecto != null && ids.Contains(a.Idproyecto.Value)) || (sinProyecto && a.Idproyecto == null)))
+                    .ToListAsync();
+                var feriadosFiltro = await db.TblTimeReportFeriados
+                    .Where(f => f.Activo && f.Fechaferiado >= inicio && f.Fechaferiado <= fin)
+                    .Select(f => f.Fechaferiado)
+                    .ToListAsync();
+                var jornadasFiltro = await CalculoHorasPeriodo.CargarJornadasAsync(db, [idEmpleado]);
+                // sm - Solicitudes generales (sin proyecto) y las de los proyectos elegidos; no las de otros proyectos.
+                var solicitudesFiltro = (await CalculoHorasPeriodo.CargarSolicitudesAprobadasAsync(db, inicio, fin, [idEmpleado]))[idEmpleado]
+                    .Where(s => s.IdProyecto == null || ids.Contains(s.IdProyecto.Value))
+                    .ToList();
+                // sm - Vigencias: solo días entre Entrada y Salida de alguno de los proyectos elegidos. "Sin proyecto" se
+                // mide contra todo el periodo (igual que su fila en Seguimiento), así que con él no se recorta.
+                List<VigenciaAsignacion>? vigenciasFiltro = null;
+                if (!sinProyecto)
+                {
+                    vigenciasFiltro = await db.TblTimeReportAsignacionProyectos
+                        .AsNoTracking()
+                        .Where(ep => ep.Activo && ep.Idempleado == idEmpleado && ids.Contains(ep.Idproyecto))
+                        .Select(ep => new VigenciaAsignacion(ep.Fechaasignacion, ep.Fechafinasignacion))
+                        .ToListAsync();
+                }
+                var calculoFiltro = CalculoHorasPeriodo.Calcular(empleado, inicio, fin, actividadesFiltradas, feriadosFiltro, hoyEcuador,
+                    jornadasFiltro[idEmpleado], vigenciasFiltro, solicitudesFiltro);
+                return Results.Ok(new ResumenHorasDto(calculoFiltro.HorasPorRegistrar, calculoFiltro.HorasRegistradas, calculoFiltro.PromedioPorDia, calculoFiltro.HorasJornada));
+            }
 
             var actividadesPeriodo = await db.TblTimeReportActividadDiaria
                 .AsNoTracking()
