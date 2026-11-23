@@ -69,7 +69,7 @@ jobs:
             docker run --rm --network host \
               -e ConnectionStrings__DefaultConnection \
               build-validation:pr-${{ github.event.pull_request.number }} --prepare-database
-            # Tablas del módulo de actualización de datos de colaboradores (migraciones EF posteriores a InitialCreate).
+            # Tablas del módulo de actualización de datos de colaboradores (migraciones EF posteriores a BaselineProduccion).
             docker run --rm --network host \
               -e ConnectionStrings__DefaultConnection \
               build-validation:pr-${{ github.event.pull_request.number }} --apply-migrations
@@ -82,6 +82,15 @@ jobs:
           docker run --rm --network host \
             -e ConnectionStrings__DefaultConnection \
             build-validation:pr-${{ github.event.pull_request.number }} --verify-database
+
+      - name: Verificar adopción de una base con datos
+        shell: bash
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+          APP_IMAGE: build-validation:pr-${{ github.event.pull_request.number }}
+          PGUSER: tmr_ci
+          PGPASSWORD: tmr-ci-ephemeral-only
+        run: bash tests/Migrations/adopcion.sh
 
       - name: Levantar contenedor de prueba
         env:

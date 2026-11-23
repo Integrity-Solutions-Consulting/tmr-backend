@@ -9,8 +9,7 @@ base vacía y no debe ejecutarse sobre Desarrollo ni Producción.
 
 - PostgreSQL 16, UTF-8 y almacenamiento persistente. El operador crea la base y
   el usuario del nuevo servidor. La cuenta instaladora necesita permisos para
-  crear esquemas, funciones, triggers y extensiones `pgcrypto` y `uuid-ossp`.
-  Si el proveedor restringe extensiones, pedir que las habilite previamente.
+  crear esquemas, tipos, tablas, funciones, índices, secuencias y triggers.
 - Docker Engine y Compose v2 o posterior. La imagen usa .NET 10 Alpine.
   Incluye ICU para `es-ES` y bibliotecas Kerberos para Npgsql. Globalización
   invariante debe estar desactivada; el verificador comprueba la cultura.
@@ -45,46 +44,21 @@ nuevo entorno. SMTP permite recuperar contraseñas; las notificaciones semanales
 están desactivadas por defecto. No reutilizar credenciales de los entornos actuales.
 No versionar secretos ni backups; mantenerlos fuera del contexto Docker.
 
-## 2. Construir y preparar estructura y catálogos históricos
+## 2. Instalar el esquema con EF Core
+
+Desde la raíz del backend, con `ConnectionStrings__DefaultConnection` apuntando a la base vacía:
 
 ```bash
 docker compose build backend
-docker compose run --rm backend --prepare-database
-```
-
-Aplica los SQL embebidos **01, 02, 03, 04, 05, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23**,
-en ese orden. Incluyen esquema, funciones, triggers y catálogos/RBAC históricos.
-Mezclan DDL y datos; algunos no son idempotentes ejecutados directamente en psql.
-El comando registra versión y SHA-256 en `public.tmr_installation_history`
-en la misma transacción de cada script. Al repetir omite versiones aplicadas;
-un script aplicado que cambió provoca error. Un fallo revierte ese script y
-permite reintentar tras corregir la causa. El instalador serializa las ejecuciones.
-
-**No ejecutar el script 06**: crea un usuario particular y no es requisito del
-sistema. Está excluido del paquete embebido. El script 14 corrige el nombre
-`liderhora` a `liderhoras` y las asociaciones de módulos del script 05,
-resolviéndolas por nombre en lugar de depender de IDs numéricos históricos.
-
-No combinar esta ruta con `EnsureCreated` ni `dotnet ef database update`.
-La migración EF `20260527194023_InitialCreate` es histórica: no contiene
-password reset, historial de contratos, estado de asignación ni tabla oficial
-de tipos de proveedor, ni instala funciones/triggers/catálogos SQL. **EF por sí
-solo no prepara el sistema actual**. Se conserva su historial; la ruta soportada
-para una instalación nueva es el paquete SQL.
-
-Después del paquete SQL, aplicar las migraciones EF posteriores (tablas del
-módulo de actualización de datos de colaboradores: `tbl_actualizacion_*` y
-`tbl_colaborador_*`):
-
-```bash
 docker compose run --rm backend --apply-migrations
 ```
 
-La API y el instalador usan `public."__EFMigrationsHistory"` por defecto. Si un ambiente mantiene su historial en otro esquema, configure `Database__MigrationsHistorySchema` para ambos antes de aplicar migraciones.
+EF aplica `20261110000000_BaselineProduccion` y las cinco migraciones de colaboradores posteriores.
+La línea base incluye tablas, tipos, secuencias, funciones, triggers, restricciones e índices del esquema de producción. Para instalaciones nuevas incorpora los catálogos, módulos, roles y permisos del paquete histórico (incluidos GERENTE y sus permisos) y no crea cuentas personales. Las tres tablas de respaldo operativo `administracion.bkp_*` existentes en el respaldo original quedan fuera de la instalación. Las tablas de proveedores de `inventory` sí se incluyen. La FK de proveedores de la línea base corresponde a producción; la alineación con la variante de desarrollo requiere una entrega separada y validación previa de datos.
 
-Marca `InitialCreate` como aplicada si el esquema ya existe y aplica solo las
-migraciones pendientes (son `IF NOT EXISTS`). Sin este paso `--verify-database`
-falla con "Esquema incompleto".
+`--prepare-database` sigue disponible para despliegues por etapas. En una base vacía instala solamente la línea base; en una que ya la tiene registrada termina sin retroceder de versión. `--apply-migrations` instala todas las pendientes. Ambos usan el historial configurado, `public."__EFMigrationsHistory"` por defecto. En ambientes que usan otro esquema configure `Database__MigrationsHistorySchema` tanto en la API como en el instalador.
+
+Los SQL numerados permanecen como archivo histórico. El backend usa los recursos versionados en `Migrations/Baseline`. El contenido de una migración ya distribuida es inmutable. Para el siguiente cambio actualice el modelo, genere y revise una migración EF y pruebe tanto instalación nueva como actualización. Los ocho mapeos públicos legados sin tabla en el esquema oficial siguen disponibles al código y están excluidos del DDL de EF.
 
 ## 3. Inicializar datos indispensables
 
@@ -116,7 +90,7 @@ Si ya hay usuarios y no se pasan variables Bootstrap, solo asegura esos permisos
 Puede insertar/reactivar registros: autorizar por separado en bases existentes.
 No se ejecuta durante el arranque normal.
 
-`--verify-database` comprueba las tablas y columnas mapeadas de los cinco esquemas
+`--verify-database` comprueba las tablas y columnas mapeadas de los esquemas
 TMR, catálogos, tipos de actividad, administrador y permisos de proveedores.
 Sale con código no cero si faltan; no modifica datos.
 
@@ -156,12 +130,17 @@ Son procesos operativos y no se desactivaron para ocultar fallos de CI.
 
 ## Bases existentes y traslados
 
-El preparador rechaza bases TMR históricas sin su historial de instalación;
-no las adopta ni marca versiones automáticamente. Auditar sus scripts aplicados
-y probar los pendientes en una copia restaurada, con backup y autorización.
-No repetir el paquete inicial ni insertar historial para forzarlo. Para cambios
-futuros, agregar versiones SQL y actualizar el manifiesto del instalador;
-no editar versiones ya distribuidas.
+Antes del primer despliegue de la nueva cadena, restaure un respaldo con datos en un ambiente aislado y acuerde una ventana sin cambios de DDL. Sobre esa copia ejecute:
+
+```bash
+docker compose run --rm backend --adopt-baseline
+docker compose run --rm backend --apply-migrations
+docker compose run --rm backend --verify-database
+```
+
+La adopción contrasta el historial y las firmas de los catálogos PostgreSQL con las estructuras verificadas de producción, desarrollo o instalación histórica 01–23. Comprueba tablas, columnas, restricciones, índices, funciones, triggers, tipos enum y secuencias de los esquemas TMR. Los propietarios, ACL, datos, valores actuales de secuencias y copias operativas quedan fuera de la firma. Si encuentra diferencias o un historial parcial, termina antes de registrar la línea base. Revise el grupo indicado en la copia. Mantenga los permisos de usuarios y los catálogos del ambiente: la adopción solo registra la nueva fila de historial, conserva los IDs anteriores y omite las semillas de instalación. La aplicación de migraciones es un paso posterior.
+
+`--initialize-data` puede crear o reactivar permisos y asignaciones. En bases existentes ejecútelo solo si esos cambios se aprobaron. Los respaldos de solo esquema sirven para validar estructura; la prueba de conservación de datos requiere un respaldo con datos.
 
 Para trasladar datos usar backup/restauración PostgreSQL (`pg_dump`/`pg_restore`)
 compatible con el destino, conservando esquemas, extensiones y secuencias.
@@ -172,7 +151,7 @@ bases existentes tengan exactamente el mismo esquema.
 ## GitHub Actions
 
 `Validate Build` (`a2-validate_build_to_prod.yml`) construye sin publicar, crea
-PostgreSQL 16 efímero, prepara e inicializa dos veces, verifica esquema y arranca
+PostgreSQL 16 efímero, prepara e inicializa dos veces, compara la adopción de una copia con datos contra una instalación nueva, verifica esquema y arranca
 el contenedor para comprobar liveness y readiness. Usa una conexión propia del
 job inyectada como `ConnectionStrings__DefaultConnection`.
 No utiliza `CI_DB_CONNECTION_STRING` ni conexiones Dokploy. Conserva la validación

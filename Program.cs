@@ -82,7 +82,7 @@ AppDomain.CurrentDomain.UnhandledException += (_, e) =>
     Log.CloseAndFlush();
 };
 
-var databaseCommands = new[] { "--prepare-database", "--apply-migrations", "--initialize-data", "--verify-database" };
+var databaseCommands = new[] { "--prepare-database", "--adopt-baseline", "--apply-migrations", "--initialize-data", "--verify-database" };
 var requestedCommands = args.Where(databaseCommands.Contains).ToArray();
 if (requestedCommands.Length > 1)
     throw new InvalidOperationException("Ejecute una sola etapa de base de datos por comando.");

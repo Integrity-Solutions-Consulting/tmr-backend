@@ -1,10 +1,8 @@
-using System.Reflection;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
-using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
+using tmr_backend.Migrations;
 using Npgsql;
 using tmr_backend.Infrastructure.Database.Entities;
 using tmr_backend.Infrastructure.Database.Seeders;
@@ -30,21 +28,22 @@ public static class DatabaseInstaller
             var migrationHistorySchema = MigrationHistory.GetSchema(configuration);
             var optionsBuilder = new DbContextOptionsBuilder<ApplicationDbContext>()
                 .UseNpgsql(connection, npgsql => npgsql.MigrationsHistoryTable(MigrationHistory.TableName, migrationHistorySchema));
-            if (command == "--apply-migrations")
-                optionsBuilder.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
             var options = optionsBuilder.Options;
             await using var db = new ApplicationDbContext(options);
             switch (command)
             {
-                case "--prepare-database":
-                    await PrepareAsync(connection);
+                case "--adopt-baseline":
+                    await CheckMigrationHistoryAsync(connection, migrationHistorySchema);
+                    await BaselineAdoption.RegisterAsync(db, connection, migrationHistorySchema);
                     break;
+                case "--prepare-database":
                 case "--apply-migrations":
                     await CheckMigrationHistoryAsync(connection, migrationHistorySchema);
-                    await BaselineLegacySchemaAsync(connection, migrationHistorySchema);
-                    Console.WriteLine($"Migraciones disponibles: {string.Join(", ", db.Database.GetMigrations())}");
-                    await db.Database.MigrateAsync();
-                    Console.WriteLine("Migraciones EF aplicadas.");
+                    await EnsureDatabaseReadyAsync(db, connection);
+                    if (command == "--apply-migrations")
+                        await db.Database.MigrateAsync();
+                    else if (!(await db.Database.GetAppliedMigrationsAsync()).Contains(BaselineProduccion.Id))
+                        await db.GetService<IMigrator>().MigrateAsync(BaselineProduccion.Id);
                     break;
                 case "--initialize-data":
                     await using (var transaction = await db.Database.BeginTransactionAsync())
@@ -69,71 +68,20 @@ public static class DatabaseInstaller
         }
     }
 
-    private static async Task PrepareAsync(NpgsqlConnection connection)
+    private static async Task EnsureDatabaseReadyAsync(ApplicationDbContext db, NpgsqlConnection connection)
     {
-        // No adoptar automáticamente bases históricas sin historial: evita repetir DDL o seeds.
-        const string check = """
-            SELECT to_regclass('public.tmr_installation_history') IS NULL
-              AND EXISTS (SELECT 1 FROM information_schema.tables
-                WHERE table_schema IN ('administracion','autenticacion','inventario','time_report','auditoria'))
+        var applied = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
+        if (applied.Contains(BaselineProduccion.Id))
+            return;
+
+        const string sql = """
+            SELECT EXISTS (SELECT FROM pg_catalog.pg_tables
+            WHERE schemaname IN ('administracion','auditoria','autenticacion','inventario','inventory','notificacion','time_report')
+              AND tablename <> '__EFMigrationsHistory')
             """;
-        if ((bool)(await new NpgsqlCommand(check, connection).ExecuteScalarAsync())!)
-            throw new InvalidOperationException("La base ya contiene TMR sin historial de instalación. No se modifica; revise su actualización manualmente.");
-
-        await new NpgsqlCommand("""
-            CREATE TABLE IF NOT EXISTS public.tmr_installation_history (
-                script text PRIMARY KEY, sha256 text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())
-            """, connection).ExecuteNonQueryAsync();
-
-        var assembly = Assembly.GetExecutingAssembly();
-        // Solo los scripts numerados (NN-*.sql). Otros .sql de la carpeta, como consultas de solo
-        // lectura, también quedan embebidos por el patrón del .csproj, pero no son de instalación.
-        var resources = assembly.GetManifestResourceNames()
-            .Where(x => x.Contains(".Scripts_DB.") && x.EndsWith(".sql", StringComparison.Ordinal))
-            .Where(x => Regex.IsMatch(x[(x.IndexOf(".Scripts_DB.", StringComparison.Ordinal) + 12)..], @"^\d{2}-"))
-            .Order(StringComparer.Ordinal).ToArray();
-        // Antes se exigía una cantidad fija (21) y cada script nuevo rompía el despliegue. Ahora se valida que la
-        // secuencia sea completa: del 01 al último, sin el 06 (no se embebe), sin huecos ni números repetidos.
-        var numeros = resources
-            .Select(x => int.Parse(x.Substring(x.IndexOf(".Scripts_DB.", StringComparison.Ordinal) + 12, 2)))
-            .ToList();
-        var ultimo = numeros.Count > 0 ? numeros.Max() : 0;
-        var esperados = Enumerable.Range(1, ultimo).Where(n => n != 6).ToList();
-        if (ultimo < 22 || !numeros.SequenceEqual(esperados))
-            throw new InvalidOperationException(
-                $"El paquete debe contener los scripts 01–{Math.Max(ultimo, 22):D2} en secuencia, excluyendo 06. " +
-                $"Encontrados: {string.Join(", ", numeros.Select(n => n.ToString("D2")))}.");
-
-        foreach (var resource in resources)
-        {
-            var name = resource[(resource.IndexOf(".Scripts_DB.", StringComparison.Ordinal) + 12)..];
-            using var reader = new StreamReader(assembly.GetManifestResourceStream(resource)!, Encoding.UTF8);
-            var sql = (await reader.ReadToEndAsync()).Replace("\r\n", "\n");
-            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sql)));
-            await using var existing = new NpgsqlCommand("SELECT sha256 FROM public.tmr_installation_history WHERE script = @name", connection);
-            existing.Parameters.AddWithValue("name", name);
-            var previous = await existing.ExecuteScalarAsync();
-            if (previous is string previousHash)
-            {
-                if (previousHash != hash)
-                    throw new InvalidOperationException($"El script aplicado {name} cambió. Agregue una nueva versión; no lo reaplique.");
-                Console.WriteLine($"Ya aplicado: {name}");
-                continue;
-            }
-
-            // Los scripts históricos tienen BEGIN/COMMIT propios. Una transacción externa
-            // incluye también el historial; no se eliminan bloques PL/pgSQL BEGIN ... END.
-            sql = Regex.Replace(sql, @"(?m)^\s*(BEGIN|COMMIT);[ \t]*$", "");
-            await using var transaction = await connection.BeginTransactionAsync();
-            await using var script = new NpgsqlCommand(sql, connection, transaction) { CommandTimeout = 180 };
-            await script.ExecuteNonQueryAsync();
-            await using var record = new NpgsqlCommand("INSERT INTO public.tmr_installation_history(script,sha256) VALUES (@name,@hash)", connection, transaction);
-            record.Parameters.AddWithValue("name", name);
-            record.Parameters.AddWithValue("hash", hash);
-            await record.ExecuteNonQueryAsync();
-            await transaction.CommitAsync();
-            Console.WriteLine($"Aplicado: {name}");
-        }
+        await using var check = new NpgsqlCommand(sql, connection);
+        if (applied.Length != 0 || (bool)(await check.ExecuteScalarAsync())!)
+            throw new InvalidOperationException("La base contiene TMR. Verifique el respaldo y ejecute --adopt-baseline antes de migrar.");
     }
 
     private static async Task CheckMigrationHistoryAsync(NpgsqlConnection connection, string schema)
@@ -149,24 +97,6 @@ public static class DatabaseInstaller
         if (await command.ExecuteScalarAsync() is string otherSchema)
             throw new InvalidOperationException(
                 $"Hay un historial EF en '{otherSchema}' y el instalador está configurado para '{schema}'. Revise Database:MigrationsHistorySchema antes de aplicar migraciones.");
-    }
-
-    private static async Task BaselineLegacySchemaAsync(NpgsqlConnection connection, string historySchema)
-    {
-        using var identifiers = new NpgsqlCommandBuilder();
-        var schema = identifiers.QuoteIdentifier(historySchema);
-        var sql = $"""
-            CREATE TABLE IF NOT EXISTS {schema}."__EFMigrationsHistory" (
-                "MigrationId" character varying(150) NOT NULL,
-                "ProductVersion" character varying(32) NOT NULL,
-                CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY ("MigrationId"));
-            INSERT INTO {schema}."__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-            SELECT '20260527194023_InitialCreate', '10.0.8'
-            WHERE EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'administracion' AND table_name = 'tbl_administracion_empleado')
-              AND NOT EXISTS (SELECT 1 FROM {schema}."__EFMigrationsHistory" WHERE "MigrationId" = '20260527194023_InitialCreate');
-            """;
-        await using var command = new NpgsqlCommand(sql, connection);
-        await command.ExecuteNonQueryAsync();
     }
 
     private static async Task CreateAdministratorAsync(ApplicationDbContext db, IConfiguration configuration)

@@ -129,38 +129,26 @@ public partial class ApplicationDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder
-            // ─── FIX: HasPostgresEnum debe declarar TODOS los valores del enum C# RevocacionRazonEnum ───
-            // Si tu enum C# tiene más valores que los declarados aquí, Npgsql no puede mapearlos.
-            // También debes asegurarte de que el tipo en PostgreSQL tenga estos valores.
-            // Si la columna revocadorazon en PG es de tipo "autenticacion.revocacion_razon_enum",
-            // la alternativa más simple y robusta es eliminar esa restricción de tipo y usar TEXT.
             .HasPostgresEnum("autenticacion", "audit_evento_enum", new[]
             {
                 "LOGIN_OK", "LOGIN_FAIL", "LOGOUT", "REFRESH_OK", "REFRESH_FAIL",
                 "TOKEN_REVOKE", "PASSWORD_CHANGE", "USER_CREATE", "USER_BLOCK"
             })
-            // ─── CORREGIDO: se agregan todos los valores que usa RevocacionRazonEnum en C# ───
             .HasPostgresEnum("autenticacion", "revocacion_razon_enum", new[]
             {
-                "LOGOUT",
-                "ADMIN_REVOKE",
-                "ADMIN_REVOKE_ALL",
-                "PASSWORD_CHANGE",
-                "SECURITY_BREACH",
-                "EXPIRED",
-                "SESSION_LIMIT",
-                "TOKEN_REUSED",
-                "TOKEN_REVOKED",
-                "TOKEN_INVALID",
-                "TOKEN_EXPIRED",
-                "IP_MISMATCH",
-                "USER_AGENT_MISMATCH",
-                "SESSION_IDLE_TIMEOUT",
-                "SESSION_EXPIRED",
-                "REVOKE"
-            })
-            .HasPostgresExtension("pgcrypto")
-            .HasPostgresExtension("uuid-ossp");
+                "LOGOUT", "ADMIN_REVOKE", "PASSWORD_CHANGE", "SECURITY_BREACH", "EXPIRED", "SESSION_LIMIT"
+            });
+
+        // Estos modelos históricos siguen disponibles para sus consumidores, pero sus tablas
+        // no pertenecen al esquema instalado por TMR.
+        modelBuilder.Entity<Actividad>().ToTable(nameof(Actividades), table => table.ExcludeFromMigrations());
+        modelBuilder.Entity<Cliente>().ToTable(nameof(Clientes), table => table.ExcludeFromMigrations());
+        modelBuilder.Entity<Colaborador>().ToTable(nameof(Colaboradores), table => table.ExcludeFromMigrations());
+        modelBuilder.Entity<DashboardItem>().ToTable(nameof(DashboardItems), table => table.ExcludeFromMigrations());
+        modelBuilder.Entity<Lider>().ToTable(nameof(Lideres), table => table.ExcludeFromMigrations());
+        modelBuilder.Entity<Proyecto>().ToTable(nameof(Proyectos), table => table.ExcludeFromMigrations());
+        modelBuilder.Entity<RegistroTiempo>().ToTable(nameof(RegistrosTiempo), table => table.ExcludeFromMigrations());
+        modelBuilder.Entity<Reporte>().ToTable(nameof(Reportes), table => table.ExcludeFromMigrations());
 
         modelBuilder.Entity<TblAdministracionApariencium>(entity =>
         {

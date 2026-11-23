@@ -20,33 +20,742 @@ namespace tmr_backend.Migrations
                 .HasAnnotation("ProductVersion", "10.0.8")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
-            NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "pgcrypto");
-            NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "uuid-ossp");
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "autenticacion", "audit_evento_enum", new[] { "LOGIN_OK", "LOGIN_FAIL", "LOGOUT", "REFRESH_OK", "REFRESH_FAIL", "TOKEN_REVOKE", "PASSWORD_CHANGE", "USER_CREATE", "USER_BLOCK" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "autenticacion", "revocacion_razon_enum", new[] { "LOGOUT", "ADMIN_REVOKE", "PASSWORD_CHANGE", "SECURITY_BREACH", "EXPIRED", "SESSION_LIMIT" });
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
-            modelBuilder.Entity("tmr_backend.Features.Auth.Domain.Usuario", b =>
+            modelBuilder.Entity("tmr_backend.Features.ActualizacionDatos.Domain.ActualizacionArchivo", b =>
                 {
-                    b.Property<Guid>("Id")
+                    b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
 
-                    b.Property<bool>("Activo")
-                        .HasColumnType("boolean");
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
 
-                    b.Property<string>("Descripcion")
+                    b.Property<string>("ContentType")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("text")
+                        .HasColumnName("contenttype");
 
-                    b.Property<DateTime>("FechaCreacion")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<DateTime>("Fechacreacion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fechacreacion");
 
-                    b.Property<string>("Nombre")
+                    b.Property<long>("IdSolicitud")
+                        .HasColumnType("bigint")
+                        .HasColumnName("idsolicitud");
+
+                    b.Property<string>("NombreOriginal")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("text")
+                        .HasColumnName("nombreoriginal");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("provider");
+
+                    b.Property<long?>("ReferenciaId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("referenciaid");
+
+                    b.Property<string>("Seccion")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("seccion");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("sha256");
+
+                    b.Property<string>("StorageKey")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("storagekey");
+
+                    b.Property<long>("Tamano")
+                        .HasColumnType("bigint")
+                        .HasColumnName("tamano");
 
                     b.HasKey("Id");
 
-                    b.ToTable("Usuarios");
+                    b.HasIndex("IdSolicitud", "StorageKey")
+                        .IsUnique();
+
+                    b.ToTable("tbl_actualizacion_archivo", "administracion");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.ActualizacionDatos.Domain.ActualizacionCertificacion", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("EntidadEmisora")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("entidademisora");
+
+                    b.Property<DateOnly>("FechaEmision")
+                        .HasColumnType("date")
+                        .HasColumnName("fechaemision");
+
+                    b.Property<DateOnly?>("FechaVencimiento")
+                        .HasColumnType("date")
+                        .HasColumnName("fechavencimiento");
+
+                    b.Property<long>("IdSolicitud")
+                        .HasColumnType("bigint")
+                        .HasColumnName("idsolicitud");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("nombre");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IdSolicitud");
+
+                    b.ToTable("tbl_actualizacion_certificacion", "administracion");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.ActualizacionDatos.Domain.ActualizacionDetalle", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Campo")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("campo");
+
+                    b.Property<long>("IdSolicitud")
+                        .HasColumnType("bigint")
+                        .HasColumnName("idsolicitud");
+
+                    b.Property<string>("Seccion")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("seccion");
+
+                    b.Property<string>("ValorPropuesto")
+                        .HasColumnType("text")
+                        .HasColumnName("valorpropuesto");
+
+                    b.Property<string>("ValorVigente")
+                        .HasColumnType("text")
+                        .HasColumnName("valorvigente");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IdSolicitud");
+
+                    b.ToTable("tbl_actualizacion_detalle", "administracion");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.ActualizacionDatos.Domain.ActualizacionFamiliar", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Apellidos")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("apellidos");
+
+                    b.Property<DateOnly?>("FechaNacimiento")
+                        .HasColumnType("date")
+                        .HasColumnName("fechanacimiento");
+
+                    b.Property<long>("IdSolicitud")
+                        .HasColumnType("bigint")
+                        .HasColumnName("idsolicitud");
+
+                    b.Property<string>("Nombres")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("nombres");
+
+                    b.Property<decimal?>("PorcentajeDiscapacidad")
+                        .HasColumnType("numeric")
+                        .HasColumnName("porcentajediscapacidad");
+
+                    b.Property<string>("TieneDiscapacidad")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("tienediscapacidad");
+
+                    b.Property<string>("TipoDiscapacidad")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("tipodiscapacidad");
+
+                    b.Property<string>("TipoRelacion")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("tiporelacion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IdSolicitud");
+
+                    b.ToTable("tbl_actualizacion_familiar", "administracion");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.ActualizacionDatos.Domain.ActualizacionFormacion", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
+
+                    b.Property<DateOnly?>("FechaFin")
+                        .HasColumnType("date")
+                        .HasColumnName("fechafin");
+
+                    b.Property<DateOnly?>("FechaInicio")
+                        .HasColumnType("date")
+                        .HasColumnName("fechainicio");
+
+                    b.Property<long>("IdSolicitud")
+                        .HasColumnType("bigint")
+                        .HasColumnName("idsolicitud");
+
+                    b.Property<string>("Institucion")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("institucion");
+
+                    b.Property<string>("Nivel")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("nivel");
+
+                    b.Property<string>("Titulo")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("titulo");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IdSolicitud");
+
+                    b.ToTable("tbl_actualizacion_formacion", "administracion");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.ActualizacionDatos.Domain.ActualizacionSolicitud", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("DatosPropuestosJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("datospropuestosjson");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("estado");
+
+                    b.Property<DateTime?>("FechaRevision")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecharevision");
+
+                    b.Property<DateTime>("Fechacreacion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fechacreacion");
+
+                    b.Property<DateTime>("Fechamodificacion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fechamodificacion");
+
+                    b.Property<int>("IdEmpleado")
+                        .HasColumnType("integer")
+                        .HasColumnName("idempleado");
+
+                    b.Property<int?>("IdRevisor")
+                        .HasColumnType("integer")
+                        .HasColumnName("idrevisor");
+
+                    b.Property<string>("Observacion")
+                        .HasColumnType("text")
+                        .HasColumnName("observacion");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IdEmpleado", "Estado");
+
+                    b.HasIndex("IdEmpleado", "Version");
+
+                    b.ToTable("tbl_actualizacion_solicitud", "administracion");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.ActualizacionDatos.Domain.ColaboradorCertificacion", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("boolean")
+                        .HasColumnName("activo");
+
+                    b.Property<string>("Clave")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("clave");
+
+                    b.Property<string>("EntidadEmisora")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("entidademisora");
+
+                    b.Property<DateOnly>("FechaEmision")
+                        .HasColumnType("date")
+                        .HasColumnName("fechaemision");
+
+                    b.Property<DateOnly?>("FechaVencimiento")
+                        .HasColumnType("date")
+                        .HasColumnName("fechavencimiento");
+
+                    b.Property<int>("IdEmpleado")
+                        .HasColumnType("integer")
+                        .HasColumnName("idempleado");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("nombre");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IdEmpleado", "Activo");
+
+                    b.HasIndex("IdEmpleado", "Clave")
+                        .IsUnique();
+
+                    b.ToTable("tbl_colaborador_certificacion", "administracion");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.ActualizacionDatos.Domain.ColaboradorDatosControl", b =>
+                {
+                    b.Property<int>("IdEmpleado")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("idempleado");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("IdEmpleado"));
+
+                    b.Property<string>("ConocimientosJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("conocimientos");
+
+                    b.Property<DateTime>("FechaModificacion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fechamodificacion");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint")
+                        .HasColumnName("version");
+
+                    b.HasKey("IdEmpleado");
+
+                    b.ToTable("tbl_colaborador_datos_control", "administracion");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.ActualizacionDatos.Domain.ColaboradorDocumento", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("boolean")
+                        .HasColumnName("activo");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("contenttype");
+
+                    b.Property<DateTime>("FechaCreacion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fechacreacion");
+
+                    b.Property<int>("IdEmpleado")
+                        .HasColumnType("integer")
+                        .HasColumnName("idempleado");
+
+                    b.Property<string>("NombreOriginal")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("nombreoriginal");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("provider");
+
+                    b.Property<string>("ReferenciaClave")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("referenciaclave");
+
+                    b.Property<long?>("ReferenciaId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("referenciaid");
+
+                    b.Property<string>("Seccion")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("seccion");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("sha256");
+
+                    b.Property<string>("StorageKey")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("storagekey");
+
+                    b.Property<long>("Tamano")
+                        .HasColumnType("bigint")
+                        .HasColumnName("tamano");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IdEmpleado", "Seccion", "ReferenciaId", "ReferenciaClave");
+
+                    b.ToTable("tbl_colaborador_documento", "administracion");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.ActualizacionDatos.Domain.ColaboradorFamiliar", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("boolean")
+                        .HasColumnName("activo");
+
+                    b.Property<string>("Apellidos")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("apellidos");
+
+                    b.Property<string>("Clave")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("clave");
+
+                    b.Property<DateOnly?>("FechaNacimiento")
+                        .HasColumnType("date")
+                        .HasColumnName("fechanacimiento");
+
+                    b.Property<int>("IdEmpleado")
+                        .HasColumnType("integer")
+                        .HasColumnName("idempleado");
+
+                    b.Property<string>("Identificacion")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("identificacion");
+
+                    b.Property<string>("Nombres")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("nombres");
+
+                    b.Property<decimal?>("PorcentajeDiscapacidad")
+                        .HasColumnType("numeric")
+                        .HasColumnName("porcentajediscapacidad");
+
+                    b.Property<string>("TieneDiscapacidad")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("tienediscapacidad");
+
+                    b.Property<string>("TipoDiscapacidad")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("tipodiscapacidad");
+
+                    b.Property<string>("TipoRelacion")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("tiporelacion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IdEmpleado", "Activo");
+
+                    b.HasIndex("IdEmpleado", "Clave")
+                        .IsUnique();
+
+                    b.ToTable("tbl_colaborador_familiar", "administracion");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.ActualizacionDatos.Domain.ColaboradorFormacion", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("boolean")
+                        .HasColumnName("activo");
+
+                    b.Property<string>("Clave")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("clave");
+
+                    b.Property<DateOnly?>("FechaFin")
+                        .HasColumnType("date")
+                        .HasColumnName("fechafin");
+
+                    b.Property<DateOnly?>("FechaInicio")
+                        .HasColumnType("date")
+                        .HasColumnName("fechainicio");
+
+                    b.Property<int>("IdEmpleado")
+                        .HasColumnType("integer")
+                        .HasColumnName("idempleado");
+
+                    b.Property<string>("Institucion")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("institucion");
+
+                    b.Property<string>("Nivel")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("nivel");
+
+                    b.Property<string>("Titulo")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("titulo");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IdEmpleado", "Activo");
+
+                    b.HasIndex("IdEmpleado", "Clave")
+                        .IsUnique();
+
+                    b.ToTable("tbl_colaborador_formacion", "administracion");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.ActualizacionDatos.Domain.ColaboradorInformacionFamiliar", b =>
+                {
+                    b.Property<int>("IdEmpleado")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("idempleado");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("IdEmpleado"));
+
+                    b.Property<string>("EstadoCivil")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("estadocivil");
+
+                    b.Property<decimal?>("PorcentajeDiscapacidad")
+                        .HasColumnType("numeric")
+                        .HasColumnName("porcentajediscapacidad");
+
+                    b.Property<string>("TieneDiscapacidad")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("tienediscapacidad");
+
+                    b.Property<string>("TieneHijos")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("tienehijos");
+
+                    b.Property<string>("TipoDiscapacidad")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("tipodiscapacidad");
+
+                    b.HasKey("IdEmpleado");
+
+                    b.ToTable("tbl_colaborador_informacion_familiar", "administracion");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.ActualizacionDatos.Domain.ColaboradorSolicitud", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Asunto")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("asunto");
+
+                    b.Property<string>("Descripcion")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("descripcion");
+
+                    b.Property<bool>("Enviada")
+                        .HasColumnType("boolean")
+                        .HasColumnName("enviada");
+
+                    b.Property<DateTime>("FechaCreacion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fechacreacion");
+
+                    b.Property<DateTime?>("FechaEnvio")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fechaenvio");
+
+                    b.Property<int>("IdEmpleado")
+                        .HasColumnType("integer")
+                        .HasColumnName("idempleado");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IdEmpleado", "FechaCreacion");
+
+                    b.ToTable("tbl_colaborador_solicitud", "administracion");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.ActualizacionDatos.Domain.ColaboradorSolicitudArchivo", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("contenttype");
+
+                    b.Property<DateTime>("FechaCreacion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fechacreacion");
+
+                    b.Property<long>("IdSolicitud")
+                        .HasColumnType("bigint")
+                        .HasColumnName("idsolicitud");
+
+                    b.Property<string>("NombreOriginal")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("nombreoriginal");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("provider");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("sha256");
+
+                    b.Property<string>("StorageKey")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("storagekey");
+
+                    b.Property<long>("Tamano")
+                        .HasColumnType("bigint")
+                        .HasColumnName("tamano");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IdSolicitud");
+
+                    b.ToTable("tbl_colaborador_solicitud_archivo", "administracion");
                 });
 
             modelBuilder.Entity("tmr_backend.Features.CargaActividades.Domain.Actividad", b =>
@@ -71,7 +780,10 @@ namespace tmr_backend.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Actividades");
+                    b.ToTable("Actividades", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
                 });
 
             modelBuilder.Entity("tmr_backend.Features.Clientes.Domain.Cliente", b =>
@@ -96,7 +808,10 @@ namespace tmr_backend.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Clientes");
+                    b.ToTable("Clientes", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
                 });
 
             modelBuilder.Entity("tmr_backend.Features.Colaboradores.Domain.Colaborador", b =>
@@ -121,32 +836,10 @@ namespace tmr_backend.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Colaboradores");
-                });
-
-            modelBuilder.Entity("tmr_backend.Features.Configuracion.Domain.ConfiguracionSistema", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("Activo")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Descripcion")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("FechaCreacion")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Nombre")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("ConfiguracionesSistema");
+                    b.ToTable("Colaboradores", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
                 });
 
             modelBuilder.Entity("tmr_backend.Features.Dashboard.Domain.DashboardItem", b =>
@@ -171,7 +864,10 @@ namespace tmr_backend.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("DashboardItems");
+                    b.ToTable("DashboardItems", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
                 });
 
             modelBuilder.Entity("tmr_backend.Features.Lideres.Domain.Lider", b =>
@@ -215,32 +911,300 @@ namespace tmr_backend.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Lider");
+                    b.ToTable("Lideres", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.Notificaciones.Domain.NotificacionEnvio", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("DetalleError")
+                        .HasColumnType("text")
+                        .HasColumnName("detalle_error");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("estado");
+
+                    b.Property<DateTimeOffset?>("FechaCorte")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_corte");
+
+                    b.Property<DateTimeOffset>("FechaEnvio")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_envio")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<DateOnly>("FinPeriodo")
+                        .HasColumnType("date")
+                        .HasColumnName("fin_periodo");
+
+                    b.Property<decimal>("HorasFaltantes")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric(6,2)")
+                        .HasColumnName("horas_faltantes");
+
+                    b.Property<int>("IdEmpleado")
+                        .HasColumnType("integer")
+                        .HasColumnName("id_empleado");
+
+                    b.Property<int?>("IdProyecto")
+                        .HasColumnType("integer")
+                        .HasColumnName("id_proyecto");
+
+                    b.Property<int?>("IdUsuarioEjecutor")
+                        .HasColumnType("integer")
+                        .HasColumnName("id_usuario_ejecutor");
+
+                    b.Property<DateOnly>("InicioPeriodo")
+                        .HasColumnType("date")
+                        .HasColumnName("inicio_periodo");
+
+                    b.Property<string>("Origen")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("origen");
+
+                    b.HasKey("Id")
+                        .HasName("pk_notificacion_envio");
+
+                    b.HasIndex(new[] { "IdEmpleado", "FechaCorte" }, "uq_idx_notificacion_envio_auto")
+                        .IsUnique()
+                        .HasFilter("origen = 'Automatico'");
+
+                    b.ToTable("notificacion_envio", "notificacion");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.Notificaciones.Domain.NotificacionFechaCorte", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Anio")
+                        .HasColumnType("integer")
+                        .HasColumnName("anio");
+
+                    b.Property<bool>("Ejecutada")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("ejecutada");
+
+                    b.Property<DateTimeOffset>("FechaCorte")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_corte");
+
+                    b.Property<DateTimeOffset>("FechaCreacion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_creacion")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<DateTimeOffset?>("FechaEjecucion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_ejecucion");
+
+                    b.Property<DateTimeOffset?>("FechaModificacion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_modificacion");
+
+                    b.Property<DateOnly>("FinPeriodo")
+                        .HasColumnType("date")
+                        .HasColumnName("fin_periodo");
+
+                    b.Property<int>("IdUsuarioCreador")
+                        .HasColumnType("integer")
+                        .HasColumnName("id_usuario_creador");
+
+                    b.Property<int?>("IdUsuarioModificacion")
+                        .HasColumnType("integer")
+                        .HasColumnName("id_usuario_modificacion");
+
+                    b.Property<DateOnly>("InicioPeriodo")
+                        .HasColumnType("date")
+                        .HasColumnName("inicio_periodo");
+
+                    b.Property<int>("Mes")
+                        .HasColumnType("integer")
+                        .HasColumnName("mes");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("tipo");
+
+                    b.HasKey("Id")
+                        .HasName("pk_notificacion_fecha_corte");
+
+                    b.HasIndex(new[] { "Anio", "Mes", "Tipo" }, "uq_notificacion_fecha_corte_periodo")
+                        .IsUnique();
+
+                    b.ToTable("notificacion_fecha_corte", "notificacion", t =>
+                        {
+                            t.HasCheckConstraint("chk_notificacion_fecha_corte_mes", "mes BETWEEN 1 AND 12");
+                        });
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.Notificaciones.Domain.NotificacionUsuario", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("FechaCreacion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_creacion")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<DateTime?>("FechaLectura")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_lectura");
+
+                    b.Property<int?>("IdSolicitud")
+                        .HasColumnType("integer")
+                        .HasColumnName("id_solicitud");
+
+                    b.Property<int>("IdUsuarioDestino")
+                        .HasColumnType("integer")
+                        .HasColumnName("id_usuario_destino");
+
+                    b.Property<bool>("Leida")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("leida");
+
+                    b.Property<string>("Mensaje")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("mensaje");
+
+                    b.Property<string>("Titulo")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("titulo");
+
+                    b.Property<string>("UrlDestino")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("url_destino");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IdSolicitud");
+
+                    b.HasIndex("IdUsuarioDestino");
+
+                    b.ToTable("notificacion_usuario", "notificacion");
                 });
 
             modelBuilder.Entity("tmr_backend.Features.Proyectos.Domain.Proyecto", b =>
                 {
-                    b.Property<Guid>("Id")
+                    b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<bool>("Activo")
                         .HasColumnType("boolean");
+
+                    b.Property<int?>("ClienteId")
+                        .HasColumnType("integer");
 
                     b.Property<string>("Descripcion")
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<DateTime>("FechaCreacion")
+                    b.Property<int?>("EstadoProyectoId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("FechaFinEspera")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("FechaFinReal")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("FechaInicioEspera")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("FechaInicioReal")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("Fechacreacion")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("Fechamodificacion")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("IdCliente")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("IdEstadoProyecto")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("IdLider")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Ipcreacion")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Ipmodificacion")
+                        .HasColumnType("text");
+
+                    b.Property<int?>("LiderId")
+                        .HasColumnType("integer");
 
                     b.Property<string>("Nombre")
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("Observacion")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Usuariocreacion")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Usuariomodificacion")
+                        .HasColumnType("text");
+
                     b.HasKey("Id");
 
-                    b.ToTable("Proyectos");
+                    b.HasIndex("ClienteId");
+
+                    b.HasIndex("EstadoProyectoId");
+
+                    b.HasIndex("LiderId");
+
+                    b.ToTable("Proyectos", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
                 });
 
             modelBuilder.Entity("tmr_backend.Features.Reportes.Domain.Reporte", b =>
@@ -265,7 +1229,10 @@ namespace tmr_backend.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Reportes");
+                    b.ToTable("Reportes", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
                 });
 
             modelBuilder.Entity("tmr_backend.Features.TimeReport.Domain.RegistroTiempo", b =>
@@ -290,7 +1257,10 @@ namespace tmr_backend.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("RegistrosTiempo");
+                    b.ToTable("RegistrosTiempo", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
                 });
 
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAdministracionApariencium", b =>
@@ -631,6 +1601,12 @@ namespace tmr_backend.Migrations
                         .HasDefaultValue(true)
                         .HasColumnName("activo");
 
+                    b.Property<string>("Apellidos")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("apellidos");
+
                     b.Property<string>("Direccion")
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)")
@@ -670,6 +1646,12 @@ namespace tmr_backend.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("nombrecomercial");
+
+                    b.Property<string>("Nombres")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("nombres");
 
                     b.Property<string>("Numeroidentificacion")
                         .IsRequired()
@@ -786,11 +1768,19 @@ namespace tmr_backend.Migrations
                         .HasDefaultValue(true)
                         .HasColumnName("activo");
 
+                    b.Property<int?>("Aniosexperiencia")
+                        .HasColumnType("integer")
+                        .HasColumnName("aniosexperiencia");
+
                     b.Property<string>("Codigoempleado")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
                         .HasColumnName("codigoempleado");
+
+                    b.Property<string>("ComentarioSalida")
+                        .HasColumnType("text")
+                        .HasColumnName("comentariosalida");
 
                     b.Property<string>("Emailcorporativo")
                         .HasMaxLength(100)
@@ -814,6 +1804,18 @@ namespace tmr_backend.Migrations
                     b.Property<DateOnly?>("Fechaterminacion")
                         .HasColumnType("date")
                         .HasColumnName("fechaterminacion");
+
+                    b.Property<int?>("IdCausaSalida")
+                        .HasColumnType("integer")
+                        .HasColumnName("idcausasalida");
+
+                    b.Property<int?>("IdEmpleadoReemplazo")
+                        .HasColumnType("integer")
+                        .HasColumnName("idempleadoreemplazo");
+
+                    b.Property<int?>("IdTipoSalida")
+                        .HasColumnType("integer")
+                        .HasColumnName("idtiposalida");
 
                     b.Property<int?>("Idcargo")
                         .HasColumnType("integer")
@@ -869,6 +1871,12 @@ namespace tmr_backend.Migrations
                     b.HasKey("Id")
                         .HasName("pk_administracion_empleado");
 
+                    b.HasIndex("IdCausaSalida");
+
+                    b.HasIndex("IdEmpleadoReemplazo");
+
+                    b.HasIndex("IdTipoSalida");
+
                     b.HasIndex("Idcargo");
 
                     b.HasIndex("Idcategoriaempleado");
@@ -887,7 +1895,7 @@ namespace tmr_backend.Migrations
                     b.ToTable("tbl_administracion_empleado", "administracion");
                 });
 
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAdministracionLider", b =>
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAdministracionEmpleadoContrato", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -902,8 +1910,76 @@ namespace tmr_backend.Migrations
                         .HasDefaultValue(true)
                         .HasColumnName("activo");
 
-                    b.Property<bool>("EsInterno")
-                        .HasColumnType("boolean");
+                    b.Property<DateTime>("Fechacreacion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fechacreacion")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<DateOnly>("Fechadesde")
+                        .HasColumnType("date")
+                        .HasColumnName("fechadesde");
+
+                    b.Property<DateOnly?>("Fechahasta")
+                        .HasColumnType("date")
+                        .HasColumnName("fechahasta");
+
+                    b.Property<DateTime?>("Fechamodificacion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fechamodificacion");
+
+                    b.Property<int>("Idempleado")
+                        .HasColumnType("integer")
+                        .HasColumnName("idempleado");
+
+                    b.Property<int>("Idtipocontrato")
+                        .HasColumnType("integer")
+                        .HasColumnName("idtipocontrato");
+
+                    b.Property<string>("Ipcreacion")
+                        .IsRequired()
+                        .HasMaxLength(45)
+                        .HasColumnType("character varying(45)")
+                        .HasColumnName("ipcreacion");
+
+                    b.Property<string>("Ipmodificacion")
+                        .HasMaxLength(45)
+                        .HasColumnType("character varying(45)")
+                        .HasColumnName("ipmodificacion");
+
+                    b.Property<string>("Usuariocreacion")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("usuariocreacion");
+
+                    b.Property<string>("Usuariomodificacion")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("usuariomodificacion");
+
+                    b.HasKey("Id")
+                        .HasName("pk_administracion_empleado_contrato");
+
+                    b.HasIndex(new[] { "Idempleado", "Fechadesde" }, "idx_adm_empleado_contrato_empleado");
+
+                    b.ToTable("tbl_administracion_empleado_contrato", "administracion");
+                });
+
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAdministracionLider", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Activo")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("activo");
 
                     b.Property<DateTime>("Fechacreacion")
                         .ValueGeneratedOnAdd()
@@ -1450,25 +2526,27 @@ namespace tmr_backend.Migrations
                     b.ToTable("tbl_auditoria_sesion_usuario", "auditoria");
                 });
 
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionAplicacion", b =>
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionAuditLog", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
+                        .HasColumnType("bigint")
                         .HasColumnName("id");
 
-                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<int>("Id"));
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
 
-                    b.Property<bool>("Activo")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true)
-                        .HasColumnName("activo");
+                    b.Property<string>("Agenteusuario")
+                        .HasColumnType("text")
+                        .HasColumnName("agenteusuario");
 
-                    b.Property<string>("Descripcion")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)")
-                        .HasColumnName("descripcion");
+                    b.Property<string>("Detalles")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("detalles");
+
+                    b.Property<string>("Direccionip")
+                        .HasMaxLength(45)
+                        .HasColumnType("character varying(45)")
+                        .HasColumnName("direccionip");
 
                     b.Property<DateTime>("Fechacreacion")
                         .ValueGeneratedOnAdd()
@@ -1476,292 +2554,18 @@ namespace tmr_backend.Migrations
                         .HasColumnName("fechacreacion")
                         .HasDefaultValueSql("now()");
 
-                    b.Property<DateTime?>("Fechamodificacion")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("fechamodificacion");
-
-                    b.Property<string>("Ipcreacion")
-                        .IsRequired()
-                        .HasMaxLength(45)
-                        .HasColumnType("character varying(45)")
-                        .HasColumnName("ipcreacion");
-
-                    b.Property<string>("Ipmodificacion")
-                        .HasMaxLength(45)
-                        .HasColumnType("character varying(45)")
-                        .HasColumnName("ipmodificacion");
-
-                    b.Property<string>("Nombreaplicacion")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("nombreaplicacion");
-
-                    b.Property<string>("Urlbase")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)")
-                        .HasColumnName("urlbase");
-
-                    b.Property<string>("Usuariocreacion")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("usuariocreacion");
-
-                    b.Property<string>("Usuariomodificacion")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("usuariomodificacion");
-
-                    b.HasKey("Id")
-                        .HasName("pk_autenticacion_aplicacion");
-
-                    b.ToTable("tbl_autenticacion_aplicacion", "autenticacion");
-                });
-
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionInventarioToken", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<int>("Id"));
-
-                    b.Property<bool>("Activo")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true)
-                        .HasColumnName("activo");
-
-                    b.Property<DateTime>("Fechacreacion")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("fechacreacion")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<DateTime?>("Fechamodificacion")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("fechamodificacion");
-
-                    b.Property<string>("Ipcreacion")
-                        .IsRequired()
-                        .HasMaxLength(45)
-                        .HasColumnType("character varying(45)")
-                        .HasColumnName("ipcreacion");
-
-                    b.Property<string>("Ipmodificacion")
-                        .HasMaxLength(45)
-                        .HasColumnType("character varying(45)")
-                        .HasColumnName("ipmodificacion");
-
-                    b.Property<string>("Token")
-                        .HasMaxLength(1500)
-                        .HasColumnType("character varying(1500)")
-                        .HasColumnName("token");
-
-                    b.Property<string>("Usuariocreacion")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("usuariocreacion");
-
-                    b.Property<string>("Usuariomodificacion")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("usuariomodificacion");
-
-                    b.HasKey("Id")
-                        .HasName("pk_autenticacion_inventario_token");
-
-                    b.ToTable("tbl_autenticacion_inventario_token", "autenticacion");
-                });
-
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionMenu", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<int>("Id"));
-
-                    b.Property<bool>("Activo")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true)
-                        .HasColumnName("activo");
-
-                    b.Property<DateTime>("Fechacreacion")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("fechacreacion")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<DateTime?>("Fechamodificacion")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("fechamodificacion");
-
-                    b.Property<string>("Icono")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("icono");
-
-                    b.Property<int?>("Idaplicacion")
-                        .HasColumnType("integer")
-                        .HasColumnName("idaplicacion");
-
-                    b.Property<int?>("Idmenupadre")
-                        .HasColumnType("integer")
-                        .HasColumnName("idmenupadre");
-
-                    b.Property<string>("Ipcreacion")
-                        .IsRequired()
-                        .HasMaxLength(45)
-                        .HasColumnType("character varying(45)")
-                        .HasColumnName("ipcreacion");
-
-                    b.Property<string>("Ipmodificacion")
-                        .HasMaxLength(45)
-                        .HasColumnType("character varying(45)")
-                        .HasColumnName("ipmodificacion");
-
-                    b.Property<string>("Nombremenu")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("nombremenu");
-
-                    b.Property<int?>("Ordenvisualizacion")
-                        .HasColumnType("integer")
-                        .HasColumnName("ordenvisualizacion");
-
-                    b.Property<string>("Rutamenu")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)")
-                        .HasColumnName("rutamenu");
-
-                    b.Property<string>("Usuariocreacion")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("usuariocreacion");
-
-                    b.Property<string>("Usuariomodificacion")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("usuariomodificacion");
-
-                    b.HasKey("Id")
-                        .HasName("pk_autenticacion_menu");
-
-                    b.HasIndex("Idaplicacion");
-
-                    b.HasIndex("Idmenupadre");
-
-                    b.ToTable("tbl_autenticacion_menu", "autenticacion");
-                });
-
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionMenuRol", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<int>("Id"));
-
-                    b.Property<bool>("Activo")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true)
-                        .HasColumnName("activo");
-
-                    b.Property<DateTime>("Fechacreacion")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("fechacreacion")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<int>("Idmenu")
-                        .HasColumnType("integer")
-                        .HasColumnName("idmenu");
-
-                    b.Property<int>("Idrol")
-                        .HasColumnType("integer")
-                        .HasColumnName("idrol");
-
-                    b.Property<string>("Ipcreacion")
-                        .IsRequired()
-                        .HasMaxLength(45)
-                        .HasColumnType("character varying(45)")
-                        .HasColumnName("ipcreacion");
-
-                    b.Property<string>("Usuariocreacion")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("usuariocreacion");
-
-                    b.HasKey("Id")
-                        .HasName("pk_autenticacion_menu_rol");
-
-                    b.HasIndex("Idmenu");
-
-                    b.HasIndex("Idrol");
-
-                    b.ToTable("tbl_autenticacion_menu_rol", "autenticacion");
-                });
-
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionMenuUsuario", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<int>("Id"));
-
-                    b.Property<bool>("Activo")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true)
-                        .HasColumnName("activo");
-
-                    b.Property<DateTime>("Fechacreacion")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("fechacreacion")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<int>("Idmenu")
-                        .HasColumnType("integer")
-                        .HasColumnName("idmenu");
-
-                    b.Property<int>("Idusuario")
+                    b.Property<int?>("Idusuario")
                         .HasColumnType("integer")
                         .HasColumnName("idusuario");
 
-                    b.Property<string>("Ipcreacion")
-                        .IsRequired()
-                        .HasMaxLength(45)
-                        .HasColumnType("character varying(45)")
-                        .HasColumnName("ipcreacion");
-
-                    b.Property<string>("Usuariocreacion")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("usuariocreacion");
-
                     b.HasKey("Id")
-                        .HasName("pk_autenticacion_menu_usuario");
+                        .HasName("pk_autenticacion_audit_log");
 
-                    b.HasIndex("Idmenu");
+                    b.HasIndex(new[] { "Fechacreacion" }, "idx_aut_audit_log_fecha");
 
-                    b.HasIndex("Idusuario");
+                    b.HasIndex(new[] { "Idusuario" }, "idx_aut_audit_log_usuario");
 
-                    b.ToTable("tbl_autenticacion_menu_usuario", "autenticacion");
+                    b.ToTable("tbl_autenticacion_audit_log", "autenticacion");
                 });
 
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionModulo", b =>
@@ -1794,9 +2598,9 @@ namespace tmr_backend.Migrations
                         .HasColumnType("character varying(50)")
                         .HasColumnName("icono");
 
-                    b.Property<int>("Idsubmodulo")
+                    b.Property<int?>("Idmodulopadre")
                         .HasColumnType("integer")
-                        .HasColumnName("idsubmodulo");
+                        .HasColumnName("idmodulopadre");
 
                     b.Property<string>("Ipcreacion")
                         .IsRequired()
@@ -1898,6 +2702,136 @@ namespace tmr_backend.Migrations
                     b.ToTable("tbl_autenticacion_password_historial", "autenticacion");
                 });
 
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionPasswordReset", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Activo")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("activo");
+
+                    b.Property<DateTime>("FechaCreacion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fechacreacion")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<DateTime>("FechaExpiracion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fechaexpiracion");
+
+                    b.Property<DateTime?>("FechaUtilizacion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fechautilizacion");
+
+                    b.Property<int>("IdUsuario")
+                        .HasColumnType("integer")
+                        .HasColumnName("idusuario");
+
+                    b.Property<string>("IpCreacion")
+                        .IsRequired()
+                        .HasMaxLength(45)
+                        .HasColumnType("character varying(45)")
+                        .HasColumnName("ipcreacion");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("tokenhash");
+
+                    b.Property<string>("UsuarioCreacion")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("usuariocreacion");
+
+                    b.Property<bool>("Utilizado")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("utilizado");
+
+                    b.HasKey("Id")
+                        .HasName("pk_autenticacion_password_reset");
+
+                    b.HasIndex("IdUsuario");
+
+                    b.ToTable("tbl_autenticacion_password_reset", "autenticacion");
+                });
+
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionPermiso", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Accion")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("accion");
+
+                    b.Property<bool>("Activo")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("activo");
+
+                    b.Property<string>("Codigo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("codigo");
+
+                    b.Property<string>("Descripcion")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("descripcion");
+
+                    b.Property<DateTime>("Fechacreacion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fechacreacion")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<int>("Idmodulo")
+                        .HasColumnType("integer")
+                        .HasColumnName("idmodulo");
+
+                    b.Property<string>("Ipcreacion")
+                        .IsRequired()
+                        .HasMaxLength(45)
+                        .HasColumnType("character varying(45)")
+                        .HasColumnName("ipcreacion");
+
+                    b.Property<string>("Usuariocreacion")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("usuariocreacion");
+
+                    b.HasKey("Id")
+                        .HasName("pk_autenticacion_permiso");
+
+                    b.HasIndex("Idmodulo");
+
+                    b.HasIndex(new[] { "Codigo" }, "uq_autenticacion_permiso_codigo")
+                        .IsUnique();
+
+                    b.ToTable("tbl_autenticacion_permiso", "autenticacion");
+                });
+
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionPreguntaUsuario", b =>
                 {
                     b.Property<int>("Id")
@@ -1969,14 +2903,14 @@ namespace tmr_backend.Migrations
                     b.ToTable("tbl_autenticacion_pregunta_usuario", "autenticacion");
                 });
 
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionPrivilegioRol", b =>
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionRefreshToken", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
+                        .HasColumnType("bigint")
                         .HasColumnName("id");
 
-                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<int>("Id"));
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
 
                     b.Property<bool>("Activo")
                         .ValueGeneratedOnAdd()
@@ -1984,56 +2918,17 @@ namespace tmr_backend.Migrations
                         .HasDefaultValue(true)
                         .HasColumnName("activo");
 
-                    b.Property<DateTime>("Fechacreacion")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("fechacreacion")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<int>("Idprivilegio")
-                        .HasColumnType("integer")
-                        .HasColumnName("idprivilegio");
-
-                    b.Property<int>("Idrol")
-                        .HasColumnType("integer")
-                        .HasColumnName("idrol");
-
-                    b.Property<string>("Ipcreacion")
-                        .IsRequired()
-                        .HasMaxLength(45)
-                        .HasColumnType("character varying(45)")
-                        .HasColumnName("ipcreacion");
-
-                    b.Property<string>("Usuariocreacion")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("usuariocreacion");
-
-                    b.HasKey("Id")
-                        .HasName("pk_autenticacion_privilegio_rol");
-
-                    b.HasIndex("Idprivilegio");
-
-                    b.HasIndex("Idrol");
-
-                    b.ToTable("tbl_autenticacion_privilegio_rol", "autenticacion");
-                });
-
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionPrivilegioUsuario", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<int>("Id"));
-
-                    b.Property<bool>("Activo")
-                        .ValueGeneratedOnAdd()
+                    b.Property<bool>("Estarevocado")
                         .HasColumnType("boolean")
-                        .HasDefaultValue(true)
-                        .HasColumnName("activo");
+                        .HasColumnName("estarevocado");
+
+                    b.Property<bool>("Estausado")
+                        .HasColumnType("boolean")
+                        .HasColumnName("estausado");
+
+                    b.Property<Guid>("Familiatoken")
+                        .HasColumnType("uuid")
+                        .HasColumnName("familiatoken");
 
                     b.Property<DateTime>("Fechacreacion")
                         .ValueGeneratedOnAdd()
@@ -2041,19 +2936,26 @@ namespace tmr_backend.Migrations
                         .HasColumnName("fechacreacion")
                         .HasDefaultValueSql("now()");
 
-                    b.Property<int>("Idprivilegio")
-                        .HasColumnType("integer")
-                        .HasColumnName("idprivilegio");
+                    b.Property<DateTime>("Fechaexpiracion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fechaexpiracion");
+
+                    b.Property<DateTime?>("Fechausado")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fechausado");
+
+                    b.Property<long>("Idsesion")
+                        .HasColumnType("bigint")
+                        .HasColumnName("idsesion");
 
                     b.Property<int>("Idusuario")
                         .HasColumnType("integer")
                         .HasColumnName("idusuario");
 
-                    b.Property<string>("Ipcreacion")
+                    b.Property<string>("Tokenhash")
                         .IsRequired()
-                        .HasMaxLength(45)
-                        .HasColumnType("character varying(45)")
-                        .HasColumnName("ipcreacion");
+                        .HasColumnType("text")
+                        .HasColumnName("tokenhash");
 
                     b.Property<string>("Usuariocreacion")
                         .IsRequired()
@@ -2062,16 +2964,23 @@ namespace tmr_backend.Migrations
                         .HasColumnName("usuariocreacion");
 
                     b.HasKey("Id")
-                        .HasName("pk_autenticacion_privilegio_usuario");
+                        .HasName("pk_autenticacion_refresh_token");
 
-                    b.HasIndex("Idprivilegio");
+                    b.HasIndex("Idsesion");
 
-                    b.HasIndex("Idusuario");
+                    b.HasIndex(new[] { "Fechaexpiracion" }, "idx_aut_refresh_token_exp");
 
-                    b.ToTable("tbl_autenticacion_privilegio_usuario", "autenticacion");
+                    b.HasIndex(new[] { "Familiatoken" }, "idx_aut_refresh_token_familia");
+
+                    b.HasIndex(new[] { "Idusuario" }, "idx_aut_refresh_token_usuario");
+
+                    b.HasIndex(new[] { "Tokenhash" }, "uq_autenticacion_refresh_token_hash")
+                        .IsUnique();
+
+                    b.ToTable("tbl_autenticacion_refresh_token", "autenticacion");
                 });
 
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionRolModulo", b =>
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionRol", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -2085,6 +2994,15 @@ namespace tmr_backend.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(true)
                         .HasColumnName("activo");
+
+                    b.Property<string>("Descripcion")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("descripcion");
+
+                    b.Property<bool>("Essistema")
+                        .HasColumnType("boolean")
+                        .HasColumnName("essistema");
 
                     b.Property<DateTime>("Fechacreacion")
                         .ValueGeneratedOnAdd()
@@ -2095,14 +3013,6 @@ namespace tmr_backend.Migrations
                     b.Property<DateTime?>("Fechamodificacion")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("fechamodificacion");
-
-                    b.Property<int>("Idmodulo")
-                        .HasColumnType("integer")
-                        .HasColumnName("idmodulo");
-
-                    b.Property<int>("Idrol")
-                        .HasColumnType("integer")
-                        .HasColumnName("idrol");
 
                     b.Property<string>("Ipcreacion")
                         .IsRequired()
@@ -2115,21 +3025,11 @@ namespace tmr_backend.Migrations
                         .HasColumnType("character varying(45)")
                         .HasColumnName("ipmodificacion");
 
-                    b.Property<bool?>("Puedecrear")
-                        .HasColumnType("boolean")
-                        .HasColumnName("puedecrear");
-
-                    b.Property<bool?>("Puedeeditar")
-                        .HasColumnType("boolean")
-                        .HasColumnName("puedeeditar");
-
-                    b.Property<bool?>("Puedeeliminar")
-                        .HasColumnType("boolean")
-                        .HasColumnName("puedeeliminar");
-
-                    b.Property<bool?>("Puedever")
-                        .HasColumnType("boolean")
-                        .HasColumnName("puedever");
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("nombre");
 
                     b.Property<string>("Usuariocreacion")
                         .IsRequired()
@@ -2143,13 +3043,60 @@ namespace tmr_backend.Migrations
                         .HasColumnName("usuariomodificacion");
 
                     b.HasKey("Id")
-                        .HasName("pk_autenticacion_rol_modulo");
+                        .HasName("pk_autenticacion_rol");
 
-                    b.HasIndex("Idmodulo");
+                    b.HasIndex(new[] { "Nombre" }, "uq_autenticacion_rol_nombre")
+                        .IsUnique();
 
-                    b.HasIndex("Idrol");
+                    b.ToTable("tbl_autenticacion_rol", "autenticacion");
+                });
 
-                    b.ToTable("tbl_autenticacion_rol_modulo", "autenticacion");
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionRolPermiso", b =>
+                {
+                    b.Property<int>("Idrol")
+                        .HasColumnType("integer")
+                        .HasColumnName("idrol");
+
+                    b.Property<int>("Idpermiso")
+                        .HasColumnType("integer")
+                        .HasColumnName("idpermiso");
+
+                    b.Property<bool>("Activo")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("activo");
+
+                    b.Property<DateTime>("Fechacreacion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fechacreacion")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Ipcreacion")
+                        .IsRequired()
+                        .HasMaxLength(45)
+                        .HasColumnType("character varying(45)")
+                        .HasColumnName("ipcreacion");
+
+                    b.Property<DateTime>("Otorgado")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("otorgado")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Usuariocreacion")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("usuariocreacion");
+
+                    b.HasKey("Idrol", "Idpermiso")
+                        .HasName("pk_autenticacion_rol_permiso");
+
+                    b.HasIndex("Idpermiso");
+
+                    b.ToTable("tbl_autenticacion_rol_permiso", "autenticacion");
                 });
 
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionSesion", b =>
@@ -2168,8 +3115,7 @@ namespace tmr_backend.Migrations
                         .HasColumnName("activo");
 
                     b.Property<string>("Agenteusuario")
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)")
+                        .HasColumnType("text")
                         .HasColumnName("agenteusuario");
 
                     b.Property<string>("Direccionip")
@@ -2182,8 +3128,10 @@ namespace tmr_backend.Migrations
                         .HasColumnType("character varying(255)")
                         .HasColumnName("dispositivoinfo");
 
-                    b.Property<bool?>("Estaactiva")
+                    b.Property<bool>("Estaactiva")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
+                        .HasDefaultValue(true)
                         .HasColumnName("estaactiva");
 
                     b.Property<DateTime>("Fechacreacion")
@@ -2192,19 +3140,13 @@ namespace tmr_backend.Migrations
                         .HasColumnName("fechacreacion")
                         .HasDefaultValueSql("now()");
 
+                    b.Property<DateTime?>("Fechaexpiracion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fechaexpiracion");
+
                     b.Property<DateTime?>("Fechamodificacion")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("fechamodificacion");
-
-                    b.Property<DateTime>("Horaingreso")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("horaingreso")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<DateTime?>("Horasalida")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("horasalida");
 
                     b.Property<int>("Idusuario")
                         .HasColumnType("integer")
@@ -2221,16 +3163,25 @@ namespace tmr_backend.Migrations
                         .HasColumnType("character varying(45)")
                         .HasColumnName("ipmodificacion");
 
-                    b.Property<string>("Tokensesion")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)")
-                        .HasColumnName("tokensesion");
+                    b.Property<DateTime?>("Revocadofecha")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revocadofecha");
+
+                    b.Property<string>("Revocadorazon")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("revocadorazon");
 
                     b.Property<string>("Ubicacioninfo")
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)")
                         .HasColumnName("ubicacioninfo");
+
+                    b.Property<DateTime>("Ultimaactividad")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ultimaactividad")
+                        .HasDefaultValueSql("now()");
 
                     b.Property<string>("Usuariocreacion")
                         .IsRequired()
@@ -2253,14 +3204,11 @@ namespace tmr_backend.Migrations
                     b.ToTable("tbl_autenticacion_sesion", "autenticacion");
                 });
 
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionSesionApp", b =>
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionTokenBlacklist", b =>
                 {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<int>("Id"));
+                    b.Property<string>("Jti")
+                        .HasColumnType("text")
+                        .HasColumnName("jti");
 
                     b.Property<bool>("Activo")
                         .ValueGeneratedOnAdd()
@@ -2278,81 +3226,30 @@ namespace tmr_backend.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("fechaexpiracion");
 
-                    b.Property<int>("Idaplicacion")
-                        .HasColumnType("integer")
-                        .HasColumnName("idaplicacion");
+                    b.Property<DateTime>("Fecharevocado")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecharevocado")
+                        .HasDefaultValueSql("now()");
 
-                    b.Property<int>("Idusuario")
+                    b.Property<int?>("Idusuario")
                         .HasColumnType("integer")
                         .HasColumnName("idusuario");
 
-                    b.Property<string>("Ipcreacion")
-                        .IsRequired()
-                        .HasMaxLength(45)
-                        .HasColumnType("character varying(45)")
-                        .HasColumnName("ipcreacion");
-
-                    b.Property<string>("Tokenapp")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("tokenapp");
-
                     b.Property<string>("Usuariocreacion")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("usuariocreacion");
 
-                    b.HasKey("Id")
-                        .HasName("pk_autenticacion_sesion_app");
-
-                    b.HasIndex("Idaplicacion");
+                    b.HasKey("Jti");
 
                     b.HasIndex("Idusuario");
 
-                    b.ToTable("tbl_autenticacion_sesion_app", "autenticacion");
-                });
+                    b.HasIndex(new[] { "Fechaexpiracion" }, "idx_aut_token_blacklist_exp");
 
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionTokenBlacklist", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<long>("Id"));
-
-                    b.Property<bool>("Activo")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true)
-                        .HasColumnName("activo");
-
-                    b.Property<DateTime>("Fechacreacion")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("fechacreacion")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<DateTime?>("Fechaexpiracion")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("fechaexpiracion");
-
-                    b.Property<string>("Token")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("token");
-
-                    b.Property<string>("Usuariocreacion")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("usuariocreacion");
-
-                    b.HasKey("Id")
-                        .HasName("pk_autenticacion_token_blacklist");
-
-                    b.HasIndex(new[] { "Token" }, "idx_aut_token_blacklist_token");
+                    b.HasIndex(new[] { "Jti" }, "uq_autenticacion_token_blacklist_jti")
+                        .IsUnique();
 
                     b.ToTable("tbl_autenticacion_token_blacklist", "autenticacion");
                 });
@@ -2372,19 +3269,23 @@ namespace tmr_backend.Migrations
                         .HasDefaultValue(true)
                         .HasColumnName("activo");
 
+                    b.Property<DateTime?>("Bloqueadohasta")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("bloqueadohasta");
+
                     b.Property<bool>("Debecambiarpassword")
                         .HasColumnType("boolean")
                         .HasColumnName("debecambiarpassword");
 
                     b.Property<string>("Email")
                         .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
                         .HasColumnName("email");
 
-                    b.Property<bool?>("Estaactivo")
+                    b.Property<bool>("Emailverificado")
                         .HasColumnType("boolean")
-                        .HasColumnName("estaactivo");
+                        .HasColumnName("emailverificado");
 
                     b.Property<DateTime>("Fechacreacion")
                         .ValueGeneratedOnAdd()
@@ -2405,6 +3306,12 @@ namespace tmr_backend.Migrations
                     b.Property<int?>("Idpersona")
                         .HasColumnType("integer")
                         .HasColumnName("idpersona");
+
+                    b.Property<short>("Intentosfallidos")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("smallint")
+                        .HasDefaultValue((short)0)
+                        .HasColumnName("intentosfallidos");
 
                     b.Property<string>("Ipcreacion")
                         .IsRequired()
@@ -2437,172 +3344,50 @@ namespace tmr_backend.Migrations
 
                     b.HasIndex("Idpersona");
 
+                    b.HasIndex(new[] { "Email" }, "uq_autenticacion_usuario_email")
+                        .IsUnique();
+
                     b.HasIndex(new[] { "Email" }, "uq_autenticacion_usuario_nombre")
                         .IsUnique();
 
                     b.ToTable("tbl_autenticacion_usuario", "autenticacion");
                 });
 
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionUsuarioAplicacion", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<int>("Id"));
-
-                    b.Property<bool>("Activo")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true)
-                        .HasColumnName("activo");
-
-                    b.Property<DateTime>("Fechacreacion")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("fechacreacion")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<int>("Idaplicacion")
-                        .HasColumnType("integer")
-                        .HasColumnName("idaplicacion");
-
-                    b.Property<int>("Idusuario")
-                        .HasColumnType("integer")
-                        .HasColumnName("idusuario");
-
-                    b.Property<string>("Ipcreacion")
-                        .IsRequired()
-                        .HasMaxLength(45)
-                        .HasColumnType("character varying(45)")
-                        .HasColumnName("ipcreacion");
-
-                    b.Property<string>("Usuariocreacion")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("usuariocreacion");
-
-                    b.HasKey("Id")
-                        .HasName("pk_autenticacion_usuario_aplicacion");
-
-                    b.HasIndex("Idaplicacion");
-
-                    b.HasIndex("Idusuario");
-
-                    b.ToTable("tbl_autenticacion_usuario_aplicacion", "autenticacion");
-                });
-
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionUsuarioModulo", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<int>("Id"));
-
-                    b.Property<bool>("Activo")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true)
-                        .HasColumnName("activo");
-
-                    b.Property<DateTime>("Fechacreacion")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("fechacreacion")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<DateTime?>("Fechamodificacion")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("fechamodificacion");
-
-                    b.Property<int>("Idmodulo")
-                        .HasColumnType("integer")
-                        .HasColumnName("idmodulo");
-
-                    b.Property<int>("Idusuario")
-                        .HasColumnType("integer")
-                        .HasColumnName("idusuario");
-
-                    b.Property<string>("Ipcreacion")
-                        .IsRequired()
-                        .HasMaxLength(45)
-                        .HasColumnType("character varying(45)")
-                        .HasColumnName("ipcreacion");
-
-                    b.Property<string>("Ipmodificacion")
-                        .HasMaxLength(45)
-                        .HasColumnType("character varying(45)")
-                        .HasColumnName("ipmodificacion");
-
-                    b.Property<bool?>("Puedecrear")
-                        .HasColumnType("boolean")
-                        .HasColumnName("puedecrear");
-
-                    b.Property<bool?>("Puedeeditar")
-                        .HasColumnType("boolean")
-                        .HasColumnName("puedeeditar");
-
-                    b.Property<bool?>("Puedeeliminar")
-                        .HasColumnType("boolean")
-                        .HasColumnName("puedeeliminar");
-
-                    b.Property<bool?>("Puedever")
-                        .HasColumnType("boolean")
-                        .HasColumnName("puedever");
-
-                    b.Property<string>("Usuariocreacion")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("usuariocreacion");
-
-                    b.Property<string>("Usuariomodificacion")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("usuariomodificacion");
-
-                    b.HasKey("Id")
-                        .HasName("pk_autenticacion_usuario_modulo");
-
-                    b.HasIndex("Idmodulo");
-
-                    b.HasIndex("Idusuario");
-
-                    b.ToTable("tbl_autenticacion_usuario_modulo", "autenticacion");
-                });
-
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionUsuarioRol", b =>
                 {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
+                    b.Property<int>("Idusuario")
                         .HasColumnType("integer")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<int>("Id"));
-
-                    b.Property<bool>("Activo")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true)
-                        .HasColumnName("activo");
-
-                    b.Property<DateTime>("Fechacreacion")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("fechacreacion")
-                        .HasDefaultValueSql("now()");
+                        .HasColumnName("idusuario");
 
                     b.Property<int>("Idrol")
                         .HasColumnType("integer")
                         .HasColumnName("idrol");
 
-                    b.Property<int>("Idusuario")
+                    b.Property<bool>("Activo")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("activo");
+
+                    b.Property<DateTime>("Asignadoen")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("asignadoen")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<int?>("Asignadopor")
                         .HasColumnType("integer")
-                        .HasColumnName("idusuario");
+                        .HasColumnName("asignadopor");
+
+                    b.Property<DateTime>("Fechacreacion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fechacreacion")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<DateTime?>("Fechaexpiracion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fechaexpiracion");
 
                     b.Property<string>("Ipcreacion")
                         .IsRequired()
@@ -2616,12 +3401,12 @@ namespace tmr_backend.Migrations
                         .HasColumnType("character varying(50)")
                         .HasColumnName("usuariocreacion");
 
-                    b.HasKey("Id")
+                    b.HasKey("Idusuario", "Idrol")
                         .HasName("pk_autenticacion_usuario_rol");
 
-                    b.HasIndex("Idrol");
+                    b.HasIndex("Asignadopor");
 
-                    b.HasIndex("Idusuario");
+                    b.HasIndex("Idrol");
 
                     b.ToTable("tbl_autenticacion_usuario_rol", "autenticacion");
                 });
@@ -3462,6 +4247,54 @@ namespace tmr_backend.Migrations
                     b.ToTable("tbl_inventario_stock_categoria", "inventario");
                 });
 
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblInventarioTipoProveedor", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityAlwaysColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Activo")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("activo");
+
+                    b.Property<DateTime>("Fechacreacion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fechacreacion")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<DateTime?>("Fechamodificacion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fechamodificacion");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("nombre");
+
+                    b.Property<string>("Usuariocreacion")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("usuariocreacion");
+
+                    b.Property<string>("Usuariomodificacion")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("usuariomodificacion");
+
+                    b.HasKey("Id")
+                        .HasName("pk_inventario_tipo_proveedor");
+
+                    b.ToTable("tbl_inventario_tipo_proveedor", "inventario");
+                });
+
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportActividadDiarium", b =>
                 {
                     b.Property<int>("Id")
@@ -3523,6 +4356,10 @@ namespace tmr_backend.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("idempleado");
 
+                    b.Property<int?>("Idliderregistro")
+                        .HasColumnType("integer")
+                        .HasColumnName("idliderregistro");
+
                     b.Property<int?>("Idproyecto")
                         .HasColumnType("integer")
                         .HasColumnName("idproyecto");
@@ -3573,7 +4410,7 @@ namespace tmr_backend.Migrations
                     b.ToTable("tbl_time_report_actividad_diaria", "time_report");
                 });
 
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportEmpleadoProyecto", b =>
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportAsignacionProyecto", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -3592,6 +4429,12 @@ namespace tmr_backend.Migrations
                         .HasPrecision(10, 2)
                         .HasColumnType("numeric(10,2)")
                         .HasColumnName("costoporhora");
+
+                    b.Property<bool>("Estadoasignacion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("estadoasignacion");
 
                     b.Property<DateOnly?>("Fechaasignacion")
                         .HasColumnType("date")
@@ -3620,6 +4463,10 @@ namespace tmr_backend.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("idempleado");
 
+                    b.Property<int?>("Idlider")
+                        .HasColumnType("integer")
+                        .HasColumnName("idlider");
+
                     b.Property<int?>("Idproveedor")
                         .HasColumnType("integer")
                         .HasColumnName("idproveedor");
@@ -3639,6 +4486,16 @@ namespace tmr_backend.Migrations
                         .HasColumnType("character varying(45)")
                         .HasColumnName("ipmodificacion");
 
+                    b.Property<decimal?>("Lidercosto")
+                        .HasPrecision(15, 2)
+                        .HasColumnType("numeric(15,2)")
+                        .HasColumnName("lidercosto");
+
+                    b.Property<decimal?>("Liderhoras")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)")
+                        .HasColumnName("liderhoras");
+
                     b.Property<string>("Rolasignado")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
@@ -3656,13 +4513,69 @@ namespace tmr_backend.Migrations
                         .HasColumnName("usuariomodificacion");
 
                     b.HasKey("Id")
-                        .HasName("pk_time_report_empleado_proyecto");
+                        .HasName("pk_time_report_asignacion_proyecto");
 
                     b.HasIndex("Idproyecto");
 
-                    b.HasIndex(new[] { "Idempleado" }, "idx_tr_empleado_proyecto_emp");
+                    b.HasIndex(new[] { "Idempleado" }, "idx_tr_asignacion_proyecto_emp");
 
-                    b.ToTable("tbl_time_report_empleado_proyecto", "time_report");
+                    b.HasIndex(new[] { "Idlider" }, "idx_tr_asignacion_proyecto_lider");
+
+                    b.ToTable("tbl_time_report_asignacion_proyecto", "time_report");
+                });
+
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportEstadoSolicitud", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Activo")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("activo");
+
+                    b.Property<string>("Codigo")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("codigo");
+
+                    b.Property<string>("CodigoCorto")
+                        .IsRequired()
+                        .HasMaxLength(5)
+                        .HasColumnType("character varying(5)")
+                        .HasColumnName("codigo_corto");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("nombre");
+
+                    b.Property<short>("Orden")
+                        .HasColumnType("smallint")
+                        .HasColumnName("orden");
+
+                    b.Property<string>("Semaforo")
+                        .IsRequired()
+                        .HasMaxLength(15)
+                        .HasColumnType("character varying(15)")
+                        .HasColumnName("semaforo");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex(new[] { "Codigo" }, "uq_tr_estado_solicitud_codigo")
+                        .IsUnique();
+
+                    b.HasIndex(new[] { "CodigoCorto" }, "uq_tr_estado_solicitud_codigo_corto")
+                        .IsUnique();
+
+                    b.ToTable("tbl_time_report_estado_solicitud", "time_report");
                 });
 
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportFeriado", b =>
@@ -3963,6 +4876,8 @@ namespace tmr_backend.Migrations
 
                     b.HasIndex(new[] { "Idestadoaprobacion" }, "idx_tr_permiso_estado");
 
+                    b.HasIndex(new[] { "Fechainicio", "Fechafin" }, "idx_tr_permiso_fechas");
+
                     b.ToTable("tbl_time_report_permiso", "time_report");
                 });
 
@@ -4260,10 +5175,6 @@ namespace tmr_backend.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("idestadoproyecto");
 
-                    b.Property<int?>("Idlider")
-                        .HasColumnType("integer")
-                        .HasColumnName("idlider");
-
                     b.Property<int?>("Idtipoproyecto")
                         .HasColumnType("integer")
                         .HasColumnName("idtipoproyecto");
@@ -4313,11 +5224,304 @@ namespace tmr_backend.Migrations
 
                     b.HasIndex(new[] { "Idcliente" }, "idx_tr_proyecto_cliente");
 
-                    b.HasIndex(new[] { "Idlider" }, "idx_tr_proyecto_lider");
-
                     b.HasIndex(new[] { "Idtipoproyecto" }, "idx_tr_proyecto_tipo");
 
                     b.ToTable("tbl_time_report_proyecto", "time_report");
+                });
+
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportSolicitud", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Activo")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("activo");
+
+                    b.Property<string>("Codigo")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("codigo");
+
+                    b.Property<string>("DetalleHorario")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("detalle_horario");
+
+                    b.Property<decimal>("DiasSolicitados")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("dias_solicitados");
+
+                    b.Property<DateTime>("FechaCreacion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_creacion")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<DateOnly>("FechaFin")
+                        .HasColumnType("date")
+                        .HasColumnName("fecha_fin");
+
+                    b.Property<DateOnly>("FechaInicio")
+                        .HasColumnType("date")
+                        .HasColumnName("fecha_inicio");
+
+                    b.Property<DateTime?>("FechaModificacion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_modificacion");
+
+                    b.Property<DateOnly>("FechaRegreso")
+                        .HasColumnType("date")
+                        .HasColumnName("fecha_regreso");
+
+                    b.Property<DateOnly>("FechaSolicitud")
+                        .HasColumnType("date")
+                        .HasColumnName("fecha_solicitud");
+
+                    b.Property<string>("Horario")
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("horario")
+                        .HasDefaultValueSql("'COMPLETA'");
+
+                    b.Property<decimal?>("HorasSolicitadas")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("horas_solicitadas");
+
+                    b.Property<int?>("IdAsignacionProyecto")
+                        .HasColumnType("integer")
+                        .HasColumnName("id_asignacion_proyecto");
+
+                    b.Property<int?>("IdCliente")
+                        .HasColumnType("integer")
+                        .HasColumnName("id_cliente");
+
+                    b.Property<int>("IdEmpleado")
+                        .HasColumnType("integer")
+                        .HasColumnName("id_empleado");
+
+                    b.Property<int>("IdEstado")
+                        .HasColumnType("integer")
+                        .HasColumnName("id_estado");
+
+                    b.Property<int?>("IdLider")
+                        .HasColumnType("integer")
+                        .HasColumnName("id_lider");
+
+                    b.Property<int?>("IdProyecto")
+                        .HasColumnType("integer")
+                        .HasColumnName("id_proyecto");
+
+                    b.Property<int>("IdTipoPermiso")
+                        .HasColumnType("integer")
+                        .HasColumnName("id_tipo_permiso");
+
+                    b.Property<string>("ImpactoTimeReport")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("impacto_timereport")
+                        .HasDefaultValueSql("'RESTA_META'");
+
+                    b.Property<string>("IpCreacion")
+                        .IsRequired()
+                        .HasMaxLength(45)
+                        .HasColumnType("character varying(45)")
+                        .HasColumnName("ip_creacion");
+
+                    b.Property<string>("IpModificacion")
+                        .HasMaxLength(45)
+                        .HasColumnType("character varying(45)")
+                        .HasColumnName("ip_modificacion");
+
+                    b.Property<string>("Motivo")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("motivo");
+
+                    b.Property<string>("TokenExterno")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("token_externo");
+
+                    b.Property<DateTime?>("TokenExternoExpira")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("token_externo_expira");
+
+                    b.Property<DateTime?>("TokenExternoUsadoEn")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("token_externo_usado_en");
+
+                    b.Property<string>("UsuarioCreacion")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("usuario_creacion");
+
+                    b.Property<string>("UsuarioModificacion")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("usuario_modificacion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IdAsignacionProyecto");
+
+                    b.HasIndex("IdCliente");
+
+                    b.HasIndex("IdEmpleado");
+
+                    b.HasIndex("IdEstado");
+
+                    b.HasIndex("IdLider");
+
+                    b.HasIndex("IdProyecto");
+
+                    b.HasIndex("IdTipoPermiso");
+
+                    b.HasIndex(new[] { "Codigo" }, "uq_tr_solicitud_codigo")
+                        .IsUnique();
+
+                    b.ToTable("tbl_time_report_solicitud", "time_report");
+                });
+
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportSolicitudAdjunto", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Activo")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("activo");
+
+                    b.Property<string>("BucketName")
+                        .IsRequired()
+                        .HasMaxLength(63)
+                        .HasColumnType("character varying(63)")
+                        .HasColumnName("bucket_name");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("content_type");
+
+                    b.Property<DateTime>("FechaCreacion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_creacion")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<int>("IdSolicitud")
+                        .HasColumnType("integer")
+                        .HasColumnName("id_solicitud");
+
+                    b.Property<string>("NombreOriginal")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("nombre_original");
+
+                    b.Property<string>("ObjectKey")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("object_key");
+
+                    b.Property<string>("Sha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .HasColumnName("sha256")
+                        .IsFixedLength();
+
+                    b.Property<int>("SubidoPorUsuarioId")
+                        .HasColumnType("integer")
+                        .HasColumnName("subido_por_usuario_id");
+
+                    b.Property<long>("TamanoBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("tamano_bytes");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IdSolicitud");
+
+                    b.HasIndex("SubidoPorUsuarioId");
+
+                    b.ToTable("tbl_time_report_solicitud_adjunto", "time_report");
+                });
+
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportSolicitudRevision", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Comentario")
+                        .HasColumnType("text")
+                        .HasColumnName("comentario");
+
+                    b.Property<string>("Decision")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("decision");
+
+                    b.Property<string>("EtapaRevision")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("etapa_revision");
+
+                    b.Property<DateTime>("FechaRevision")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_revision")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<int>("IdSolicitud")
+                        .HasColumnType("integer")
+                        .HasColumnName("id_solicitud");
+
+                    b.Property<int?>("IdUsuarioRevisor")
+                        .HasColumnType("integer")
+                        .HasColumnName("id_usuario_revisor");
+
+                    b.Property<string>("MetodoRevision")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("metodo_revision")
+                        .HasDefaultValueSql("'CUENTA_TMR'");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IdSolicitud");
+
+                    b.HasIndex("IdUsuarioRevisor");
+
+                    b.ToTable("tbl_time_report_solicitud_revision", "time_report");
                 });
 
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportTipoActividad", b =>
@@ -4389,6 +5593,67 @@ namespace tmr_backend.Migrations
                     b.ToTable("tbl_time_report_tipo_actividad", "time_report");
                 });
 
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportTipoPermiso", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Activo")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("activo");
+
+                    b.Property<string>("Codigo")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("codigo");
+
+                    b.Property<string>("CodigoCorto")
+                        .IsRequired()
+                        .HasMaxLength(5)
+                        .HasColumnType("character varying(5)")
+                        .HasColumnName("codigo_corto");
+
+                    b.Property<string>("Descripcion")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("descripcion");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("nombre");
+
+                    b.Property<short>("Orden")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("smallint")
+                        .HasDefaultValue((short)1)
+                        .HasColumnName("orden");
+
+                    b.Property<bool>("RequiereAdjunto")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("requiere_adjunto");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex(new[] { "Codigo" }, "uq_tr_tipo_permiso_codigo")
+                        .IsUnique();
+
+                    b.HasIndex(new[] { "CodigoCorto" }, "uq_tr_tipo_permiso_codigo_corto")
+                        .IsUnique();
+
+                    b.ToTable("tbl_time_report_tipo_permiso", "time_report");
+                });
+
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportTipoProyecto", b =>
                 {
                     b.Property<int>("Id")
@@ -4452,6 +5717,188 @@ namespace tmr_backend.Migrations
                     b.ToTable("tbl_time_report_tipo_proyecto", "time_report");
                 });
 
+            modelBuilder.Entity("tmr_backend.Infrastructure.Messaging.EventoOutbox", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("estado");
+
+                    b.Property<DateTimeOffset>("FechaCreacion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_creacion")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<DateTimeOffset?>("FechaProcesado")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_procesado");
+
+                    b.Property<int>("Intentos")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("intentos");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("payload");
+
+                    b.Property<string>("TipoEvento")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("tipo_evento");
+
+                    b.Property<string>("UltimoError")
+                        .HasColumnType("text")
+                        .HasColumnName("ultimo_error");
+
+                    b.HasKey("Id")
+                        .HasName("pk_evento_outbox");
+
+                    b.HasIndex(new[] { "Estado", "FechaCreacion" }, "idx_evento_outbox_estado_fecha");
+
+                    b.ToTable("evento_outbox", "notificacion");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.ActualizacionDatos.Domain.ActualizacionArchivo", b =>
+                {
+                    b.HasOne("tmr_backend.Features.ActualizacionDatos.Domain.ActualizacionSolicitud", "Solicitud")
+                        .WithMany("Archivos")
+                        .HasForeignKey("IdSolicitud")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Solicitud");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.ActualizacionDatos.Domain.ActualizacionCertificacion", b =>
+                {
+                    b.HasOne("tmr_backend.Features.ActualizacionDatos.Domain.ActualizacionSolicitud", "Solicitud")
+                        .WithMany("Certificaciones")
+                        .HasForeignKey("IdSolicitud")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Solicitud");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.ActualizacionDatos.Domain.ActualizacionDetalle", b =>
+                {
+                    b.HasOne("tmr_backend.Features.ActualizacionDatos.Domain.ActualizacionSolicitud", "Solicitud")
+                        .WithMany("Detalles")
+                        .HasForeignKey("IdSolicitud")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Solicitud");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.ActualizacionDatos.Domain.ActualizacionFamiliar", b =>
+                {
+                    b.HasOne("tmr_backend.Features.ActualizacionDatos.Domain.ActualizacionSolicitud", "Solicitud")
+                        .WithMany("Familiares")
+                        .HasForeignKey("IdSolicitud")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Solicitud");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.ActualizacionDatos.Domain.ActualizacionFormacion", b =>
+                {
+                    b.HasOne("tmr_backend.Features.ActualizacionDatos.Domain.ActualizacionSolicitud", "Solicitud")
+                        .WithMany("Formaciones")
+                        .HasForeignKey("IdSolicitud")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Solicitud");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.ActualizacionDatos.Domain.ColaboradorFamiliar", b =>
+                {
+                    b.HasOne("tmr_backend.Features.ActualizacionDatos.Domain.ColaboradorInformacionFamiliar", "Informacion")
+                        .WithMany("Familiares")
+                        .HasForeignKey("IdEmpleado")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Informacion");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.ActualizacionDatos.Domain.ColaboradorSolicitudArchivo", b =>
+                {
+                    b.HasOne("tmr_backend.Features.ActualizacionDatos.Domain.ColaboradorSolicitud", "Solicitud")
+                        .WithMany("Archivos")
+                        .HasForeignKey("IdSolicitud")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Solicitud");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.Notificaciones.Domain.NotificacionEnvio", b =>
+                {
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAdministracionEmpleado", "Empleado")
+                        .WithMany()
+                        .HasForeignKey("IdEmpleado")
+                        .IsRequired()
+                        .HasConstraintName("fk_notificacion_envio_empleado");
+
+                    b.Navigation("Empleado");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.Notificaciones.Domain.NotificacionUsuario", b =>
+                {
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblTimeReportSolicitud", "Solicitud")
+                        .WithMany()
+                        .HasForeignKey("IdSolicitud")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasConstraintName("fk_notificacion_usuario_solicitud");
+
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionUsuario", "UsuarioDestino")
+                        .WithMany()
+                        .HasForeignKey("IdUsuarioDestino")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_notificacion_usuario_destino");
+
+                    b.Navigation("Solicitud");
+
+                    b.Navigation("UsuarioDestino");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.Proyectos.Domain.Proyecto", b =>
+                {
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAdministracionCliente", "Cliente")
+                        .WithMany()
+                        .HasForeignKey("ClienteId");
+
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAdministracionCatalogoDetalle", "EstadoProyecto")
+                        .WithMany()
+                        .HasForeignKey("EstadoProyectoId");
+
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAdministracionLider", "Lider")
+                        .WithMany()
+                        .HasForeignKey("LiderId");
+
+                    b.Navigation("Cliente");
+
+                    b.Navigation("EstadoProyecto");
+
+                    b.Navigation("Lider");
+                });
+
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAdministracionCargo", b =>
                 {
                     b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAdministracionCatalogoDetalle", "IddepartamentoNavigation")
@@ -4504,6 +5951,22 @@ namespace tmr_backend.Migrations
 
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAdministracionEmpleado", b =>
                 {
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAdministracionCatalogoDetalle", "CausaSalidaNavigation")
+                        .WithMany()
+                        .HasForeignKey("IdCausaSalida")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAdministracionEmpleado", "EmpleadoReemplazoNavigation")
+                        .WithMany("EmpleadosReemplazados")
+                        .HasForeignKey("IdEmpleadoReemplazo")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAdministracionCatalogoDetalle", "TipoSalidaNavigation")
+                        .WithMany()
+                        .HasForeignKey("IdTipoSalida")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("FK_tbl_administracion_empleado_tbl_administracion_catalogo_de~1");
+
                     b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAdministracionCargo", "IdcargoNavigation")
                         .WithMany("TblAdministracionEmpleados")
                         .HasForeignKey("Idcargo")
@@ -4535,6 +5998,10 @@ namespace tmr_backend.Migrations
                         .HasForeignKey("Idtipocontrato")
                         .HasConstraintName("fk_administracion_empleado_contrato");
 
+                    b.Navigation("CausaSalidaNavigation");
+
+                    b.Navigation("EmpleadoReemplazoNavigation");
+
                     b.Navigation("IdcargoNavigation");
 
                     b.Navigation("IdcategoriaempleadoNavigation");
@@ -4546,6 +6013,8 @@ namespace tmr_backend.Migrations
                     b.Navigation("IdpersonaNavigation");
 
                     b.Navigation("IdtipocontratoNavigation");
+
+                    b.Navigation("TipoSalidaNavigation");
                 });
 
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAdministracionLider", b =>
@@ -4600,58 +6069,13 @@ namespace tmr_backend.Migrations
                     b.Navigation("IdempleadoNavigation");
                 });
 
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionMenu", b =>
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionAuditLog", b =>
                 {
-                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionAplicacion", "IdaplicacionNavigation")
-                        .WithMany("TblAutenticacionMenus")
-                        .HasForeignKey("Idaplicacion")
-                        .HasConstraintName("fk_autenticacion_menu_aplicacion");
-
-                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionMenu", "IdmenupadreNavigation")
-                        .WithMany("InverseIdmenupadreNavigation")
-                        .HasForeignKey("Idmenupadre")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .HasConstraintName("fk_autenticacion_menu_padre");
-
-                    b.Navigation("IdaplicacionNavigation");
-
-                    b.Navigation("IdmenupadreNavigation");
-                });
-
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionMenuRol", b =>
-                {
-                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionMenu", "IdmenuNavigation")
-                        .WithMany("TblAutenticacionMenuRols")
-                        .HasForeignKey("Idmenu")
-                        .IsRequired()
-                        .HasConstraintName("fk_autenticacion_menu_rol_menu");
-
-                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAdministracionCatalogoDetalle", "IdrolNavigation")
-                        .WithMany("TblAutenticacionMenuRols")
-                        .HasForeignKey("Idrol")
-                        .IsRequired()
-                        .HasConstraintName("fk_autenticacion_menu_rol_rol");
-
-                    b.Navigation("IdmenuNavigation");
-
-                    b.Navigation("IdrolNavigation");
-                });
-
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionMenuUsuario", b =>
-                {
-                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionMenu", "IdmenuNavigation")
-                        .WithMany("TblAutenticacionMenuUsuarios")
-                        .HasForeignKey("Idmenu")
-                        .IsRequired()
-                        .HasConstraintName("fk_autenticacion_menu_usuario_menu");
-
                     b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionUsuario", "IdusuarioNavigation")
-                        .WithMany("TblAutenticacionMenuUsuarios")
+                        .WithMany("TblAutenticacionAuditLogs")
                         .HasForeignKey("Idusuario")
-                        .IsRequired()
-                        .HasConstraintName("fk_autenticacion_menu_usuario_usuario");
-
-                    b.Navigation("IdmenuNavigation");
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasConstraintName("fk_autenticacion_audit_log_usuario");
 
                     b.Navigation("IdusuarioNavigation");
                 });
@@ -4667,6 +6091,28 @@ namespace tmr_backend.Migrations
                     b.Navigation("IdusuarioNavigation");
                 });
 
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionPasswordReset", b =>
+                {
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionUsuario", "IdUsuarioNavigation")
+                        .WithMany("TblAutenticacionPasswordResets")
+                        .HasForeignKey("IdUsuario")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_autenticacion_password_reset_usuario");
+
+                    b.Navigation("IdUsuarioNavigation");
+                });
+
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionPermiso", b =>
+                {
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionModulo", null)
+                        .WithMany()
+                        .HasForeignKey("Idmodulo")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_autenticacion_permiso_modulo");
+                });
+
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionPreguntaUsuario", b =>
                 {
                     b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionUsuario", "IdusuarioNavigation")
@@ -4678,59 +6124,44 @@ namespace tmr_backend.Migrations
                     b.Navigation("IdusuarioNavigation");
                 });
 
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionPrivilegioRol", b =>
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionRefreshToken", b =>
                 {
-                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAdministracionCatalogoDetalle", "IdprivilegioNavigation")
-                        .WithMany("TblAutenticacionPrivilegioRolIdprivilegioNavigations")
-                        .HasForeignKey("Idprivilegio")
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionSesion", "IdsesionNavigation")
+                        .WithMany("TblAutenticacionRefreshTokens")
+                        .HasForeignKey("Idsesion")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
-                        .HasConstraintName("fk_autenticacion_privilegio_rol_privilegio");
-
-                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAdministracionCatalogoDetalle", "IdrolNavigation")
-                        .WithMany("TblAutenticacionPrivilegioRolIdrolNavigations")
-                        .HasForeignKey("Idrol")
-                        .IsRequired()
-                        .HasConstraintName("fk_autenticacion_privilegio_rol_rol");
-
-                    b.Navigation("IdprivilegioNavigation");
-
-                    b.Navigation("IdrolNavigation");
-                });
-
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionPrivilegioUsuario", b =>
-                {
-                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAdministracionCatalogoDetalle", "IdprivilegioNavigation")
-                        .WithMany("TblAutenticacionPrivilegioUsuarios")
-                        .HasForeignKey("Idprivilegio")
-                        .IsRequired()
-                        .HasConstraintName("fk_autenticacion_privilegio_usuario_privilegio");
+                        .HasConstraintName("fk_autenticacion_refresh_token_sesion");
 
                     b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionUsuario", "IdusuarioNavigation")
-                        .WithMany("TblAutenticacionPrivilegioUsuarios")
+                        .WithMany("TblAutenticacionRefreshTokens")
                         .HasForeignKey("Idusuario")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
-                        .HasConstraintName("fk_autenticacion_privilegio_usuario_usuario");
+                        .HasConstraintName("fk_autenticacion_refresh_token_usuario");
 
-                    b.Navigation("IdprivilegioNavigation");
+                    b.Navigation("IdsesionNavigation");
 
                     b.Navigation("IdusuarioNavigation");
                 });
 
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionRolModulo", b =>
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionRolPermiso", b =>
                 {
-                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionModulo", "IdmoduloNavigation")
-                        .WithMany("TblAutenticacionRolModulos")
-                        .HasForeignKey("Idmodulo")
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionPermiso", "IdpermisoNavigation")
+                        .WithMany("TblAutenticacionRolPermisos")
+                        .HasForeignKey("Idpermiso")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
-                        .HasConstraintName("fk_autenticacion_rol_modulo_modulo");
+                        .HasConstraintName("fk_autenticacion_rol_permiso_permiso");
 
-                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAdministracionCatalogoDetalle", "IdrolNavigation")
-                        .WithMany("TblAutenticacionRolModulos")
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionRol", "IdrolNavigation")
+                        .WithMany("TblAutenticacionRolPermisos")
                         .HasForeignKey("Idrol")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
-                        .HasConstraintName("fk_autenticacion_rol_modulo_rol");
+                        .HasConstraintName("fk_autenticacion_rol_permiso_rol");
 
-                    b.Navigation("IdmoduloNavigation");
+                    b.Navigation("IdpermisoNavigation");
 
                     b.Navigation("IdrolNavigation");
                 });
@@ -4740,27 +6171,20 @@ namespace tmr_backend.Migrations
                     b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionUsuario", "IdusuarioNavigation")
                         .WithMany("TblAutenticacionSesions")
                         .HasForeignKey("Idusuario")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_autenticacion_sesion_usuario");
 
                     b.Navigation("IdusuarioNavigation");
                 });
 
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionSesionApp", b =>
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionTokenBlacklist", b =>
                 {
-                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionAplicacion", "IdaplicacionNavigation")
-                        .WithMany("TblAutenticacionSesionApps")
-                        .HasForeignKey("Idaplicacion")
-                        .IsRequired()
-                        .HasConstraintName("fk_autenticacion_sesion_app_aplicacion");
-
                     b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionUsuario", "IdusuarioNavigation")
-                        .WithMany("TblAutenticacionSesionApps")
+                        .WithMany()
                         .HasForeignKey("Idusuario")
-                        .IsRequired()
-                        .HasConstraintName("fk_autenticacion_sesion_app_usuario");
-
-                    b.Navigation("IdaplicacionNavigation");
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasConstraintName("fk_autenticacion_token_blacklist_usuario");
 
                     b.Navigation("IdusuarioNavigation");
                 });
@@ -4770,60 +6194,31 @@ namespace tmr_backend.Migrations
                     b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAdministracionPersona", "IdpersonaNavigation")
                         .WithMany("TblAutenticacionUsuarios")
                         .HasForeignKey("Idpersona")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_autenticacion_usuario_persona");
 
                     b.Navigation("IdpersonaNavigation");
                 });
 
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionUsuarioAplicacion", b =>
-                {
-                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionAplicacion", "IdaplicacionNavigation")
-                        .WithMany("TblAutenticacionUsuarioAplicacions")
-                        .HasForeignKey("Idaplicacion")
-                        .IsRequired()
-                        .HasConstraintName("fk_autenticacion_usuario_aplicacion_aplicacion");
-
-                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionUsuario", "IdusuarioNavigation")
-                        .WithMany("TblAutenticacionUsuarioAplicacions")
-                        .HasForeignKey("Idusuario")
-                        .IsRequired()
-                        .HasConstraintName("fk_autenticacion_usuario_aplicacion_usuario");
-
-                    b.Navigation("IdaplicacionNavigation");
-
-                    b.Navigation("IdusuarioNavigation");
-                });
-
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionUsuarioModulo", b =>
-                {
-                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionModulo", "IdmoduloNavigation")
-                        .WithMany("TblAutenticacionUsuarioModulos")
-                        .HasForeignKey("Idmodulo")
-                        .IsRequired()
-                        .HasConstraintName("fk_autenticacion_usuario_modulo_modulo");
-
-                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionUsuario", "IdusuarioNavigation")
-                        .WithMany("TblAutenticacionUsuarioModulos")
-                        .HasForeignKey("Idusuario")
-                        .IsRequired()
-                        .HasConstraintName("fk_autenticacion_usuario_modulo_usuario");
-
-                    b.Navigation("IdmoduloNavigation");
-
-                    b.Navigation("IdusuarioNavigation");
-                });
-
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionUsuarioRol", b =>
                 {
-                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAdministracionCatalogoDetalle", "IdrolNavigation")
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionUsuario", null)
+                        .WithMany()
+                        .HasForeignKey("Asignadopor")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_autenticacion_usuario_rol_asignado_por");
+
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionRol", "IdrolNavigation")
                         .WithMany("TblAutenticacionUsuarioRols")
                         .HasForeignKey("Idrol")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_autenticacion_usuario_rol_rol");
 
                     b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionUsuario", "IdusuarioNavigation")
                         .WithMany("TblAutenticacionUsuarioRols")
                         .HasForeignKey("Idusuario")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_autenticacion_usuario_rol_usuario");
 
@@ -4950,7 +6345,7 @@ namespace tmr_backend.Migrations
 
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblInventarioProveedor", b =>
                 {
-                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAdministracionCatalogoDetalle", "IdtipoproveedorNavigation")
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblInventarioTipoProveedor", "IdtipoproveedorNavigation")
                         .WithMany("TblInventarioProveedors")
                         .HasForeignKey("Idtipoproveedor")
                         .HasConstraintName("fk_inventario_proveedor_tipo_proveedor");
@@ -5013,20 +6408,27 @@ namespace tmr_backend.Migrations
                     b.Navigation("IdtipoactividadNavigation");
                 });
 
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportEmpleadoProyecto", b =>
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportAsignacionProyecto", b =>
                 {
                     b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAdministracionEmpleado", "IdempleadoNavigation")
-                        .WithMany("TblTimeReportEmpleadoProyectos")
+                        .WithMany("TblTimeReportAsignacionProyectos")
                         .HasForeignKey("Idempleado")
-                        .HasConstraintName("fk_time_report_empleado_proyecto_empleado");
+                        .HasConstraintName("fk_time_report_asignacion_proyecto_empleado");
+
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAdministracionLider", "IdliderNavigation")
+                        .WithMany("TblTimeReportAsignacionProyectos")
+                        .HasForeignKey("Idlider")
+                        .HasConstraintName("fk_time_report_asignacion_proyecto_lider");
 
                     b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblTimeReportProyecto", "IdproyectoNavigation")
-                        .WithMany("TblTimeReportEmpleadoProyectos")
+                        .WithMany("TblTimeReportAsignacionProyectos")
                         .HasForeignKey("Idproyecto")
                         .IsRequired()
-                        .HasConstraintName("fk_time_report_empleado_proyecto_proyecto");
+                        .HasConstraintName("fk_time_report_asignacion_proyecto_proyecto");
 
                     b.Navigation("IdempleadoNavigation");
+
+                    b.Navigation("IdliderNavigation");
 
                     b.Navigation("IdproyectoNavigation");
                 });
@@ -5119,11 +6521,6 @@ namespace tmr_backend.Migrations
                         .IsRequired()
                         .HasConstraintName("fk_time_report_proyecto_estado");
 
-                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAdministracionLider", "IdliderNavigation")
-                        .WithMany("TblTimeReportProyectos")
-                        .HasForeignKey("Idlider")
-                        .HasConstraintName("fk_time_report_proyecto_lider");
-
                     b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblTimeReportTipoProyecto", "IdtipoproyectoNavigation")
                         .WithMany("TblTimeReportProyectos")
                         .HasForeignKey("Idtipoproyecto")
@@ -5133,9 +6530,128 @@ namespace tmr_backend.Migrations
 
                     b.Navigation("IdestadoproyectoNavigation");
 
-                    b.Navigation("IdliderNavigation");
-
                     b.Navigation("IdtipoproyectoNavigation");
+                });
+
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportSolicitud", b =>
+                {
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblTimeReportAsignacionProyecto", "AsignacionProyecto")
+                        .WithMany()
+                        .HasForeignKey("IdAsignacionProyecto")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_tr_solicitud_asignacion_proyecto");
+
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAdministracionCliente", "Cliente")
+                        .WithMany()
+                        .HasForeignKey("IdCliente")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_tr_solicitud_cliente");
+
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAdministracionEmpleado", "Empleado")
+                        .WithMany()
+                        .HasForeignKey("IdEmpleado")
+                        .IsRequired()
+                        .HasConstraintName("fk_tr_solicitud_empleado");
+
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblTimeReportEstadoSolicitud", "Estado")
+                        .WithMany("Solicitudes")
+                        .HasForeignKey("IdEstado")
+                        .IsRequired()
+                        .HasConstraintName("fk_tr_solicitud_estado");
+
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAdministracionLider", "Lider")
+                        .WithMany()
+                        .HasForeignKey("IdLider")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_tr_solicitud_lider");
+
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblTimeReportProyecto", "Proyecto")
+                        .WithMany()
+                        .HasForeignKey("IdProyecto")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_tr_solicitud_proyecto");
+
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblTimeReportTipoPermiso", "TipoPermiso")
+                        .WithMany("Solicitudes")
+                        .HasForeignKey("IdTipoPermiso")
+                        .IsRequired()
+                        .HasConstraintName("fk_tr_solicitud_tipo_permiso");
+
+                    b.Navigation("AsignacionProyecto");
+
+                    b.Navigation("Cliente");
+
+                    b.Navigation("Empleado");
+
+                    b.Navigation("Estado");
+
+                    b.Navigation("Lider");
+
+                    b.Navigation("Proyecto");
+
+                    b.Navigation("TipoPermiso");
+                });
+
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportSolicitudAdjunto", b =>
+                {
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblTimeReportSolicitud", "Solicitud")
+                        .WithMany("Adjuntos")
+                        .HasForeignKey("IdSolicitud")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_tr_solicitud_adjunto_solicitud");
+
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionUsuario", "SubidoPorUsuario")
+                        .WithMany()
+                        .HasForeignKey("SubidoPorUsuarioId")
+                        .IsRequired()
+                        .HasConstraintName("fk_tr_solicitud_adjunto_usuario");
+
+                    b.Navigation("Solicitud");
+
+                    b.Navigation("SubidoPorUsuario");
+                });
+
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportSolicitudRevision", b =>
+                {
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblTimeReportSolicitud", "Solicitud")
+                        .WithMany("Revisiones")
+                        .HasForeignKey("IdSolicitud")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_tr_solicitud_revision_solicitud");
+
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionUsuario", "UsuarioRevisor")
+                        .WithMany()
+                        .HasForeignKey("IdUsuarioRevisor")
+                        .HasConstraintName("fk_tr_solicitud_revision_usuario");
+
+                    b.Navigation("Solicitud");
+
+                    b.Navigation("UsuarioRevisor");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.ActualizacionDatos.Domain.ActualizacionSolicitud", b =>
+                {
+                    b.Navigation("Archivos");
+
+                    b.Navigation("Certificaciones");
+
+                    b.Navigation("Detalles");
+
+                    b.Navigation("Familiares");
+
+                    b.Navigation("Formaciones");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.ActualizacionDatos.Domain.ColaboradorInformacionFamiliar", b =>
+                {
+                    b.Navigation("Familiares");
+                });
+
+            modelBuilder.Entity("tmr_backend.Features.ActualizacionDatos.Domain.ColaboradorSolicitud", b =>
+                {
+                    b.Navigation("Archivos");
                 });
 
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAdministracionCargo", b =>
@@ -5174,18 +6690,6 @@ namespace tmr_backend.Migrations
 
                     b.Navigation("TblAdministracionPersonaIdtipoidentificacionNavigations");
 
-                    b.Navigation("TblAutenticacionMenuRols");
-
-                    b.Navigation("TblAutenticacionPrivilegioRolIdprivilegioNavigations");
-
-                    b.Navigation("TblAutenticacionPrivilegioRolIdrolNavigations");
-
-                    b.Navigation("TblAutenticacionPrivilegioUsuarios");
-
-                    b.Navigation("TblAutenticacionRolModulos");
-
-                    b.Navigation("TblAutenticacionUsuarioRols");
-
                     b.Navigation("TblInventarioBajaEquipos");
 
                     b.Navigation("TblInventarioCaracteristicaEquipos");
@@ -5197,8 +6701,6 @@ namespace tmr_backend.Migrations
                     b.Navigation("TblInventarioEquipoIdestadoNavigations");
 
                     b.Navigation("TblInventarioEquipoIdtipogarantiaNavigations");
-
-                    b.Navigation("TblInventarioProveedors");
 
                     b.Navigation("TblInventarioStockCategoria");
 
@@ -5218,6 +6720,8 @@ namespace tmr_backend.Migrations
 
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAdministracionEmpleado", b =>
                 {
+                    b.Navigation("EmpleadosReemplazados");
+
                     b.Navigation("TblAdministracionRegistroAsignacions");
 
                     b.Navigation("TblInventarioAsignacionEquipos");
@@ -5226,7 +6730,7 @@ namespace tmr_backend.Migrations
 
                     b.Navigation("TblTimeReportActividadDiariumIdempleadoNavigations");
 
-                    b.Navigation("TblTimeReportEmpleadoProyectos");
+                    b.Navigation("TblTimeReportAsignacionProyectos");
 
                     b.Navigation("TblTimeReportHomologacionBancos");
 
@@ -5237,7 +6741,7 @@ namespace tmr_backend.Migrations
 
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAdministracionLider", b =>
                 {
-                    b.Navigation("TblTimeReportProyectos");
+                    b.Navigation("TblTimeReportAsignacionProyectos");
                 });
 
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAdministracionPersona", b =>
@@ -5249,50 +6753,38 @@ namespace tmr_backend.Migrations
                     b.Navigation("TblAutenticacionUsuarios");
                 });
 
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionAplicacion", b =>
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionPermiso", b =>
                 {
-                    b.Navigation("TblAutenticacionMenus");
-
-                    b.Navigation("TblAutenticacionSesionApps");
-
-                    b.Navigation("TblAutenticacionUsuarioAplicacions");
+                    b.Navigation("TblAutenticacionRolPermisos");
                 });
 
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionMenu", b =>
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionRol", b =>
                 {
-                    b.Navigation("InverseIdmenupadreNavigation");
+                    b.Navigation("TblAutenticacionRolPermisos");
 
-                    b.Navigation("TblAutenticacionMenuRols");
-
-                    b.Navigation("TblAutenticacionMenuUsuarios");
+                    b.Navigation("TblAutenticacionUsuarioRols");
                 });
 
-            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionModulo", b =>
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionSesion", b =>
                 {
-                    b.Navigation("TblAutenticacionRolModulos");
-
-                    b.Navigation("TblAutenticacionUsuarioModulos");
+                    b.Navigation("TblAutenticacionRefreshTokens");
                 });
 
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblAutenticacionUsuario", b =>
                 {
                     b.Navigation("TblAdministracionClienteUsuarios");
 
-                    b.Navigation("TblAutenticacionMenuUsuarios");
+                    b.Navigation("TblAutenticacionAuditLogs");
 
                     b.Navigation("TblAutenticacionPasswordHistorials");
 
+                    b.Navigation("TblAutenticacionPasswordResets");
+
                     b.Navigation("TblAutenticacionPreguntaUsuarios");
 
-                    b.Navigation("TblAutenticacionPrivilegioUsuarios");
-
-                    b.Navigation("TblAutenticacionSesionApps");
+                    b.Navigation("TblAutenticacionRefreshTokens");
 
                     b.Navigation("TblAutenticacionSesions");
-
-                    b.Navigation("TblAutenticacionUsuarioAplicacions");
-
-                    b.Navigation("TblAutenticacionUsuarioModulos");
 
                     b.Navigation("TblAutenticacionUsuarioRols");
                 });
@@ -5320,18 +6812,40 @@ namespace tmr_backend.Migrations
                     b.Navigation("TblInventarioFacturas");
                 });
 
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblInventarioTipoProveedor", b =>
+                {
+                    b.Navigation("TblInventarioProveedors");
+                });
+
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportEstadoSolicitud", b =>
+                {
+                    b.Navigation("Solicitudes");
+                });
+
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportProyecto", b =>
                 {
                     b.Navigation("TblTimeReportActividadDiaria");
 
-                    b.Navigation("TblTimeReportEmpleadoProyectos");
+                    b.Navigation("TblTimeReportAsignacionProyectos");
 
                     b.Navigation("TblTimeReportProyeccionHorasProyectos");
+                });
+
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportSolicitud", b =>
+                {
+                    b.Navigation("Adjuntos");
+
+                    b.Navigation("Revisiones");
                 });
 
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportTipoActividad", b =>
                 {
                     b.Navigation("TblTimeReportActividadDiaria");
+                });
+
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportTipoPermiso", b =>
+                {
+                    b.Navigation("Solicitudes");
                 });
 
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportTipoProyecto", b =>
