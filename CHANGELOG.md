@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.9.2](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.9.1...v1.9.2) (2026-11-23)
+
+
+### Bug Fixes
+
+* **ci:** aplicar migraciones EF en la validación de base de datos ([8d8627b](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/8d8627b1b16209ae699263a4b504958b5042bc40))
+* **instalador:** validar secuencia de scripts SQL en vez de cantidad … ([090229d](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/090229d0ac0ff606a68fe92daccb543386f885b1))
+* **instalador:** validar secuencia de scripts SQL en vez de cantidad fija ([6bc7c21](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/6bc7c21edbb29c1d6ec9528ea874ffc6e019ba69))
+* mejoras ([7ce287f](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/7ce287f2c2d2cd9b33d45330fcd8a33ab3b28e80))
+
 ## [1.9.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.9.0...v1.9.1) (2026-11-19)
 
 
