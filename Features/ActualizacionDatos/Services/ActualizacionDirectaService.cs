@@ -2,6 +2,8 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using tmr_backend.Features.ActualizacionDatos.Domain;
 using tmr_backend.Features.ActualizacionDatos.DTOs;
+using tmr_backend.Features.Notificaciones.Application.Estado;
+using tmr_backend.Features.Notificaciones.Domain;
 using tmr_backend.Infrastructure.Database;
 using tmr_backend.Infrastructure.Database.Entities;
 using tmr_backend.Infrastructure.Shared;
@@ -11,13 +13,21 @@ using tmr_backend.Shared.Wrappers;
 
 namespace tmr_backend.Features.ActualizacionDatos.Services;
 
-public sealed class ActualizacionDirectaService(ApplicationDbContext db, ICurrentUserService currentUser, IFileStorage storage)
+public sealed class ActualizacionDirectaService(
+    ApplicationDbContext db,
+    ICurrentUserService currentUser,
+    INotificacionInternaNotifier notificaciones)
 {
     public async Task<MiDatosResponse?> GetAsync(CancellationToken ct)
     {
         var owner = await Owner(ct);
         if (owner is null) return null;
-        var (employee, person) = owner.Value;
+        return await GetProfileAsync(owner.Value.Employee, owner.Value.Person, ct);
+    }
+
+    private async Task<MiDatosResponse> GetProfileAsync(TblAdministracionEmpleado employee, TblAdministracionPersona person, CancellationToken ct)
+    {
+
         var control = await db.Set<ColaboradorDatosControl>().AsNoTracking().SingleOrDefaultAsync(x => x.IdEmpleado == employee.Id, ct);
         var formaciones = await db.Set<ColaboradorFormacion>().AsNoTracking().Where(x => x.IdEmpleado == employee.Id && x.Activo).ToListAsync(ct);
         var certificaciones = await db.Set<ColaboradorCertificacion>().AsNoTracking().Where(x => x.IdEmpleado == employee.Id && x.Activo).ToListAsync(ct);
@@ -27,14 +37,14 @@ public sealed class ActualizacionDirectaService(ApplicationDbContext db, ICurren
         var hasCedula = await db.TblAdministracionCatalogoDetalles.AsNoTracking()
             .AnyAsync(x => x.Id == person.Idtipoidentificacion && x.Codigovalor == "C", ct);
         var ownDisability = IsYes(info?.TieneDiscapacidad);
-        var persona = new PersonaPropuesta(person.Nombres, person.Apellidos, person.Email, person.Telefono, person.Direccion, info?.EstadoCivil, NormalizeTriState(info?.TieneDiscapacidad), ownDisability ? info?.TipoDiscapacidad : null, ownDisability ? info?.PorcentajeDiscapacidad : null);
+        var persona = new PersonaPropuesta(person.Nombres, person.Apellidos, person.Email, person.Telefono, person.Direccion, info?.EstadoCivil, NormalizeTriState(info?.TieneDiscapacidad), ownDisability ? info?.TipoDiscapacidad : null, ownDisability ? info?.PorcentajeDiscapacidad : null, person.Fechanacimiento);
         var familyRows = familiares.Select(x => ToFamily(x, docs)).ToList();
         var allowsPartner = string.Equals(info?.EstadoCivil, "Casado", StringComparison.OrdinalIgnoreCase) || string.Equals(info?.EstadoCivil, "UnionLibre", StringComparison.OrdinalIgnoreCase);
         var pareja = allowsPartner ? familyRows.FirstOrDefault(x => x.TipoRelacion == "Conyuge" || x.TipoRelacion == "Pareja") : null;
         var family = new InformacionFamiliarResponse(info?.EstadoCivil, NormalizeTriState(info?.TieneHijos), NormalizeTriState(info?.TieneDiscapacidad), ownDisability ? info?.TipoDiscapacidad : null, ownDisability ? info?.PorcentajeDiscapacidad : null, IsYes(info?.TieneHijos) ? familyRows.Where(x => x.TipoRelacion == "Hijo").ToList() : [], pareja);
         var old = await db.Set<ActualizacionSolicitud>().AsNoTracking().Where(x => x.IdEmpleado == employee.Id).OrderByDescending(x => x.Fechamodificacion).ToListAsync(ct);
         var recoverable = old.FirstOrDefault(x => x.Estado != EstadoActualizacion.Aprobada);
-        return new(null, "Sin cambios", null, persona, formaciones.Select(x => ToFormacion(x, docs)).ToList(), certificaciones.Select(x => ToCertificacion(x, docs)).ToList(), ownDisability ? docs.Where(d => d.Seccion == "Discapacidad").Select(x => new ArchivoResponse(x.Id, x.NombreOriginal, x.ContentType, x.Tamano, x.FechaCreacion)).ToList() : [], family, control?.Version ?? 0, [], recoverable is null ? null : await LegacyDetail(recoverable, ct), hasCedula ? person.Numeroidentificacion : null, control?.ConocimientosJson is { } json ? JsonSerializer.Deserialize<ConocimientoDto[]>(json) : []);
+        return new(null, "Sin cambios", null, persona, formaciones.Select(x => ToFormacion(x, docs)).ToList(), certificaciones.Select(x => ToCertificacion(x, docs)).ToList(), ownDisability ? docs.Where(d => d.Seccion == "Discapacidad").Select(x => new ArchivoResponse(x.Id, x.NombreOriginal, x.ContentType, x.Tamano, x.FechaCreacion)).ToList() : [], family, control?.Version ?? 0, [], recoverable is null ? null : await LegacyDetail(recoverable, ct), hasCedula ? person.Numeroidentificacion : null, control?.ConocimientosJson is { } json ? JsonSerializer.Deserialize<ConocimientoDto[]>(json) : [], person.Fechanacimiento);
     }
 
     public async Task<(long Version, bool ValidacionEnviada)> SaveAsync(ActualizacionRequest input, CancellationToken ct)
@@ -53,30 +63,64 @@ public sealed class ActualizacionDirectaService(ApplicationDbContext db, ICurren
             Conocimientos = Includes("conocimientos") ? input.Conocimientos : null
         };
         Validate(input);
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        if (section is null) throw new ArgumentException("Selecciona una seccion.");
+        await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+        if (section != "conocimientos") await EnsureEditable(owner.Employee.Id, section, ct);
         var control = await db.Set<ColaboradorDatosControl>().SingleOrDefaultAsync(x => x.IdEmpleado == owner.Employee.Id, ct);
         await ValidateDocuments(input, owner.Employee.Id, ct);
-        if (control is null)
+        if ((input.ControlVersion ?? 0) != (control?.Version ?? 0))
+            throw new DbUpdateConcurrencyException("Recarga el perfil antes de guardar.");
+        if (section == "conocimientos")
         {
-            control = new ColaboradorDatosControl { IdEmpleado = owner.Employee.Id, Version = 1, FechaModificacion = DateTime.UtcNow };
-            db.Add(control);
+            if (input.Conocimientos is null) throw new ArgumentException("Indica los conocimientos que deseas guardar.");
+            await ApplyAsync(input, owner.Employee, owner.Person, ct);
+            var pending = await db.ColaboradorSolicitudes.Where(x => x.IdEmpleado == owner.Employee.Id &&
+                x.Seccion == section && (x.EstadoRevision == "EnRevision" || x.EstadoRevision == "RequiereCorreccion")).ToListAsync(ct);
+            foreach (var old in pending) old.EstadoRevision = "Reenviada";
+        }
+        var previous = await db.ColaboradorSolicitudes.SingleOrDefaultAsync(x =>
+            x.IdEmpleado == owner.Employee.Id && x.Seccion == section && x.EstadoRevision == "RequiereCorreccion", ct);
+        if (previous is not null)
+        {
+            previous.EstadoRevision = "Reenviada";
             await db.SaveChangesAsync(ct);
         }
-        else
+        var now = DateTime.UtcNow;
+        db.Add(new ColaboradorSolicitud
         {
-            if (input.ControlVersion is null || input.ControlVersion.Value != control.Version) throw new DbUpdateConcurrencyException("Los datos cambiaron desde que los cargaste. Recarga la página antes de guardar.");
-            control.Version++;
-            control.FechaModificacion = DateTime.UtcNow;
+            IdEmpleado = owner.Employee.Id, Seccion = section, Asunto = section,
+            Descripcion = "Revision de cambios del perfil", Enviada = true,
+            FechaCreacion = now, FechaEnvio = now, EstadoRevision = section == "conocimientos" ? "Guardada" : "EnRevision",
+            Propuesta = JsonSerializer.Serialize(input)
+        });
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        return (control?.Version ?? db.Set<ColaboradorDatosControl>().Local.SingleOrDefault(x => x.IdEmpleado == owner.Employee.Id)?.Version ?? 0, section != "conocimientos");
+    }
+
+    private async Task ApplyAsync(ActualizacionRequest input, TblAdministracionEmpleado employee, TblAdministracionPersona person, CancellationToken ct)
+    {
+        var section = input.Seccion;
+        bool Includes(string name) => section == name;
+        await ValidateDocuments(input, employee.Id, ct);
+        var control = await db.Set<ColaboradorDatosControl>().SingleOrDefaultAsync(x => x.IdEmpleado == employee.Id, ct);
+        if (control is null)
+        {
+            control = new ColaboradorDatosControl { IdEmpleado = employee.Id };
+            db.Add(control);
         }
+        control.Version++;
+        control.FechaModificacion = DateTime.UtcNow;
         if (input.Conocimientos is { } conocimientos)
             control.ConocimientosJson = JsonSerializer.Serialize(conocimientos.Select(x => x with { Area = x.Area.Trim() }));
-        var employeeId = owner.Employee.Id;
+        var employeeId = employee.Id;
         if (Includes("personal"))
         {
-            var person = owner.Person;
             person.Email = input.Persona.Email?.Trim();
             person.Telefono = TelefonoRules.Normalize(input.Persona.Telefono);
             person.Direccion = input.Persona.Direccion?.Trim();
+            if (input.Persona.FechaNacimiento is { } fechaNacimiento)
+                person.Fechanacimiento = fechaNacimiento;
             person.Fechamodificacion = DateTime.UtcNow;
             person.Usuariomodificacion = currentUser.Email;
         }
@@ -106,36 +150,103 @@ public sealed class ActualizacionDirectaService(ApplicationDbContext db, ICurren
         if (Includes("certificaciones")) await UpsertCertificaciones(employeeId, input.Certificaciones, ct);
         if (Includes("familia")) await UpsertFamilies(employeeId, NormalizeFamily(input.Familia), ct);
 
-        foreach (var document in documentsToDelete)
+        foreach (var document in documentsToDelete) document.Activo = false;
+    }
+
+    public async Task EnsureEditable(int employeeId, string section, CancellationToken ct)
+    {
+        if (await db.ColaboradorSolicitudes.AnyAsync(x => x.IdEmpleado == employeeId &&
+            x.Seccion == section && x.EstadoRevision == "EnRevision", ct))
+            throw new DbUpdateConcurrencyException("La seccion esta en revision por Recursos Humanos.");
+    }
+
+    public static string DocumentSection(string section) => section.ToLowerInvariant() switch
+    {
+        "discapacidad" => "personal",
+        "formacion" => "formacion",
+        "certificacion" => "certificaciones",
+        _ => "familia"
+    };
+
+    public async Task<object> MyReviewsAsync(CancellationToken ct)
+    {
+        var owner = await Owner(ct);
+        if (owner is null) return Array.Empty<object>();
+        var rows = await db.ColaboradorSolicitudes.AsNoTracking().Where(x => x.IdEmpleado == owner.Value.Employee.Id && x.Seccion != "conocimientos" &&
+            (x.EstadoRevision == "EnRevision" || x.EstadoRevision == "RequiereCorreccion")).ToListAsync(ct);
+        var docs = await db.Set<ColaboradorDocumento>().AsNoTracking().Where(x => x.IdEmpleado == owner.Value.Employee.Id && x.Activo).ToListAsync(ct);
+        return rows.Select(x => new { x.Seccion, Estado = x.EstadoRevision, Observacion = x.ObservacionRevision,
+            Documentos = docs.Where(d => DocumentSection(d.Seccion) == x.Seccion).Select(ToDoc),
+            Propuesta = JsonSerializer.Deserialize<ActualizacionRequest>(x.Propuesta!) });
+    }
+
+    public async Task<object> ReviewQueueAsync(CancellationToken ct)
+    {
+        var rows = await (from request in db.ColaboradorSolicitudes.AsNoTracking()
+                          join employee in db.TblAdministracionEmpleados on request.IdEmpleado equals employee.Id
+                          where request.Seccion != null
+                          orderby request.FechaCreacion descending
+                          select new { request.Id, request.IdEmpleado, request.FechaCreacion, request.Seccion,
+                              Estado = request.EstadoRevision,
+                              Nombre = employee.IdpersonaNavigation.Nombres + " " + employee.IdpersonaNavigation.Apellidos,
+                              Cedula = employee.IdpersonaNavigation.Numeroidentificacion,
+                              Telefono = employee.IdpersonaNavigation.Telefono,
+                              Correo = employee.IdpersonaNavigation.Email }).ToListAsync(ct);
+        return rows.GroupBy(x => x.IdEmpleado).Select(group => new { IdEmpleado = group.Key,
+            group.First().Nombre, group.First().Cedula, group.First().Telefono, group.First().Correo, Solicitudes = group.ToArray() });
+    }
+
+    public async Task<object?> ReviewDetailAsync(long id, CancellationToken ct)
+    {
+        var row = await db.ColaboradorSolicitudes.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id && x.Seccion != null, ct);
+        if (row is null) return null;
+        var employee = await db.TblAdministracionEmpleados.Include(x => x.IdpersonaNavigation).SingleAsync(x => x.Id == row.IdEmpleado, ct);
+        var docs = await db.Set<ColaboradorDocumento>().AsNoTracking().Where(x => x.IdEmpleado == employee.Id && x.Activo).ToListAsync(ct);
+        return new { row.Id, row.Seccion, Estado = row.EstadoRevision, Observacion = row.ObservacionRevision,
+            row.Revisor, row.FechaRevision,
+            Vigente = await GetProfileAsync(employee, employee.IdpersonaNavigation, ct),
+            Propuesta = JsonSerializer.Deserialize<ActualizacionRequest>(row.Propuesta!),
+            Documentos = docs.Where(x => DocumentSection(x.Seccion) == row.Seccion).Select(ToDoc) };
+    }
+
+    public async Task<bool> DecideAsync(long id, string estado, string? observacion, CancellationToken ct)
+    {
+        if (estado is not ("EnRevision" or "Aprobada" or "RequiereCorreccion"))
+            throw new ArgumentException("Selecciona un estado valido.");
+        if (estado == "RequiereCorreccion" && string.IsNullOrWhiteSpace(observacion))
+            throw new ArgumentException("Indica el campo o documento que debe corregirse.");
+        await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+        var row = await db.ColaboradorSolicitudes.SingleOrDefaultAsync(x => x.Id == id && x.Seccion != null, ct);
+        if (row is null) return false;
+        if (row.Seccion == "conocimientos") throw new ArgumentException("Los conocimientos se guardan directamente.");
+        if (row.EstadoRevision != "EnRevision") throw new DbUpdateConcurrencyException("La solicitud ya fue revisada.");
+        List<int> destinatarios = [];
+        if (estado == "Aprobada")
         {
-            if (section != "familia" || !string.Equals(document.Provider, "s3", StringComparison.OrdinalIgnoreCase))
-                await storage.DeleteAsync(document.StorageKey, ct, document.Provider);
-            document.Activo = false;
-        }
-        var subject = section switch
-        {
-            "familia" => "Revision de informacion familiar",
-            "formacion" => "Revision de formacion academica",
-            "certificaciones" => "Revision de certificaciones",
-            _ => null
-        };
-        var validationSent = subject is not null;
-        if (subject is not null)
-        {
-            var now = DateTime.UtcNow;
-            db.Add(new ColaboradorSolicitud
+            var employee = await db.TblAdministracionEmpleados.Include(x => x.IdpersonaNavigation).SingleAsync(x => x.Id == row.IdEmpleado, ct);
+            await ApplyAsync(JsonSerializer.Deserialize<ActualizacionRequest>(row.Propuesta!)!, employee, employee.IdpersonaNavigation, ct);
+
+            destinatarios = await db.TblAutenticacionUsuarios.AsNoTracking()
+                .Where(usuario => usuario.Idpersona == employee.Idpersona && usuario.Activo)
+                .Select(usuario => usuario.Id)
+                .ToListAsync(ct);
+            db.NotificacionesUsuario.AddRange(destinatarios.Select(idUsuario => new NotificacionUsuario
             {
-                IdEmpleado = employeeId,
-                Asunto = subject,
-                Descripcion = "Revisar el registro y sus respaldos en el expediente del colaborador.",
-                Enviada = true,
-                FechaCreacion = now,
-                FechaEnvio = now
-            });
+                IdUsuarioDestino = idUsuario,
+                Titulo = "Cambios de perfil aprobados",
+                Mensaje = "Recursos Humanos aprobó los cambios de tu solicitud. Ya puedes consultarlos en Mi perfil.",
+                UrlDestino = "/mi-perfil",
+                FechaCreacion = DateTime.UtcNow
+            }));
         }
+        row.EstadoRevision = estado;
+        row.ObservacionRevision = observacion?.Trim();
+        row.Revisor = currentUser.Email;
+        row.FechaRevision = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
-        return (control.Version, validationSent);
+        if (destinatarios.Count > 0) notificaciones.NotificarUsuarios(destinatarios);
+        return true;
     }
 
     public async Task<IReadOnlyList<SolicitudPropiaResponse>> SolicitudesAsync(CancellationToken ct)
@@ -159,6 +270,7 @@ public sealed class ActualizacionDirectaService(ApplicationDbContext db, ICurren
             ? null
             : await db.Set<ColaboradorDocumento>().SingleOrDefaultAsync(x => x.Id == documentId && x.IdEmpleado == owner.Value.Employee.Id && x.Activo, ct);
         if (row is null) return false;
+        await EnsureEditable(row.IdEmpleado, DocumentSection(row.Seccion), ct);
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         try
@@ -247,6 +359,11 @@ public sealed class ActualizacionDirectaService(ApplicationDbContext db, ICurren
 
         if (!TelefonoRules.IsValid(x.Persona.Telefono)) Add("persona.telefono", TelefonoRules.Message);
         if (!string.IsNullOrWhiteSpace(x.Persona.Email) && !System.Net.Mail.MailAddress.TryCreate(x.Persona.Email.Trim(), out _)) Add("persona.email", "Ingresa un correo electrónico válido");
+        if (IsYes(x.Persona.TieneDiscapacidad))
+        {
+            if (x.Persona.PorcentajeDiscapacidad is null) Add("persona.porcentajeDiscapacidad", "Ingresa el porcentaje de discapacidad.");
+            if (string.IsNullOrWhiteSpace(x.Persona.TipoDiscapacidad)) Add("persona.tipoDiscapacidad", "Selecciona al menos un tipo de discapacidad.");
+        }
         if (x.Persona.PorcentajeDiscapacidad is < 0 or > 100) Add("persona.porcentajeDiscapacidad", "El porcentaje debe estar entre 0 y 100.");
 
         for (var i = 0; i < (x.Conocimientos?.Count ?? 0); i++)
@@ -255,7 +372,7 @@ public sealed class ActualizacionDirectaService(ApplicationDbContext db, ICurren
             if (item is null || string.IsNullOrWhiteSpace(item.Area) || item.Area.Trim().Length > 120 ||
                 !System.Text.RegularExpressions.Regex.IsMatch(item.Area, @"\A(?=.*[\p{L}0-9])[\p{L}0-9 ./+#()-]+\z"))
                 Add($"conocimientos[{i}].area", "Ingresa un area de conocimiento valida.");
-            if (item is not null && (item.Porcentaje is < 0 or > 100))
+            if (item is not null && (item.Porcentaje is null or < 0 or > 100))
                 Add($"conocimientos[{i}].porcentaje", "Ingresa un porcentaje entero entre 0 y 100.");
         }
 
@@ -289,6 +406,8 @@ public sealed class ActualizacionDirectaService(ApplicationDbContext db, ICurren
             }
         }
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        if (x.Persona.FechaNacimiento > today)
+            Add("persona.fechaNacimiento", "La fecha de nacimiento no puede ser futura.");
         for (var i = 0; i < x.Certificaciones.Count; i++)
         {
             var certification = x.Certificaciones[i];
@@ -307,6 +426,11 @@ public sealed class ActualizacionDirectaService(ApplicationDbContext db, ICurren
             if (!NombrePersonaRules.IsValid(family.Apellidos)) Add($"{prefix}.apellidos", NombrePersonaRules.Message);
             if (family.FechaNacimiento > today) Add($"{prefix}.fechaNacimiento", "La fecha de nacimiento no puede ser futura.");
             if (!string.IsNullOrWhiteSpace(family.Identificacion) && !System.Text.RegularExpressions.Regex.IsMatch(family.Identificacion, "^\\d{10}$")) Add($"{prefix}.identificacion", "La identificación debe contener exactamente 10 dígitos.");
+            if (IsYes(family.TieneDiscapacidad))
+            {
+                if (family.PorcentajeDiscapacidad is null) Add($"{prefix}.porcentajeDiscapacidad", "Ingresa el porcentaje de discapacidad.");
+                if (string.IsNullOrWhiteSpace(family.TipoDiscapacidad)) Add($"{prefix}.tipoDiscapacidad", "Selecciona al menos un tipo de discapacidad.");
+            }
             if (family.PorcentajeDiscapacidad is < 0 or > 100) Add($"{prefix}.porcentajeDiscapacidad", "El porcentaje debe estar entre 0 y 100.");
         }
         var partner = x.Familia?.Pareja;
@@ -365,18 +489,28 @@ public sealed class ActualizacionDirectaService(ApplicationDbContext db, ICurren
 
     private async Task ValidateDocuments(ActualizacionRequest input, int employeeId, CancellationToken ct)
     {
-        if (input.Seccion is not ("familia" or "formacion" or "certificaciones")) return;
+        if (input.Seccion is not ("personal" or "familia" or "formacion" or "certificaciones")) return;
         var docs = await db.Set<ColaboradorDocumento>().AsNoTracking()
             .Where(doc => doc.IdEmpleado == employeeId && doc.Activo)
-            .Select(doc => new { doc.Seccion, doc.ReferenciaId, doc.ReferenciaClave }).ToListAsync(ct);
+            .Select(doc => new { doc.Id, doc.Seccion, doc.ReferenciaId, doc.ReferenciaClave }).ToListAsync(ct);
         var errors = new List<ApiError>();
+
+        var respaldosUsados = new HashSet<long>();
 
         void Require(string path, string tipo, long? id, string? clave)
         {
-            if (!docs.Any(doc => string.Equals(doc.Seccion, tipo, StringComparison.OrdinalIgnoreCase) &&
-                ((id.HasValue && doc.ReferenciaId == id) || (!string.IsNullOrEmpty(clave) && doc.ReferenciaClave == clave))))
+            var respaldo = docs.FirstOrDefault(doc => string.Equals(doc.Seccion, tipo, StringComparison.OrdinalIgnoreCase) &&
+                !respaldosUsados.Contains(doc.Id) &&
+                (tipo == "Discapacidad" ? doc.ReferenciaId is null && string.IsNullOrEmpty(doc.ReferenciaClave) :
+                    (id.HasValue && doc.ReferenciaId == id) || (!string.IsNullOrWhiteSpace(clave) && doc.ReferenciaClave == clave)));
+            if (respaldo is null)
                 errors.Add(new ApiError(path, "Sube los archivos solicitados.", "VALIDATION_ERROR"));
+            else
+                respaldosUsados.Add(respaldo.Id);
         }
+
+        if (input.Seccion == "personal" && IsYes(input.Persona.TieneDiscapacidad))
+            Require("persona.archivos", "Discapacidad", null, null);
 
         if (input.Seccion == "familia" && input.Familia is { } familia)
         {
@@ -386,7 +520,12 @@ public sealed class ActualizacionDirectaService(ApplicationDbContext db, ICurren
                 errors.Add(new ApiError("familia.tieneHijos", "Agrega al menos un hijo y sube los archivos solicitados.", "VALIDATION_ERROR"));
             if (IsYes(familia.TieneHijos))
                 for (var i = 0; i < familia.Familiares.Count; i++)
-                    Require($"familia.familiares[{i}].archivos", "PartidaNacimiento", familia.Familiares[i].Id, familia.Familiares[i].Clave);
+                {
+                    var hijo = familia.Familiares[i];
+                    Require($"familia.familiares[{i}].archivos", "PartidaNacimiento", hijo.Id, hijo.Clave);
+                    if (IsYes(hijo.TieneDiscapacidad))
+                        Require($"familia.familiares[{i}].archivos", "Familiar", hijo.Id, hijo.Clave);
+                }
         }
         for (var i = 0; i < input.Formaciones.Count; i++)
             Require($"formaciones[{i}].archivos", "Formacion", input.Formaciones[i].Id, input.Formaciones[i].Clave);

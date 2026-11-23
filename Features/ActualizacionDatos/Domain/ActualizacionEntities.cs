@@ -160,6 +160,12 @@ public sealed class ColaboradorSolicitud
     public DateTime FechaCreacion { get; set; }
     public DateTime? FechaEnvio { get; set; }
     public bool Enviada { get; set; }
+    public string? Seccion { get; set; }
+    public string? Propuesta { get; set; }
+    public string? EstadoRevision { get; set; }
+    public string? ObservacionRevision { get; set; }
+    public string? Revisor { get; set; }
+    public DateTime? FechaRevision { get; set; }
     public ICollection<ColaboradorSolicitudArchivo> Archivos { get; set; } = new List<ColaboradorSolicitudArchivo>();
 }
 

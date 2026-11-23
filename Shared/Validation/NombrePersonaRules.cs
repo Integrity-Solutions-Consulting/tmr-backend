@@ -8,7 +8,14 @@ public static partial class NombrePersonaRules
     public const int MaxLength = 100;
     public const string Message = "Ingresa solo letras y espacios. Se permiten tildes y ñ. Máximo 100 caracteres.";
 
-    public static string Normalize(string? value) => (value ?? string.Empty).Normalize(NormalizationForm.FormC).Trim();
+    public static string Normalize(string? value)
+    {
+        var nombre = (value ?? string.Empty).Normalize(NormalizationForm.FormC).Trim();
+        if (nombre.Length == 0) return nombre;
+
+        var inicial = Rune.GetRuneAt(nombre, 0);
+        return Rune.ToUpperInvariant(inicial).ToString() + nombre[inicial.Utf16SequenceLength..];
+    }
 
     public static bool IsValid(string? value, bool required = true)
     {
