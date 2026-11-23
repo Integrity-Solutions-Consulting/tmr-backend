@@ -27,9 +27,9 @@ public static class DatabaseInstaller
         await new NpgsqlCommand("SELECT pg_advisory_lock(846720261017)", connection).ExecuteNonQueryAsync();
         try
         {
-            var migrationHistorySchema = await ResolveMigrationHistorySchemaAsync(connection);
+            var migrationHistorySchema = MigrationHistory.GetSchema(configuration);
             var optionsBuilder = new DbContextOptionsBuilder<ApplicationDbContext>()
-                .UseNpgsql(connection, npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", migrationHistorySchema));
+                .UseNpgsql(connection, npgsql => npgsql.MigrationsHistoryTable(MigrationHistory.TableName, migrationHistorySchema));
             if (command == "--apply-migrations")
                 optionsBuilder.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
             var options = optionsBuilder.Options;
@@ -40,6 +40,7 @@ public static class DatabaseInstaller
                     await PrepareAsync(connection);
                     break;
                 case "--apply-migrations":
+                    await CheckMigrationHistoryAsync(connection, migrationHistorySchema);
                     await BaselineLegacySchemaAsync(connection, migrationHistorySchema);
                     Console.WriteLine($"Migraciones disponibles: {string.Join(", ", db.Database.GetMigrations())}");
                     await db.Database.MigrateAsync();
@@ -135,15 +136,25 @@ public static class DatabaseInstaller
         }
     }
 
-    private static async Task<string> ResolveMigrationHistorySchemaAsync(NpgsqlConnection connection)
+    private static async Task CheckMigrationHistoryAsync(NpgsqlConnection connection, string schema)
     {
-        const string sql = "SELECT CASE WHEN EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'public') THEN 'public' ELSE 'administracion' END";
-        return (string)(await new NpgsqlCommand(sql, connection).ExecuteScalarAsync())!;
+        const string sql = """
+            SELECT schemaname FROM pg_catalog.pg_tables
+            WHERE tablename = @table AND schemaname <> @schema
+            ORDER BY schemaname LIMIT 1
+            """;
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("table", MigrationHistory.TableName);
+        command.Parameters.AddWithValue("schema", schema);
+        if (await command.ExecuteScalarAsync() is string otherSchema)
+            throw new InvalidOperationException(
+                $"Hay un historial EF en '{otherSchema}' y el instalador está configurado para '{schema}'. Revise Database:MigrationsHistorySchema antes de aplicar migraciones.");
     }
 
     private static async Task BaselineLegacySchemaAsync(NpgsqlConnection connection, string historySchema)
     {
-        var schema = historySchema == "public" ? "\"public\"" : "\"administracion\"";
+        using var identifiers = new NpgsqlCommandBuilder();
+        var schema = identifiers.QuoteIdentifier(historySchema);
         var sql = $"""
             CREATE TABLE IF NOT EXISTS {schema}."__EFMigrationsHistory" (
                 "MigrationId" character varying(150) NOT NULL,

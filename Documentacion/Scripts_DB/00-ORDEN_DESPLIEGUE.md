@@ -80,6 +80,8 @@ módulo de actualización de datos de colaboradores: `tbl_actualizacion_*` y
 docker compose run --rm backend --apply-migrations
 ```
 
+La API y el instalador usan `public."__EFMigrationsHistory"` por defecto. Si un ambiente mantiene su historial en otro esquema, configure `Database__MigrationsHistorySchema` para ambos antes de aplicar migraciones.
+
 Marca `InitialCreate` como aplicada si el esquema ya existe y aplica solo las
 migraciones pendientes (son `IF NOT EXISTS`). Sin este paso `--verify-database`
 falla con "Esquema incompleto".

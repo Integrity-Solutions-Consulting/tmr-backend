@@ -158,7 +158,8 @@ if (string.IsNullOrWhiteSpace(defaultConnection))
         "en el entorno del contenedor (o DB_CONNECTION_STRING para Docker Compose).");
 
 builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
-    options.UseNpgsql(defaultConnection)
+    options.UseNpgsql(defaultConnection, pg => pg.MigrationsHistoryTable(
+        MigrationHistory.TableName, MigrationHistory.GetSchema(builder.Configuration)))
            .AddInterceptors(
                sp.GetRequiredService<AuditInterceptor>(),
                // Despierta al EventDispatcher con los eventos publicados en una transacción, al confirmarla
