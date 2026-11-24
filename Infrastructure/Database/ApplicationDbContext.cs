@@ -2864,6 +2864,7 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.TipoAjuste).HasMaxLength(30).HasColumnName("tipo_ajuste");
             entity.Property(e => e.DiasAjuste).HasPrecision(6, 2).HasDefaultValue(0m).HasColumnName("dias_ajuste");
             entity.Property(e => e.PermiteVacaciones).HasColumnName("permite_vacaciones");
+            entity.Property(e => e.FechaAfiliacionBase).HasColumnName("fecha_afiliacion_base");
             entity.Property(e => e.Motivo).HasColumnName("motivo");
             entity.Property(e => e.Activo).HasDefaultValue(true).HasColumnName("activo");
             entity.Property(e => e.UsuarioCreacion).HasMaxLength(50).HasColumnName("usuario_creacion");
