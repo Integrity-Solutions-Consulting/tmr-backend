@@ -13,6 +13,7 @@ public sealed record ResumenSaldoVacaciones(
     bool ExcepcionFacturaActiva,
     DateOnly? FechaIngresoOriginal,
     DateOnly? FechaInicioVacaciones,
+    string? OrigenFechaInicioVacaciones,
     int AniosAntiguedad,
     decimal DiasGanadosAcumulados,
     decimal DiasProporcionalesCicloActual,
@@ -58,6 +59,7 @@ public static class VacacionesSaldoService
                 ExcepcionFacturaActiva: false,
                 FechaIngresoOriginal: null,
                 FechaInicioVacaciones: null,
+                OrigenFechaInicioVacaciones: null,
                 AniosAntiguedad: 0,
                 DiasGanadosAcumulados: 0m,
                 DiasProporcionalesCicloActual: 0m,
@@ -118,6 +120,7 @@ public static class VacacionesSaldoService
 
         // 3. Fecha base de afiliación (fechadesde del contrato afiliado FJ/MT en historial -> fallback fechaingreso)
         DateOnly? fechaBase = null;
+        string? origenFecha = null;
         if (!esFactura)
         {
             var contratosAfiliados = contratosActivos
@@ -147,6 +150,7 @@ public static class VacacionesSaldoService
                         break;
                 }
                 fechaBase = inicioTramo;
+                origenFecha = "Contrato";
             }
             else
             {
@@ -167,7 +171,11 @@ public static class VacacionesSaldoService
             .ThenByDescending(a => a.Id)
             .FirstOrDefault();
         if (tieneDerecho && ultimaFechaAfiliacion is not null)
+        {
             fechaBase = ultimaFechaAfiliacion.FechaAfiliacionBase;
+            origenFecha = ultimaFechaAfiliacion.UsuarioCreacion == "MIGRACION_HC2026"
+                ? "Afiliación registrada en HC" : "Afiliación registrada por RR. HH.";
+        }
 
         // 4. Cálculo de años cumplidos, ciclos acumulados y proporcional del ciclo en curso
         var aniosCompletos = 0;
@@ -197,6 +205,7 @@ public static class VacacionesSaldoService
         // 5. Días consumidos y ajustes manuales
         var diasConsumidos = solicitudesEmpleado
             .Where(s => s.Activo
+                        && (!s.EsHistorico || s.VerificadoRrhh)
                         && s.Estado?.Codigo is not ("RECHAZADA" or "OBSERVADA")
                         && (s.DescuentaVacaciones || string.Equals(s.TipoPermiso?.Codigo, "VACACIONES", StringComparison.OrdinalIgnoreCase)))
             .Sum(s => s.DiasSolicitados);
@@ -217,6 +226,7 @@ public static class VacacionesSaldoService
             ExcepcionFacturaActiva: excepcionFacturaActiva,
             FechaIngresoOriginal: empleado.Fechaingreso,
             FechaInicioVacaciones: fechaBase,
+            OrigenFechaInicioVacaciones: fechaBase.HasValue ? origenFecha ?? "Ingreso general" : null,
             AniosAntiguedad: aniosCompletos,
             DiasGanadosAcumulados: diasGanadosAcumulados,
             DiasProporcionalesCicloActual: diasProporcionales,

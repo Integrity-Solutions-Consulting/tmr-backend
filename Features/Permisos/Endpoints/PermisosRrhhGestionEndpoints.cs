@@ -454,7 +454,8 @@ public static partial class PermisosEndpoints
                     SaldoDisponible: resumen.SaldoDisponible,
                     TotalRegistrosHistorial: solEmp.Count,
                     RegistrosPorVerificar: solEmp.Count(s => !s.VerificadoRrhh),
-                    Ajustes: ajustesDto);
+                    Ajustes: ajustesDto,
+                    OrigenFechaInicioVacaciones: resumen.OrigenFechaInicioVacaciones);
             }).ToList();
 
             return Results.Ok(ApiResponse<IReadOnlyList<SaldoVacacionesColaboradorDto>>.Ok(resultado));
