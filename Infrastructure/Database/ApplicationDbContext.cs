@@ -20,6 +20,12 @@ namespace tmr_backend.Infrastructure.Database;
 
 public partial class ApplicationDbContext : DbContext
 {
+    [DbFunction("translate", IsBuiltIn = true)]
+    public static string NormalizarBusqueda(string texto, string origen, string destino) => throw new NotSupportedException();
+
+    [DbFunction("to_char", IsBuiltIn = true)]
+    public static string FormatearFecha(DateOnly fecha, string formato) => throw new NotSupportedException();
+
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
         : base(options)
     {
