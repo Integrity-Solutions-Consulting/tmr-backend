@@ -6,9 +6,10 @@ public class TblTimeReportAjusteVacaciones
 {
     public int Id { get; set; }
     public int IdEmpleado { get; set; }
-    public string TipoAjuste { get; set; } = "AJUSTE_DIAS"; // AJUSTE_DIAS | EXCEPCION_FACTURA
+    public string TipoAjuste { get; set; } = "AJUSTE_DIAS"; // AJUSTE_DIAS | EXCEPCION_FACTURA | FECHA_AFILIACION
     public decimal DiasAjuste { get; set; }
     public bool? PermiteVacaciones { get; set; }
+    public DateOnly? FechaAfiliacionBase { get; set; }
     public string Motivo { get; set; } = null!;
     public bool Activo { get; set; } = true;
     public string UsuarioCreacion { get; set; } = null!;

@@ -362,7 +362,8 @@ public static partial class PermisosEndpoints
                     PermiteVacaciones: a.PermiteVacaciones,
                     Motivo: a.Motivo,
                     UsuarioCreacion: a.UsuarioCreacion,
-                    FechaCreacion: a.FechaCreacion.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture)
+                    FechaCreacion: a.FechaCreacion.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture),
+                    FechaAfiliacionBase: a.FechaAfiliacionBase?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)
                 )).ToList();
 
                 return new SaldoVacacionesColaboradorDto(
@@ -414,8 +415,8 @@ public static partial class PermisosEndpoints
                 return Results.NotFound(ApiResponse<object>.Fail(404, "Colaborador no encontrado.", []));
 
             var tipo = request.TipoAjuste?.Trim().ToUpperInvariant() ?? "";
-            if (tipo is not ("AJUSTE_DIAS" or "EXCEPCION_FACTURA"))
-                return Results.BadRequest(ApiResponse<object>.Fail(400, "Tipo de ajuste inválido. Use AJUSTE_DIAS o EXCEPCION_FACTURA.", []));
+            if (tipo is not ("AJUSTE_DIAS" or "EXCEPCION_FACTURA" or "FECHA_AFILIACION"))
+                return Results.BadRequest(ApiResponse<object>.Fail(400, "Tipo de ajuste inválido. Use AJUSTE_DIAS, EXCEPCION_FACTURA o FECHA_AFILIACION.", []));
 
             var motivo = request.Motivo?.Replace("\0", "").Trim();
             if (string.IsNullOrWhiteSpace(motivo))
@@ -427,12 +428,23 @@ public static partial class PermisosEndpoints
             if (tipo == "EXCEPCION_FACTURA" && !request.PermiteVacaciones.HasValue)
                 return Results.BadRequest(ApiResponse<object>.Fail(400, "Debes indicar si se habilita o revoca la excepción de vacaciones.", []));
 
+            DateOnly? fechaAfiliacion = null;
+            if (tipo == "FECHA_AFILIACION")
+            {
+                fechaAfiliacion = ParsearFecha(request.FechaAfiliacionBase);
+                if (!fechaAfiliacion.HasValue)
+                    return Results.BadRequest(ApiResponse<object>.Fail(400, "Debes indicar una fecha de afiliación IESS válida.", []));
+                if (fechaAfiliacion.Value < new DateOnly(1980, 1, 1) || fechaAfiliacion.Value > CalculoHorasPeriodo.HoyEcuador())
+                    return Results.BadRequest(ApiResponse<object>.Fail(400, "La fecha de afiliación no puede ser futura ni anterior a 1980.", []));
+            }
+
             var entidad = new TblTimeReportAjusteVacaciones
             {
                 IdEmpleado = idEmpleado,
                 TipoAjuste = tipo,
                 DiasAjuste = tipo == "AJUSTE_DIAS" ? Math.Round(request.DiasAjuste, 2) : 0m,
                 PermiteVacaciones = tipo == "EXCEPCION_FACTURA" ? request.PermiteVacaciones : null,
+                FechaAfiliacionBase = fechaAfiliacion,
                 Motivo = motivo,
                 Activo = true,
                 UsuarioCreacion = actor.Email,
@@ -450,7 +462,8 @@ public static partial class PermisosEndpoints
                 entidad.PermiteVacaciones,
                 entidad.Motivo,
                 entidad.UsuarioCreacion,
-                entidad.FechaCreacion.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture));
+                entidad.FechaCreacion.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture),
+                entidad.FechaAfiliacionBase?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture));
 
             return Results.Ok(ApiResponse<AjusteVacacionesItemDto>.Ok(dto, "Ajuste registrado correctamente."));
         }).RequireAuthorization("PERMISOS_RRHH_CONFIRM");

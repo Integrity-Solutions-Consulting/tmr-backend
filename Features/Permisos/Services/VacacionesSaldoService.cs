@@ -31,7 +31,8 @@ public static class VacacionesSaldoService
     ///   * TCT = FJ + EMP = RISC ('RPS E ISC') -> MIXTO (con derecho)
     ///   * TCT = FJ/MT + otra empresa -> AFILIADO (con derecho)
     ///   * TCT = CON/COS/PAS -> FACTURA (sin derecho por defecto; habilitable vía EXCEPCION_FACTURA)
-    /// - Fecha base: fechadesde del contrato FJ en tbl_administracion_empleado_contrato (fallback: fechaingreso).
+    /// - Fecha base: 1) ajuste FECHA_AFILIACION (fecha real de afiliación IESS), 2) fechadesde del tramo
+    ///   afiliado FJ/MT en tbl_administracion_empleado_contrato, 3) fallback fechaingreso.
     /// - Ciclos por aniversario: 0 días antes del 1.er año; 15 días base por año cumplido + 1 día adicional
     ///   por cada año desde el 6.º (tope +15 => máximo 30 días/año), acumulables progresivamente.
     /// - Descuenta todas las solicitudes activas (no rechazadas ni observadas) con descuenta_vacaciones = true
@@ -156,6 +157,17 @@ public static class VacacionesSaldoService
         {
             fechaBase = empleado.Fechaingreso;
         }
+
+        // 3b. Fecha de AFILIACIÓN IESS registrada por Talento Humano / HC 2026 (prevalece sobre
+        //     fechaingreso y sobre el historial de contratos, que suele arrancar en el ingreso general
+        //     aunque el colaborador haya iniciado por Factura o Pasantía).
+        var ultimaFechaAfiliacion = ajustesActivos
+            .Where(a => a.TipoAjuste == "FECHA_AFILIACION" && a.FechaAfiliacionBase.HasValue)
+            .OrderByDescending(a => a.FechaCreacion)
+            .ThenByDescending(a => a.Id)
+            .FirstOrDefault();
+        if (tieneDerecho && ultimaFechaAfiliacion is not null)
+            fechaBase = ultimaFechaAfiliacion.FechaAfiliacionBase;
 
         // 4. Cálculo de años cumplidos, ciclos acumulados y proporcional del ciclo en curso
         var aniosCompletos = 0;
