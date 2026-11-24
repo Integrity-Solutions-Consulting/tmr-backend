@@ -1,5 +1,52 @@
 # Changelog
 
+## [1.9.2](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.9.1...v1.9.2) (2026-11-23)
+
+
+### Bug Fixes
+
+* **ci:** aplicar migraciones EF en la validación de base de datos ([8d8627b](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/8d8627b1b16209ae699263a4b504958b5042bc40))
+* **instalador:** validar secuencia de scripts SQL en vez de cantidad … ([090229d](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/090229d0ac0ff606a68fe92daccb543386f885b1))
+* **instalador:** validar secuencia de scripts SQL en vez de cantidad fija ([6bc7c21](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/6bc7c21edbb29c1d6ec9528ea874ffc6e019ba69))
+* mejoras ([7ce287f](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/7ce287f2c2d2cd9b33d45330fcd8a33ab3b28e80))
+
+## [1.9.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.9.0...v1.9.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* Añadir filtrado en Actividades ([62a0e9c](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/62a0e9c25204b5541bb510ac14e925d287a38aca))
+* Historial ([a995e7e](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/a995e7ead5dadb3d601776ae342985d174920f04))
+
+## [1.9.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.8.2...v1.9.0) (2026-11-18)
+
+
+### Features
+
+* datos de colaboradores y documentos S3 ([1c9c203](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/1c9c2033e0ccd7269a8599997667fa99d7078b37))
+* **permisos:** diseno corporativo refinado de correo y script de limpieza de pruebas ([3aba659](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/3aba6591077f8cb4949bc1b058c3bf7af42546a7))
+* **permisos:** envio directo a RRHH sin lider cuando colaborador no tiene proyecto asignado ([aa0d697](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/aa0d6973179436122f4852c39a29e1a34e7b5ec7))
+* **permisos:** formatear duracion en horas o dias con horas adicionales ([c64164f](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/c64164f257a3c6b37acea34cec12757d66befc7e))
+* **permisos:** horario por rango 08:30-17:30, tope 15 dias vacaciones y permisos informativos sin aprobacion ([c13fba1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/c13fba174af00e2dcec6643f3c2364578d63697c))
+* **permisos:** jerarquia visual formal y tarjeta estructurada en correos ([e21bb26](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/e21bb264f62f9df24f704dae12e04c33a3e06464))
+* **permisos:** permitir corregir y reenviar solicitudes observadas ([e8deeae](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/e8deeae315a61c20aadc838bc3b3125ba3c36dfb))
+* **permisos:** plantilla ultra minimalista y concisa de correos ([1661e40](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/1661e409932564ba0e3dbf6cab9da66986719996))
+* **permisos:** rediseno minimalista de correos y remocion de stepper ([5d016a2](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/5d016a2f1a8bace3460551013f316190255f569e))
+* **time-report:** sincronizar horas y seguimiento con solicitudes aprobadas (RESTA_META y SUMA_REPORTADAS) ([8008ec4](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/8008ec4188946f0c365d980ef52526098bb41b1d))
+
+
+### Bug Fixes
+
+* **mensajeria:** avisar al dispatcher de los eventos publicados en una transaccion al confirmarla ([63b211b](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/63b211be776c93247d0f204c5046a030ae60be41))
+* **notificaciones:** resultado del aviso sin esperar la cola y dispatcher que no se frena al arrancar ([b590fb3](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/b590fb3b355467911554adc49c930eee223d2072))
+* **permisos:** calculo de vacaciones por anio objetivo, antiguedad y mensaje de tope ([25d3cc8](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/25d3cc86a09a12a887c60df447b0195693e9ca35))
+* **permisos:** grant external test leader inbox role ([6a542da](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/6a542da5af24549a4a2de1b20fdcc97cc9ac670c))
+* **permisos:** magic link de lectura/PDF en informativos y cierre RRHH para lideres externos ([2893ced](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/2893ced498e306c5ccb67c0b35fc8ee268f681e6))
+* **permisos:** set external test account password ([41f675a](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/41f675ab7966e0a0ea835f46ad43b4838211cf14))
+* validaciones y flujo de documentos de colaboradores ([41e0046](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/41e0046bb9eb3a908e653362e85ee482574a03c1))
+* validaciones y flujo de documentos de colaboradores ([d2fc79f](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/d2fc79fa70a605eebbf3c19fd1a6c3854c5df6f3))
+* validar fecha fin de proyecto y recursos en proyectos inactivos ([f6511e0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/f6511e0bdf2338d8e02a5770d2da9451b94560e5))
+
 ## [1.8.2](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.8.1...v1.8.2) (2026-11-11)
 
 
