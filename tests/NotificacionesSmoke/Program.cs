@@ -1,3 +1,4 @@
+using tmr_backend.Features.Auth.Mappings;
 using System.Reflection;
 using System.Text.Json;
 using System.Threading.Channels;
@@ -100,7 +101,7 @@ Check(dtoParcial.Fechas == "11/11/2026 · 09:00 - 11:00", $"formato fecha parcia
 Check(dtoParcial.Duracion == "2 horas", $"formato duración parcial sin redundancia: {dtoParcial.Duracion}");
 
 // Verificar renderizado de plantilla HTML para todos los eventos y roles sin placeholders pendientes
-var rutaPlantilla = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "Features", "Permisos", "Templates", "notificacion-permiso.html"));
+var rutaPlantilla = Path.Combine(AppContext.BaseDirectory, "Features", "Permisos", "Templates", "notificacion-permiso.html");
 var htmlPlantilla = await File.ReadAllTextAsync(rutaPlantilla);
 foreach (var ev in Enum.GetValues<EventoNotificacionPermiso>())
 {
@@ -135,6 +136,31 @@ var calcSumaReportadas = CalculoHorasPeriodo.Calcular(
     empPrueba, diaPrueba, diaPrueba, [], new HashSet<DateOnly>(), diaPrueba,
     solicitudes: [new SolicitudAprobadaPeriodo(10, diaPrueba, diaPrueba, "MANANA", 4m, "SUMA_REPORTADAS")]);
 Check(calcSumaReportadas.HorasEsperadas == 8m && calcSumaReportadas.HorasRegistradas == 4m && calcSumaReportadas.HorasPorRegistrar == 4m, "SUMA_REPORTADAS acredita 4h registradas");
+
+var historico = new TblTimeReportSolicitud {
+    EsHistorico = true, VerificadoRrhh = false, DiasSolicitados = 7,
+    TipoPermiso = new TblTimeReportTipoPermiso { Codigo = "VACACIONES" },
+    Estado = new TblTimeReportEstadoSolicitud { Codigo = "APROBADA" }
+};
+var contrato = new TblAdministracionEmpleadoContrato { Activo = true, Fechadesde = diaPrueba.AddYears(-2) };
+var fechaHc = new TblTimeReportAjusteVacaciones {
+    TipoAjuste = "FECHA_AFILIACION", FechaAfiliacionBase = diaPrueba.AddYears(-3), UsuarioCreacion = "MIGRACION_HC2026"
+};
+var catalogosPrueba = new Dictionary<int, TblAdministracionCatalogoDetalle>();
+var provisional = VacacionesSaldoService.CalcularSaldo(empPrueba, [], catalogosPrueba, [historico], [], diaPrueba);
+Check(provisional.DiasConsumidos == 0 && provisional.OrigenFechaInicioVacaciones == "Ingreso general", "histórico pendiente excluido del saldo");
+historico.VerificadoRrhh = true;
+var contractual = VacacionesSaldoService.CalcularSaldo(empPrueba, [contrato], catalogosPrueba, [historico], [], diaPrueba);
+Check(contractual.DiasConsumidos == 7 && contractual.FechaInicioVacaciones == contrato.Fechadesde
+    && contractual.OrigenFechaInicioVacaciones == "Contrato", "verificación habilita consumo con fecha contractual");
+var afiliado = VacacionesSaldoService.CalcularSaldo(empPrueba, [contrato], catalogosPrueba, [historico], [fechaHc], diaPrueba);
+Check(afiliado.FechaInicioVacaciones == fechaHc.FechaAfiliacionBase && afiliado.OrigenFechaInicioVacaciones == "Afiliación registrada en HC",
+    "la afiliación registrada tiene prioridad sobre el contrato");
+foreach (var obligatorio in new[] { true, false })
+{
+    var usuarioPrueba = new TblAutenticacionUsuario { Debecambiarpassword = obligatorio };
+    Check(usuarioPrueba.ToUserResponse(null).DebeCambiarPassword == obligatorio, $"respuesta conserva cambio obligatorio = {obligatorio}");
+}
 
 var cs = Environment.GetEnvironmentVariable("TMR_TEST_POSTGRES");
 if (string.IsNullOrEmpty(cs))
