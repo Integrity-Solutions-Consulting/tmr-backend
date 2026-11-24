@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.10.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.9.2...v1.10.0) (2026-11-24)
+
+
+### Features
+
+* **permisos:** motor de saldos de vacaciones, historial editable RRHH y carga histórica ([27ea311](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/27ea31162820a434fea6064ba1e8e7f6583bbf50))
+* **permisos:** motor de saldos de vacaciones, historial editable RRHH y scripts de carga historica ([29a73d9](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/29a73d92f6ef4c7f6450f0c96d1201ed8b6f9ef8))
+
 ## [1.9.2](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.9.1...v1.9.2) (2026-11-23)
 
 
