@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.10.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.10.0...v1.10.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **permisos:** usar fecha real de afiliacion IESS como base de vacaci… ([5cebf96](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/5cebf96ad24bf6efdde4775c22591ba24bd40716))
+* **permisos:** usar fecha real de afiliacion IESS como base de vacaciones ([04995e3](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/04995e3964804756262430dcbed576e3cbbdd6c2))
+
 ## [1.10.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.9.2...v1.10.0) (2026-11-24)
 
 
