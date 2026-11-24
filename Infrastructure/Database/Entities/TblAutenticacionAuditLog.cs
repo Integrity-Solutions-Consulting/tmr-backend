@@ -5,7 +5,7 @@ namespace tmr_backend.Infrastructure.Database.Entities;
 
 public partial class TblAutenticacionAuditLog
 {
-    public int Id { get; set; }
+    public long Id { get; set; }
 
     public int? Idusuario { get; set; }
 

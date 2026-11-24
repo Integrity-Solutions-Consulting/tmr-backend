@@ -6,7 +6,7 @@ namespace tmr_backend.Migrations;
 
 [DbContext(typeof(ApplicationDbContext))]
 [Migration("20261119120000_AddConocimientosPerfil")]
-public sealed class AddConocimientosPerfil : Migration
+public sealed partial class AddConocimientosPerfil : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder) =>
         migrationBuilder.Sql("ALTER TABLE administracion.tbl_colaborador_datos_control ADD COLUMN IF NOT EXISTS conocimientos jsonb;");

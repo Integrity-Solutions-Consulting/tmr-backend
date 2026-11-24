@@ -82,7 +82,7 @@ AppDomain.CurrentDomain.UnhandledException += (_, e) =>
     Log.CloseAndFlush();
 };
 
-var databaseCommands = new[] { "--prepare-database", "--apply-migrations", "--initialize-data", "--verify-database" };
+var databaseCommands = new[] { "--prepare-database", "--adopt-baseline", "--apply-migrations", "--initialize-data", "--verify-database" };
 var requestedCommands = args.Where(databaseCommands.Contains).ToArray();
 if (requestedCommands.Length > 1)
     throw new InvalidOperationException("Ejecute una sola etapa de base de datos por comando.");
@@ -158,7 +158,8 @@ if (string.IsNullOrWhiteSpace(defaultConnection))
         "en el entorno del contenedor (o DB_CONNECTION_STRING para Docker Compose).");
 
 builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
-    options.UseNpgsql(defaultConnection)
+    options.UseNpgsql(defaultConnection, pg => pg.MigrationsHistoryTable(
+        MigrationHistory.TableName, MigrationHistory.GetMigrationsHistorySchema(builder.Configuration)))
            .AddInterceptors(
                sp.GetRequiredService<AuditInterceptor>(),
                // Despierta al EventDispatcher con los eventos publicados en una transacción, al confirmarla
@@ -451,6 +452,11 @@ app.MapActualizacionDatosEndpoints();
 app.MapNotificacionesEndpoints();
 app.MapPermisosEndpoints();
 app.MapIntegracionRpsEndpoints();
+if (app.Configuration.GetValue<bool>("Database:ApplyMigrationsOnStartup"))
+{
+    await tmr_backend.Infrastructure.Database.Scripts.DatabaseInstaller.RunAsync(
+        "--apply-migrations", app.Configuration);
+}
 app.Run();
 
 Log.CloseAndFlush();

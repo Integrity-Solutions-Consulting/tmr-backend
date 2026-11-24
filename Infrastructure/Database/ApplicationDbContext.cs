@@ -136,38 +136,26 @@ public partial class ApplicationDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder
-            // ─── FIX: HasPostgresEnum debe declarar TODOS los valores del enum C# RevocacionRazonEnum ───
-            // Si tu enum C# tiene más valores que los declarados aquí, Npgsql no puede mapearlos.
-            // También debes asegurarte de que el tipo en PostgreSQL tenga estos valores.
-            // Si la columna revocadorazon en PG es de tipo "autenticacion.revocacion_razon_enum",
-            // la alternativa más simple y robusta es eliminar esa restricción de tipo y usar TEXT.
             .HasPostgresEnum("autenticacion", "audit_evento_enum", new[]
             {
                 "LOGIN_OK", "LOGIN_FAIL", "LOGOUT", "REFRESH_OK", "REFRESH_FAIL",
                 "TOKEN_REVOKE", "PASSWORD_CHANGE", "USER_CREATE", "USER_BLOCK"
             })
-            // ─── CORREGIDO: se agregan todos los valores que usa RevocacionRazonEnum en C# ───
             .HasPostgresEnum("autenticacion", "revocacion_razon_enum", new[]
             {
-                "LOGOUT",
-                "ADMIN_REVOKE",
-                "ADMIN_REVOKE_ALL",
-                "PASSWORD_CHANGE",
-                "SECURITY_BREACH",
-                "EXPIRED",
-                "SESSION_LIMIT",
-                "TOKEN_REUSED",
-                "TOKEN_REVOKED",
-                "TOKEN_INVALID",
-                "TOKEN_EXPIRED",
-                "IP_MISMATCH",
-                "USER_AGENT_MISMATCH",
-                "SESSION_IDLE_TIMEOUT",
-                "SESSION_EXPIRED",
-                "REVOKE"
-            })
-            .HasPostgresExtension("pgcrypto")
-            .HasPostgresExtension("uuid-ossp");
+                "LOGOUT", "ADMIN_REVOKE", "PASSWORD_CHANGE", "SECURITY_BREACH", "EXPIRED", "SESSION_LIMIT"
+            });
+
+        // Estos modelos históricos siguen disponibles para sus consumidores, pero sus tablas
+        // no pertenecen al esquema instalado por TMR.
+        modelBuilder.Entity<Actividad>().ToTable(nameof(Actividades), table => table.ExcludeFromMigrations());
+        modelBuilder.Entity<Cliente>().ToTable(nameof(Clientes), table => table.ExcludeFromMigrations());
+        modelBuilder.Entity<Colaborador>().ToTable(nameof(Colaboradores), table => table.ExcludeFromMigrations());
+        modelBuilder.Entity<DashboardItem>().ToTable(nameof(DashboardItems), table => table.ExcludeFromMigrations());
+        modelBuilder.Entity<Lider>().ToTable(nameof(Lideres), table => table.ExcludeFromMigrations());
+        modelBuilder.Entity<Proyecto>().ToTable(nameof(Proyectos), table => table.ExcludeFromMigrations());
+        modelBuilder.Entity<RegistroTiempo>().ToTable(nameof(RegistrosTiempo), table => table.ExcludeFromMigrations());
+        modelBuilder.Entity<Reporte>().ToTable(nameof(Reportes), table => table.ExcludeFromMigrations());
 
         modelBuilder.Entity<TblAdministracionApariencium>(entity =>
         {
@@ -1015,7 +1003,7 @@ public partial class ApplicationDbContext : DbContext
                 .HasMaxLength(100)
                 .HasColumnName("codigo");
             entity.Property(e => e.Accion)
-                .HasMaxLength(50)
+                .HasMaxLength(40)
                 .HasColumnName("accion");
             entity.Property(e => e.Descripcion).HasColumnName("descripcion");
             entity.Property(e => e.Activo)
@@ -2735,6 +2723,10 @@ public partial class ApplicationDbContext : DbContext
             entity.ToTable("tbl_time_report_solicitud", "time_report");
 
             entity.HasIndex(e => e.Codigo, "uq_tr_solicitud_codigo").IsUnique();
+            entity.HasIndex(e => new { e.VerificadoRrhh, e.FechaInicio }, "idx_tr_solicitud_verificado_rrhh")
+                .IsDescending(false, true).HasFilter("activo = TRUE");
+            entity.HasIndex(e => new { e.IdEmpleado, e.DescuentaVacaciones }, "idx_tr_solicitud_descuenta_vac")
+                .HasFilter("activo = TRUE");
 
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.Codigo).HasMaxLength(30).HasColumnName("codigo");
@@ -2863,7 +2855,16 @@ public partial class ApplicationDbContext : DbContext
         modelBuilder.Entity<TblTimeReportAjusteVacaciones>(entity =>
         {
             entity.HasKey(e => e.Id);
-            entity.ToTable("tbl_time_report_ajuste_vacaciones", "time_report");
+            entity.ToTable("tbl_time_report_ajuste_vacaciones", "time_report", table =>
+            {
+                table.HasCheckConstraint("ck_tr_ajuste_vacaciones_tipo",
+                    "tipo_ajuste IN ('AJUSTE_DIAS', 'EXCEPCION_FACTURA', 'FECHA_AFILIACION')");
+                table.HasCheckConstraint("ck_tr_ajuste_vacaciones_motivo", "NULLIF(BTRIM(motivo), '') IS NOT NULL");
+                table.HasCheckConstraint("ck_tr_ajuste_vacaciones_fecha_afil",
+                    "tipo_ajuste <> 'FECHA_AFILIACION' OR fecha_afiliacion_base IS NOT NULL");
+            });
+            entity.HasIndex(e => new { e.IdEmpleado, e.FechaCreacion }, "idx_tr_ajuste_vacaciones_empleado")
+                .IsDescending(false, true).HasFilter("activo = TRUE");
 
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.IdEmpleado).HasColumnName("id_empleado");
