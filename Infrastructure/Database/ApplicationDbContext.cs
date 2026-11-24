@@ -125,6 +125,7 @@ public partial class ApplicationDbContext : DbContext
     public virtual DbSet<TblTimeReportSolicitud> TblTimeReportSolicitudes { get; set; } = null!;
     public virtual DbSet<TblTimeReportSolicitudRevision> TblTimeReportSolicitudRevisiones { get; set; } = null!;
     public virtual DbSet<TblTimeReportSolicitudAdjunto> TblTimeReportSolicitudAdjuntos { get; set; } = null!;
+    public virtual DbSet<TblTimeReportAjusteVacaciones> TblTimeReportAjustesVacaciones { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -2739,6 +2740,12 @@ public partial class ApplicationDbContext : DbContext
             entity.Property(e => e.TokenExterno).HasMaxLength(120).HasColumnName("token_externo");
             entity.Property(e => e.TokenExternoExpira).HasColumnName("token_externo_expira");
             entity.Property(e => e.TokenExternoUsadoEn).HasColumnName("token_externo_usado_en");
+            entity.Property(e => e.DescuentaVacaciones).HasDefaultValue(false).HasColumnName("descuenta_vacaciones");
+            entity.Property(e => e.EsRecuperable).HasDefaultValue(false).HasColumnName("es_recuperable");
+            entity.Property(e => e.EsAnticipada).HasDefaultValue(false).HasColumnName("es_anticipada");
+            entity.Property(e => e.EsHistorico).HasDefaultValue(false).HasColumnName("es_historico");
+            entity.Property(e => e.VerificadoRrhh).HasDefaultValue(true).HasColumnName("verificado_rrhh");
+            entity.Property(e => e.ObservacionMigracion).HasColumnName("observacion_migracion");
             entity.Property(e => e.Activo).HasDefaultValue(true).HasColumnName("activo");
             entity.Property(e => e.UsuarioCreacion).HasMaxLength(50).HasColumnName("usuario_creacion");
             entity.Property(e => e.FechaCreacion).HasDefaultValueSql("now()").HasColumnName("fecha_creacion");
@@ -2833,6 +2840,31 @@ public partial class ApplicationDbContext : DbContext
                 .HasForeignKey(d => d.SubidoPorUsuarioId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_tr_solicitud_adjunto_usuario");
+        });
+
+        modelBuilder.Entity<TblTimeReportAjusteVacaciones>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.ToTable("tbl_time_report_ajuste_vacaciones", "time_report");
+
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.IdEmpleado).HasColumnName("id_empleado");
+            entity.Property(e => e.TipoAjuste).HasMaxLength(30).HasColumnName("tipo_ajuste");
+            entity.Property(e => e.DiasAjuste).HasPrecision(6, 2).HasDefaultValue(0m).HasColumnName("dias_ajuste");
+            entity.Property(e => e.PermiteVacaciones).HasColumnName("permite_vacaciones");
+            entity.Property(e => e.Motivo).HasColumnName("motivo");
+            entity.Property(e => e.Activo).HasDefaultValue(true).HasColumnName("activo");
+            entity.Property(e => e.UsuarioCreacion).HasMaxLength(50).HasColumnName("usuario_creacion");
+            entity.Property(e => e.FechaCreacion).HasDefaultValueSql("now()").HasColumnName("fecha_creacion");
+            entity.Property(e => e.UsuarioModificacion).HasMaxLength(50).HasColumnName("usuario_modificacion");
+            entity.Property(e => e.FechaModificacion).HasColumnName("fecha_modificacion");
+            entity.Property(e => e.IpCreacion).HasMaxLength(45).HasColumnName("ip_creacion");
+            entity.Property(e => e.IpModificacion).HasMaxLength(45).HasColumnName("ip_modificacion");
+
+            entity.HasOne(d => d.Empleado).WithMany()
+                .HasForeignKey(d => d.IdEmpleado)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_tr_ajuste_vacaciones_empleado");
         });
 
         modelBuilder.Entity<NotificacionUsuario>(entity =>

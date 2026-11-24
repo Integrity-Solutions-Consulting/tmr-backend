@@ -57,6 +57,12 @@ public record CalendarioActividadDto(
 
 // sm - Si el usuario de la sesión puede completar actividades de un colaborador en un proyecto, por ser su líder ahí.
 // Proyecto lleva la vigencia del colaborador, para validar la fecha igual que cuando él mismo registra.
+public record CompletarLiderDto(
+    bool PuedeCompletar,
+    int? IdLider = null,
+    ProyectoLookupDto? Proyecto = null
+);
+
 public record ActualizarActividadDto(
     int? IdProyecto,
     int IdTipoActividad,

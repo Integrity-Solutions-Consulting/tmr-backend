@@ -27,6 +27,12 @@ public class TblTimeReportSolicitud
     public string? TokenExterno { get; set; }
     public DateTime? TokenExternoExpira { get; set; }
     public DateTime? TokenExternoUsadoEn { get; set; }
+    public bool DescuentaVacaciones { get; set; }
+    public bool EsRecuperable { get; set; }
+    public bool EsAnticipada { get; set; }
+    public bool EsHistorico { get; set; }
+    public bool VerificadoRrhh { get; set; } = true;
+    public string? ObservacionMigracion { get; set; }
     public bool Activo { get; set; } = true;
     public string UsuarioCreacion { get; set; } = null!;
     public DateTime FechaCreacion { get; set; }
