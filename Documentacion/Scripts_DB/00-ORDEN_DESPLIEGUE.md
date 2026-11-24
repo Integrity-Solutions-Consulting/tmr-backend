@@ -53,7 +53,7 @@ docker compose build backend
 docker compose run --rm backend --apply-migrations
 ```
 
-EF aplica `20261110000000_BaselineProduccion` y las cinco migraciones de colaboradores posteriores. El script 24 de permisos y vacaciones incorporado desde develop queda pendiente de integrar en las migraciones EF antes de desplegar esta versión.
+EF aplica `20261110000000_BaselineProduccion` y las migraciones posteriores de colaboradores y revisión de perfil. Los scripts 24 y 25 de permisos y vacaciones incorporados desde develop quedan pendientes de integrar en las migraciones EF antes de desplegar esta versión.
 La línea base incluye tablas, tipos, secuencias, funciones, triggers, restricciones e índices del esquema de producción. Para instalaciones nuevas incorpora los catálogos, módulos, roles y permisos del paquete histórico (incluidos GERENTE y sus permisos) y no crea cuentas personales. Las tres tablas de respaldo operativo `administracion.bkp_*` existentes en el respaldo original quedan fuera de la instalación. Las tablas de proveedores de `inventory` sí se incluyen. La FK de proveedores de la línea base corresponde a producción; la alineación con la variante de desarrollo requiere una entrega separada y validación previa de datos.
 
 `--prepare-database` sigue disponible para despliegues por etapas. En una base vacía instala solamente la línea base; en una que ya la tiene registrada termina sin retroceder de versión. `--apply-migrations` instala todas las pendientes. Ambos usan el historial configurado, `public."__EFMigrationsHistory"` por defecto. En ambientes que usan otro esquema configure `Database__MigrationsHistorySchema` tanto en la API como en el instalador.

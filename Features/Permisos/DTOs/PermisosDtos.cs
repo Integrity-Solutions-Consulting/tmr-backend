@@ -203,7 +203,8 @@ public sealed record AjusteVacacionesItemDto(
     bool? PermiteVacaciones,
     string Motivo,
     string UsuarioCreacion,
-    string FechaCreacion);
+    string FechaCreacion,
+    string? FechaAfiliacionBase = null);
 
 public sealed record SaldoVacacionesColaboradorDto(
     int IdEmpleado,
@@ -229,7 +230,8 @@ public sealed record SaldoVacacionesColaboradorDto(
     IReadOnlyList<AjusteVacacionesItemDto> Ajustes);
 
 public sealed record CrearAjusteVacacionesRequest(
-    string TipoAjuste, // "AJUSTE_DIAS" | "EXCEPCION_FACTURA"
+    string TipoAjuste, // "AJUSTE_DIAS" | "EXCEPCION_FACTURA" | "FECHA_AFILIACION"
     decimal DiasAjuste,
     bool? PermiteVacaciones,
-    string Motivo);
+    string Motivo,
+    string? FechaAfiliacionBase = null); // YYYY-MM-DD o DD/MM/YYYY (solo FECHA_AFILIACION)

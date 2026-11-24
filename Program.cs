@@ -268,6 +268,24 @@ builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>()
 // VALIDADORES DE COLABORADORES (nuevo)
 // ================================================================
 builder.Services.AddScoped<IValidator<RegistrarSalidaRequest>, RegistrarSalidaRequestValidator>();
+if (builder.Environment.IsDevelopment())
+{
+    var envPath = Path.Combine(builder.Environment.ContentRootPath, ".env");
+    if (File.Exists(envPath))
+    {
+        foreach (var line in File.ReadLines(envPath))
+        {
+            var separator = line.IndexOf('=');
+            if (separator < 0) continue;
+            var key = line[..separator].Trim();
+            if (key is not ("AWS_ACCESS_KEY_ID" or "AWS_SECRET_ACCESS_KEY" or "AWS_SESSION_TOKEN") ||
+                !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(key))) continue;
+            var value = line[(separator + 1)..].Trim().Trim((char)34, (char)39);
+            if (value.Length > 0) Environment.SetEnvironmentVariable(key, value);
+        }
+    }
+}
+
 builder.Services.Configure<FileStorageOptions>(builder.Configuration.GetSection("FileStorage"));
 builder.Services.Configure<LocalStorageOptions>(builder.Configuration.GetSection("FileStorage"));
 builder.Services.Configure<S3StorageOptions>(builder.Configuration.GetSection("FileStorage:S3"));
