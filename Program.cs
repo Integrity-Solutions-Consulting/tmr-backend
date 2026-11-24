@@ -159,7 +159,7 @@ if (string.IsNullOrWhiteSpace(defaultConnection))
 
 builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
     options.UseNpgsql(defaultConnection, pg => pg.MigrationsHistoryTable(
-        MigrationHistory.TableName, MigrationHistory.GetSchema(builder.Configuration)))
+        MigrationHistory.TableName, MigrationHistory.GetMigrationsHistorySchema(builder.Configuration)))
            .AddInterceptors(
                sp.GetRequiredService<AuditInterceptor>(),
                // Despierta al EventDispatcher con los eventos publicados en una transacción, al confirmarla
@@ -452,6 +452,11 @@ app.MapActualizacionDatosEndpoints();
 app.MapNotificacionesEndpoints();
 app.MapPermisosEndpoints();
 app.MapIntegracionRpsEndpoints();
+if (app.Configuration.GetValue<bool>("Database:ApplyMigrationsOnStartup"))
+{
+    await tmr_backend.Infrastructure.Database.Scripts.DatabaseInstaller.RunAsync(
+        "--apply-migrations", app.Configuration);
+}
 app.Run();
 
 Log.CloseAndFlush();

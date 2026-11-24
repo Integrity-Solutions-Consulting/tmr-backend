@@ -681,6 +681,9 @@ namespace tmr_backend.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("enviada");
 
+                    b.Property<string>("EstadoRevision")
+                        .HasColumnType("text");
+
                     b.Property<DateTime>("FechaCreacion")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("fechacreacion");
@@ -689,9 +692,24 @@ namespace tmr_backend.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("fechaenvio");
 
+                    b.Property<DateTime?>("FechaRevision")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("IdEmpleado")
                         .HasColumnType("integer")
                         .HasColumnName("idempleado");
+
+                    b.Property<string>("ObservacionRevision")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Propuesta")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Revisor")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Seccion")
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
@@ -4410,6 +4428,99 @@ namespace tmr_backend.Migrations
                     b.ToTable("tbl_time_report_actividad_diaria", "time_report");
                 });
 
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportAjusteVacaciones", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Activo")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("activo");
+
+                    b.Property<decimal>("DiasAjuste")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric(6,2)")
+                        .HasDefaultValue(0m)
+                        .HasColumnName("dias_ajuste");
+
+                    b.Property<DateOnly?>("FechaAfiliacionBase")
+                        .HasColumnType("date")
+                        .HasColumnName("fecha_afiliacion_base");
+
+                    b.Property<DateTime>("FechaCreacion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_creacion")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<DateTime?>("FechaModificacion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_modificacion");
+
+                    b.Property<int>("IdEmpleado")
+                        .HasColumnType("integer")
+                        .HasColumnName("id_empleado");
+
+                    b.Property<string>("IpCreacion")
+                        .IsRequired()
+                        .HasMaxLength(45)
+                        .HasColumnType("character varying(45)")
+                        .HasColumnName("ip_creacion");
+
+                    b.Property<string>("IpModificacion")
+                        .HasMaxLength(45)
+                        .HasColumnType("character varying(45)")
+                        .HasColumnName("ip_modificacion");
+
+                    b.Property<string>("Motivo")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("motivo");
+
+                    b.Property<bool?>("PermiteVacaciones")
+                        .HasColumnType("boolean")
+                        .HasColumnName("permite_vacaciones");
+
+                    b.Property<string>("TipoAjuste")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("tipo_ajuste");
+
+                    b.Property<string>("UsuarioCreacion")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("usuario_creacion");
+
+                    b.Property<string>("UsuarioModificacion")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("usuario_modificacion");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex(new[] { "IdEmpleado", "FechaCreacion" }, "idx_tr_ajuste_vacaciones_empleado")
+                        .IsDescending(false, true)
+                        .HasFilter("activo = TRUE");
+
+                    b.ToTable("tbl_time_report_ajuste_vacaciones", "time_report", t =>
+                        {
+                            t.HasCheckConstraint("ck_tr_ajuste_vacaciones_fecha_afil", "tipo_ajuste <> 'FECHA_AFILIACION' OR fecha_afiliacion_base IS NOT NULL");
+
+                            t.HasCheckConstraint("ck_tr_ajuste_vacaciones_motivo", "NULLIF(BTRIM(motivo), '') IS NOT NULL");
+
+                            t.HasCheckConstraint("ck_tr_ajuste_vacaciones_tipo", "tipo_ajuste IN ('AJUSTE_DIAS', 'EXCEPCION_FACTURA', 'FECHA_AFILIACION')");
+                        });
+                });
+
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportAsignacionProyecto", b =>
                 {
                     b.Property<int>("Id")
@@ -5250,6 +5361,12 @@ namespace tmr_backend.Migrations
                         .HasColumnType("character varying(30)")
                         .HasColumnName("codigo");
 
+                    b.Property<bool>("DescuentaVacaciones")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("descuenta_vacaciones");
+
                     b.Property<string>("DetalleHorario")
                         .HasMaxLength(120)
                         .HasColumnType("character varying(120)")
@@ -5259,6 +5376,24 @@ namespace tmr_backend.Migrations
                         .HasPrecision(5, 2)
                         .HasColumnType("numeric(5,2)")
                         .HasColumnName("dias_solicitados");
+
+                    b.Property<bool>("EsAnticipada")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("es_anticipada");
+
+                    b.Property<bool>("EsHistorico")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("es_historico");
+
+                    b.Property<bool>("EsRecuperable")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("es_recuperable");
 
                     b.Property<DateTime>("FechaCreacion")
                         .ValueGeneratedOnAdd()
@@ -5350,6 +5485,10 @@ namespace tmr_backend.Migrations
                         .HasColumnType("text")
                         .HasColumnName("motivo");
 
+                    b.Property<string>("ObservacionMigracion")
+                        .HasColumnType("text")
+                        .HasColumnName("observacion_migracion");
+
                     b.Property<string>("TokenExterno")
                         .HasMaxLength(120)
                         .HasColumnType("character varying(120)")
@@ -5374,13 +5513,17 @@ namespace tmr_backend.Migrations
                         .HasColumnType("character varying(50)")
                         .HasColumnName("usuario_modificacion");
 
+                    b.Property<bool>("VerificadoRrhh")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("verificado_rrhh");
+
                     b.HasKey("Id");
 
                     b.HasIndex("IdAsignacionProyecto");
 
                     b.HasIndex("IdCliente");
-
-                    b.HasIndex("IdEmpleado");
 
                     b.HasIndex("IdEstado");
 
@@ -5389,6 +5532,13 @@ namespace tmr_backend.Migrations
                     b.HasIndex("IdProyecto");
 
                     b.HasIndex("IdTipoPermiso");
+
+                    b.HasIndex(new[] { "IdEmpleado", "DescuentaVacaciones" }, "idx_tr_solicitud_descuenta_vac")
+                        .HasFilter("activo = TRUE");
+
+                    b.HasIndex(new[] { "VerificadoRrhh", "FechaInicio" }, "idx_tr_solicitud_verificado_rrhh")
+                        .IsDescending(false, true)
+                        .HasFilter("activo = TRUE");
 
                     b.HasIndex(new[] { "Codigo" }, "uq_tr_solicitud_codigo")
                         .IsUnique();
@@ -6406,6 +6556,17 @@ namespace tmr_backend.Migrations
                     b.Navigation("IdproyectoNavigation");
 
                     b.Navigation("IdtipoactividadNavigation");
+                });
+
+            modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportAjusteVacaciones", b =>
+                {
+                    b.HasOne("tmr_backend.Infrastructure.Database.Entities.TblAdministracionEmpleado", "Empleado")
+                        .WithMany()
+                        .HasForeignKey("IdEmpleado")
+                        .IsRequired()
+                        .HasConstraintName("fk_tr_ajuste_vacaciones_empleado");
+
+                    b.Navigation("Empleado");
                 });
 
             modelBuilder.Entity("tmr_backend.Infrastructure.Database.Entities.TblTimeReportAsignacionProyecto", b =>

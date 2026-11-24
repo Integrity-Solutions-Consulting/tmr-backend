@@ -10,7 +10,7 @@ using tmr_backend.Infrastructure.Security;
 
 namespace tmr_backend.Infrastructure.Database.Scripts;
 
-/// <summary>Etapas explícitas de instalación; no se invoca durante el arranque web.</summary>
+/// <summary>Etapas de instalación y actualización del esquema y de los datos iniciales.</summary>
 public static class DatabaseInstaller
 {
     public static async Task RunAsync(string command, IConfiguration configuration)
@@ -25,7 +25,7 @@ public static class DatabaseInstaller
         await new NpgsqlCommand("SELECT pg_advisory_lock(846720261017)", connection).ExecuteNonQueryAsync();
         try
         {
-            var migrationHistorySchema = MigrationHistory.GetSchema(configuration);
+            var migrationHistorySchema = MigrationHistory.GetMigrationsHistorySchema(configuration);
             var optionsBuilder = new DbContextOptionsBuilder<ApplicationDbContext>()
                 .UseNpgsql(connection, npgsql => npgsql.MigrationsHistoryTable(MigrationHistory.TableName, migrationHistorySchema));
             var options = optionsBuilder.Options;

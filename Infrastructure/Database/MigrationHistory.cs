@@ -4,6 +4,6 @@ internal static class MigrationHistory
 {
     public const string TableName = "__EFMigrationsHistory";
 
-    public static string GetSchema(IConfiguration configuration) =>
+    public static string GetMigrationsHistorySchema(IConfiguration configuration) =>
         configuration["Database:MigrationsHistorySchema"] ?? "public";
 }

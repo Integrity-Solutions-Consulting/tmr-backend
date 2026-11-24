@@ -1,8 +1,11 @@
 # Instalación y actualización de TMR
 
 Guía vigente: ejecutar desde la raíz de `tmr-backend`. Preparación de esquema,
-inicialización de datos y arranque son etapas independientes. Ninguna se ejecuta
-automáticamente al iniciar el servidor web. La instalación nueva requiere una
+inicialización de datos y arranque son etapas independientes por defecto.
+En Dokploy, definir `Database__ApplyMigrationsOnStartup=true` en el contenedor
+para aplicar las migraciones pendientes antes de aceptar tráfico. Si falla la migración,
+el proceso termina con error. La adopción de bases existentes y la inicialización de
+datos siguen siendo pasos explícitos. La instalación nueva requiere una
 base vacía y no debe ejecutarse sobre Desarrollo ni Producción.
 
 ## Requisitos
@@ -53,7 +56,7 @@ docker compose build backend
 docker compose run --rm backend --apply-migrations
 ```
 
-EF aplica `20261110000000_BaselineProduccion` y las migraciones posteriores de colaboradores y revisión de perfil. Los scripts 24 y 25 de permisos y vacaciones incorporados desde develop quedan pendientes de integrar en las migraciones EF antes de desplegar esta versión.
+EF aplica `20261110000000_BaselineProduccion` y las migraciones posteriores de colaboradores y revisión de perfil. La migración `20261124200005_VacacionesHistorialYAfiliacion` integra los scripts 24 y 25. Al crear la columna de descuento, marca las solicitudes previas de tipo VACACIONES. En una base con línea base registrada y esa columna ya instalada, conserva sus valores y los ajustes existentes. Para revertir esta migración se requiere restaurar un respaldo.
 La línea base incluye tablas, tipos, secuencias, funciones, triggers, restricciones e índices del esquema de producción. Para instalaciones nuevas incorpora los catálogos, módulos, roles y permisos del paquete histórico (incluidos GERENTE y sus permisos) y no crea cuentas personales. Las tres tablas de respaldo operativo `administracion.bkp_*` existentes en el respaldo original quedan fuera de la instalación. Las tablas de proveedores de `inventory` sí se incluyen. La FK de proveedores de la línea base corresponde a producción; la alineación con la variante de desarrollo requiere una entrega separada y validación previa de datos.
 
 `--prepare-database` sigue disponible para despliegues por etapas. En una base vacía instala solamente la línea base; en una que ya la tiene registrada termina sin retroceder de versión. `--apply-migrations` instala todas las pendientes. Ambos usan el historial configurado, `public."__EFMigrationsHistory"` por defecto. En ambientes que usan otro esquema configure `Database__MigrationsHistorySchema` tanto en la API como en el instalador.
@@ -123,7 +126,7 @@ ejemplo no cambia los workflows ni los dominios de instalaciones existentes.
 Liveness comprueba el proceso; readiness devuelve 503 si PostgreSQL no responde.
 Comprobar además login, cambio de clave, roles, catálogos y recuperación de
 contraseña en el frontend publicado. La cadena ausente impide arrancar con un
-error sin credenciales. Una cadena presente no abre conexión durante el arranque.
+error sin credenciales. Con la migración automática habilitada, PostgreSQL debe estar accesible al arrancar.
 La limpieza de sesiones consulta la base tras 30 segundos y las notificaciones,
 si están habilitadas, según calendario tras una espera inicial de un minuto.
 Son procesos operativos y no se desactivaron para ocultar fallos de CI.

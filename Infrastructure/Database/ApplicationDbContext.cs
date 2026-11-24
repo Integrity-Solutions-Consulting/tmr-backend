@@ -2717,6 +2717,10 @@ public partial class ApplicationDbContext : DbContext
             entity.ToTable("tbl_time_report_solicitud", "time_report");
 
             entity.HasIndex(e => e.Codigo, "uq_tr_solicitud_codigo").IsUnique();
+            entity.HasIndex(e => new { e.VerificadoRrhh, e.FechaInicio }, "idx_tr_solicitud_verificado_rrhh")
+                .IsDescending(false, true).HasFilter("activo = TRUE");
+            entity.HasIndex(e => new { e.IdEmpleado, e.DescuentaVacaciones }, "idx_tr_solicitud_descuenta_vac")
+                .HasFilter("activo = TRUE");
 
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.Codigo).HasMaxLength(30).HasColumnName("codigo");
@@ -2845,7 +2849,16 @@ public partial class ApplicationDbContext : DbContext
         modelBuilder.Entity<TblTimeReportAjusteVacaciones>(entity =>
         {
             entity.HasKey(e => e.Id);
-            entity.ToTable("tbl_time_report_ajuste_vacaciones", "time_report");
+            entity.ToTable("tbl_time_report_ajuste_vacaciones", "time_report", table =>
+            {
+                table.HasCheckConstraint("ck_tr_ajuste_vacaciones_tipo",
+                    "tipo_ajuste IN ('AJUSTE_DIAS', 'EXCEPCION_FACTURA', 'FECHA_AFILIACION')");
+                table.HasCheckConstraint("ck_tr_ajuste_vacaciones_motivo", "NULLIF(BTRIM(motivo), '') IS NOT NULL");
+                table.HasCheckConstraint("ck_tr_ajuste_vacaciones_fecha_afil",
+                    "tipo_ajuste <> 'FECHA_AFILIACION' OR fecha_afiliacion_base IS NOT NULL");
+            });
+            entity.HasIndex(e => new { e.IdEmpleado, e.FechaCreacion }, "idx_tr_ajuste_vacaciones_empleado")
+                .IsDescending(false, true).HasFilter("activo = TRUE");
 
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.IdEmpleado).HasColumnName("id_empleado");
