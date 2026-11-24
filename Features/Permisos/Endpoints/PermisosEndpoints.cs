@@ -22,6 +22,7 @@ public static partial class PermisosEndpoints
         var group = app.MapGroup("/api/permisos").WithTags("Permisos");
         group.AddEndpointFilter<PermisoNotificacionTransactionFilter>();
         MapEnviosPermisoEndpoints(group);
+        MapRrhhGestionEndpoints(group);
 
         // 0. Diagnóstico de conexión a MinIO S3 (restringido a RRHH / Administradores)
         group.MapGet("/storage/estado", async (
@@ -76,6 +77,7 @@ public static partial class PermisosEndpoints
                     .Include(e => e.IdcargoNavigation)
                         .ThenInclude(c => c!.IddepartamentoNavigation)
                     .Include(e => e.IdtipocontratoNavigation)
+                    .Include(e => e.IdempresacatalogoNavigation)
                     .FirstOrDefaultAsync(ct);
             }
 
@@ -89,6 +91,7 @@ public static partial class PermisosEndpoints
                     .Include(e => e.IdcargoNavigation)
                         .ThenInclude(c => c!.IddepartamentoNavigation)
                     .Include(e => e.IdtipocontratoNavigation)
+                    .Include(e => e.IdempresacatalogoNavigation)
                     .FirstOrDefaultAsync(ct);
             }
 
@@ -196,7 +199,8 @@ public static partial class PermisosEndpoints
                     .ToListAsync(ct);
             }
 
-            var diasDisponibles = CalcularDiasVacacionesDisponibles(empleado, misSolicitudes);
+            var resumenSaldo = await VacacionesSaldoService.CalcularSaldoEmpleadoAsync(db, empleado, misSolicitudes, ct);
+            var diasDisponibles = resumenSaldo.SaldoDisponible;
             var enProceso = misSolicitudes.Count(s => s.Estado.Semaforo == "AMARILLO");
             var aprobados = misSolicitudes.Count(s => s.Estado.Codigo == "APROBADA");
             var horasAcumuladas = misSolicitudes
@@ -233,7 +237,15 @@ public static partial class PermisosEndpoints
                 EsNomina: esNomina,
                 TipoContrato: tipoContratoNombre,
                 TiposPermiso: tiposPermisoCatalogo,
-                RrhhDisponibles: await ObtenerCatalogoUsuariosRrhhAsync(db, ct));
+                RrhhDisponibles: await ObtenerCatalogoUsuariosRrhhAsync(db, ct),
+                RegimenVacaciones: resumenSaldo.Regimen,
+                TieneDerechoVacaciones: resumenSaldo.TieneDerechoVacaciones,
+                FechaInicioVacaciones: resumenSaldo.FechaInicioVacaciones?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
+                DiasGanadosAcumulados: resumenSaldo.DiasGanadosAcumulados,
+                DiasConsumidosVacaciones: resumenSaldo.DiasConsumidos,
+                DiasAjusteVacaciones: resumenSaldo.DiasAjuste,
+                DiasProporcionalesCiclo: resumenSaldo.DiasProporcionalesCicloActual,
+                MaximoAnticipoDias: VacacionesSaldoService.MaximoAnticipoDias);
 
             return Results.Ok(ApiResponse<ContextoColaboradorPermisoDto>.Ok(dto));
         }).RequireAuthorization("MIS_PERMISOS_READ");
@@ -986,6 +998,7 @@ public static partial class PermisosEndpoints
                 .AsNoTracking()
                 .DeLaPersona(usuario.Idpersona)
                 .Include(e => e.IdtipocontratoNavigation)
+                .Include(e => e.IdempresacatalogoNavigation)
                 .FirstOrDefaultAsync(ct);
         }
 
@@ -996,6 +1009,7 @@ public static partial class PermisosEndpoints
                 .AsNoTracking()
                 .Where(e => e.Activo && e.Emailcorporativo != null && e.Emailcorporativo.ToLower() == emailLower)
                 .Include(e => e.IdtipocontratoNavigation)
+                .Include(e => e.IdempresacatalogoNavigation)
                 .FirstOrDefaultAsync(ct);
         }
 
@@ -1035,23 +1049,17 @@ public static partial class PermisosEndpoints
         if (fechaFin.Value < fechaInicio.Value)
             return Results.BadRequest(ApiResponse<object>.Fail(400, "La fecha de finalización no puede ser anterior a la fecha de inicio.", []));
 
+        var tipoPermiso = await ObtenerTipoPermisoAsync(db, request.TipoOficial, ct);
+        if (tipoPermiso is null)
+            return Results.BadRequest(ApiResponse<object>.Fail(400, "El catálogo de tipos de permiso no está inicializado.", []));
+
+        var esVacaciones = tipoPermiso.Codigo == "VACACIONES";
         var horario = string.IsNullOrWhiteSpace(request.Horario) ? "COMPLETA" : request.Horario.Trim().ToUpperInvariant();
         if (horario is not ("COMPLETA" or "MANANA" or "TARDE" or "OTROS"))
             horario = "COMPLETA";
 
         // Cargar feriados activos del rango para descontarlos de los días hábiles y fecha de regreso
         var feriados = await CargarFeriadosRangoAsync(db, fechaInicio.Value, fechaFin.Value.AddDays(15), ct);
-
-        var diasLaborablesRango = CalcularDiasLaborablesSinMinimo(fechaInicio.Value, fechaFin.Value, feriados);
-        if (diasLaborablesRango > 90)
-            return Results.BadRequest(ApiResponse<object>.Fail(400, "El período solicitado no puede superar los 90 días hábiles.", []));
-        if (diasLaborablesRango <= 0)
-        {
-            return Results.BadRequest(ApiResponse<object>.Fail(
-                400,
-                "El período seleccionado solo contiene fines de semana o días feriados.",
-                []));
-        }
 
         var fechaRegresoSolicitada = ParsearFecha(request.FechaRegreso);
         var fechaRegreso = fechaRegresoSolicitada.HasValue
@@ -1062,40 +1070,67 @@ public static partial class PermisosEndpoints
 
         decimal diasHabiles;
         decimal horasTotales;
-        if (horario is "MANANA" or "TARDE")
-        {
-            if (fechaInicio.Value != fechaFin.Value) return Results.BadRequest(ApiResponse<object>.Fail(400, "Los permisos de media jornada (mañana o tarde) deben solicitarse para un único día.", []));
-            diasHabiles = 0.5m;
-            horasTotales = 4m;
-        }
-        else if (horario is "OTROS" or "COMPLETA")
-        {
-            var horasDesdeDetalle = ExtraerHorasDesdeDetalleHorario(detalleHorarioLimpio);
-            if (horasDesdeDetalle.HasValue)
-            {
-                if (horasDesdeDetalle.Value < 0.5m || horasDesdeDetalle.Value > 8m)
-                    return Results.BadRequest(ApiResponse<object>.Fail(400, "Revisa el horario: elige horas dentro de la jornada laboral, con la hora de fin posterior al inicio. El permiso debe durar entre 30 minutos y 8 horas por día.", []));
-                horario = horasDesdeDetalle.Value >= 8m ? "COMPLETA" : "OTROS";
-                horasTotales = Math.Round(horasDesdeDetalle.Value * diasLaborablesRango, 2);
-            }
-            else if (request.TotalHoras is > 0)
-            {
-                horasTotales = Math.Round(request.TotalHoras.Value, 2);
-                if (horasTotales < 0.5m || horasTotales > diasLaborablesRango * 8m)
-                    return Results.BadRequest(ApiResponse<object>.Fail(400, "Revisa la duración solicitada: debe ser de al menos 30 minutos y hasta 8 horas por día laborable.", []));
-                horario = horasTotales >= diasLaborablesRango * 8m ? "COMPLETA" : "OTROS";
-            }
-            else
-            {
-                return Results.BadRequest(ApiResponse<object>.Fail(400, "Para la jornada 'Otros', debes indicar un rango de horas válido (por ejemplo: 09:00 - 11:00).", []));
-            }
 
-            diasHabiles = Math.Round(horasTotales / 8m, 2);
+        if (esVacaciones)
+        {
+            // Regla ISC / Art. 69 Código del Trabajo: las vacaciones se cuentan por días calendario enteros.
+            var diasCalendario = (decimal)(fechaFin.Value.DayNumber - fechaInicio.Value.DayNumber + 1);
+            if (diasCalendario > 90m)
+                return Results.BadRequest(ApiResponse<object>.Fail(400, "El período solicitado no puede superar los 90 días calendario.", []));
+
+            horario = "COMPLETA";
+            detalleHorarioLimpio = "Días calendario";
+            diasHabiles = diasCalendario;
+            horasTotales = diasCalendario * 8m;
         }
         else
         {
-            diasHabiles = diasLaborablesRango;
-            horasTotales = diasHabiles * 8m;
+            var diasLaborablesRango = CalcularDiasLaborablesSinMinimo(fechaInicio.Value, fechaFin.Value, feriados);
+            if (diasLaborablesRango > 90)
+                return Results.BadRequest(ApiResponse<object>.Fail(400, "El período solicitado no puede superar los 90 días hábiles.", []));
+            if (diasLaborablesRango <= 0)
+            {
+                return Results.BadRequest(ApiResponse<object>.Fail(
+                    400,
+                    "El período seleccionado solo contiene fines de semana o días feriados.",
+                    []));
+            }
+
+            if (horario is "MANANA" or "TARDE")
+            {
+                if (fechaInicio.Value != fechaFin.Value) return Results.BadRequest(ApiResponse<object>.Fail(400, "Los permisos de media jornada (mañana o tarde) deben solicitarse para un único día.", []));
+                diasHabiles = 0.5m;
+                horasTotales = 4m;
+            }
+            else if (horario is "OTROS" or "COMPLETA")
+            {
+                var horasDesdeDetalle = ExtraerHorasDesdeDetalleHorario(detalleHorarioLimpio);
+                if (horasDesdeDetalle.HasValue)
+                {
+                    if (horasDesdeDetalle.Value < 0.5m || horasDesdeDetalle.Value > 8m)
+                        return Results.BadRequest(ApiResponse<object>.Fail(400, "Revisa el horario: elige horas dentro de la jornada laboral, con la hora de fin posterior al inicio. El permiso debe durar entre 30 minutos y 8 horas por día.", []));
+                    horario = horasDesdeDetalle.Value >= 8m ? "COMPLETA" : "OTROS";
+                    horasTotales = Math.Round(horasDesdeDetalle.Value * diasLaborablesRango, 2);
+                }
+                else if (request.TotalHoras is > 0)
+                {
+                    horasTotales = Math.Round(request.TotalHoras.Value, 2);
+                    if (horasTotales < 0.5m || horasTotales > diasLaborablesRango * 8m)
+                        return Results.BadRequest(ApiResponse<object>.Fail(400, "Revisa la duración solicitada: debe ser de al menos 30 minutos y hasta 8 horas por día laborable.", []));
+                    horario = horasTotales >= diasLaborablesRango * 8m ? "COMPLETA" : "OTROS";
+                }
+                else
+                {
+                    return Results.BadRequest(ApiResponse<object>.Fail(400, "Para la jornada 'Otros', debes indicar un rango de horas válido (por ejemplo: 09:00 - 11:00).", []));
+                }
+
+                diasHabiles = Math.Round(horasTotales / 8m, 2);
+            }
+            else
+            {
+                diasHabiles = diasLaborablesRango;
+                horasTotales = diasHabiles * 8m;
+            }
         }
 
         // Validar que el mismo colaborador no tenga otra solicitud activa traslapada en esas fechas
@@ -1105,6 +1140,7 @@ public static partial class PermisosEndpoints
             .Include(s => s.TipoPermiso)
             .Where(s => s.Activo
                         && s.IdEmpleado == empleado.Id
+                        && (corregida == null || s.Id != corregida.Id)
                         && s.Estado.Codigo != "RECHAZADA"
                         && s.Estado.Codigo != "OBSERVADA"
                         && s.FechaInicio <= fechaFin.Value
@@ -1124,10 +1160,6 @@ public static partial class PermisosEndpoints
                 []));
         }
 
-        var tipoPermiso = await ObtenerTipoPermisoAsync(db, request.TipoOficial, ct);
-        if (tipoPermiso is null)
-            return Results.BadRequest(ApiResponse<object>.Fail(400, "El catálogo de tipos de permiso no está inicializado.", []));
-
         var hoyEcuadorValidacion = CalculoHorasPeriodo.HoyEcuador();
         var esPermisoPlanificado = tipoPermiso.Codigo is "VACACIONES" or "MATRIMONIO" or "MATERNIDAD" or "PERMISO_ESTUDIOS";
         if (esPermisoPlanificado && fechaInicio.Value < hoyEcuadorValidacion)
@@ -1146,33 +1178,45 @@ public static partial class PermisosEndpoints
                 []));
         }
 
-        // Validar saldo anual de vacaciones disponibles (base 15 días/año + antigüedad)
-        if (tipoPermiso.Codigo == "VACACIONES")
+        // Validar régimen, saldo acumulado por ciclos de aniversario y soporte de vacaciones anticipadas
+        var esAnticipada = false;
+        if (esVacaciones)
         {
-            var solicitudesAnioEmpleado = await db.TblTimeReportSolicitudes
+            var solicitudesEmpleado = await db.TblTimeReportSolicitudes
                 .AsNoTracking()
                 .Include(s => s.Estado)
                 .Include(s => s.TipoPermiso)
-                .Where(s => s.Activo && s.IdEmpleado == empleado.Id)
+                .Where(s => s.Activo && s.IdEmpleado == empleado.Id && (corregida == null || s.Id != corregida.Id))
                 .ToListAsync(ct);
 
-            var anioSolicitado = fechaInicio?.Year ?? DateTime.UtcNow.Year;
-            var diasDisponiblesVacaciones = CalcularDiasVacacionesDisponibles(empleado, solicitudesAnioEmpleado, anioSolicitado);
-            if (diasHabiles > 15m || horasTotales > 120m)
+            var resumenSaldo = await VacacionesSaldoService.CalcularSaldoEmpleadoAsync(db, empleado, solicitudesEmpleado, ct);
+            if (!resumenSaldo.TieneDerechoVacaciones)
             {
                 return Results.BadRequest(ApiResponse<object>.Fail(
                     400,
-                    $"Por política operativa, cada solicitud individual de vacaciones puede ser de hasta 15 días laborables (120 horas). Solicitas {diasHabiles:0.##} día(s) ({horasTotales:0.##} h). Tu saldo disponible total es de {diasDisponiblesVacaciones:0.##} día(s).",
+                    "Tu régimen contractual actual (Factura / Prestación de servicios) no incluye derecho a vacaciones. Si cuentas con una excepción autorizada, solicita a Talento Humano habilitarla en tu ficha de saldos.",
                     []));
             }
 
-            if (diasHabiles > diasDisponiblesVacaciones)
+            if (diasHabiles > VacacionesSaldoService.MaximoDiasPorSolicitudVacaciones)
             {
                 return Results.BadRequest(ApiResponse<object>.Fail(
                     400,
-                    $"No cuentas con suficientes días de vacaciones disponibles para el período {anioSolicitado}. Solicitas {diasHabiles:0.##} día(s) ({horasTotales:0.##} h), pero tu saldo disponible para este año es de {diasDisponiblesVacaciones:0.##} día(s) ({Math.Round(diasDisponiblesVacaciones * 8m, 2):0.##} h).",
+                    $"Cada solicitud individual de vacaciones puede ser de hasta {VacacionesSaldoService.MaximoDiasPorSolicitudVacaciones:0.##} días calendario. Solicitas {diasHabiles:0.##} día(s). Tu saldo acumulado actual es de {resumenSaldo.SaldoDisponible:0.##} día(s).",
                     []));
             }
+
+            var saldoResultante = resumenSaldo.SaldoDisponible - diasHabiles;
+            if (saldoResultante < -VacacionesSaldoService.MaximoAnticipoDias)
+            {
+                var maximoSolicitable = Math.Max(0m, resumenSaldo.SaldoDisponible + VacacionesSaldoService.MaximoAnticipoDias);
+                return Results.BadRequest(ApiResponse<object>.Fail(
+                    400,
+                    $"Esta solicitud excede el límite permitido de vacaciones anticipadas ({VacacionesSaldoService.MaximoAnticipoDias:0.##} días sobre tu saldo acumulado). Tu saldo actual es {resumenSaldo.SaldoDisponible:0.##} día(s), por lo que puedes solicitar hasta {maximoSolicitable:0.##} día(s) calendario.",
+                    []));
+            }
+
+            esAnticipada = diasHabiles > resumenSaldo.SaldoDisponible;
         }
 
         // RF-004: Certificado médico obligatorio para Nómina en Licencia por enfermedad > 1 día
@@ -1341,6 +1385,11 @@ public static partial class PermisosEndpoints
                         TokenExterno = esLiderExternoAsignado ? Guid.NewGuid().ToString("N") : null,
                         TokenExternoExpira = esLiderExternoAsignado ? (esInformativo ? DateTime.UtcNow.AddDays(30) : DateTime.UtcNow.AddHours(72)) : null,
                         TokenExternoUsadoEn = esLiderExternoAsignado && esInformativo ? DateTime.UtcNow : null,
+                        DescuentaVacaciones = esVacaciones,
+                        EsRecuperable = !esVacaciones && tipoPermiso.Codigo is "CITAS_MEDICAS" or "OTROS",
+                        EsAnticipada = esAnticipada,
+                        EsHistorico = false,
+                        VerificadoRrhh = true,
                         Activo = true,
                         UsuarioCreacion = usuario.Email,
                         FechaCreacion = DateTime.UtcNow,
@@ -1569,11 +1618,14 @@ public static partial class PermisosEndpoints
 
         var totalDias = s.DiasSolicitados;
         var totalHoras = s.HorasSolicitadas ?? (totalDias * 8m);
-        var diasStr = FormatearDiasYHorasLegible(totalHoras);
+        var esTipoVacaciones = string.Equals(s.TipoPermiso.Codigo, "VACACIONES", StringComparison.OrdinalIgnoreCase);
+        var diasStr = esTipoVacaciones
+            ? $"{totalDias.ToString("0.##", CultureInfo.InvariantCulture)} {(totalDias == 1m ? "día calendario" : "días calendario")}"
+            : FormatearDiasYHorasLegible(totalHoras);
         var horasStr = $"{totalHoras.ToString("0.##", CultureInfo.InvariantCulture)} {(totalHoras == 1m ? "hora" : "horas")}";
-        var duracionStr = totalHoras < 8m
+        var duracionStr = esTipoVacaciones
             ? diasStr
-            : $"{diasStr} · {horasStr}";
+            : (totalHoras < 8m ? diasStr : $"{diasStr} · {horasStr}");
 
         var aprobadoLider = revLider?.Decision == "APROBADO" || s.Estado.Codigo is "PENDIENTE_TH" or "APROBADA";
         var confirmadoRrhh = revTh?.Decision == "APROBADO" || s.Estado.Codigo == "APROBADA";
@@ -1667,7 +1719,13 @@ public static partial class PermisosEndpoints
             // (con `with`) al DTO que se usa para el correo al líder externo.
             TokenExterno: null,
             Adjuntos: adjuntosDto,
-            VersionSolicitud: VersionActualSolicitud(s));
+            VersionSolicitud: VersionActualSolicitud(s),
+            DescuentaVacaciones: s.DescuentaVacaciones,
+            EsRecuperable: s.EsRecuperable,
+            EsAnticipada: s.EsAnticipada,
+            EsHistorico: s.EsHistorico,
+            VerificadoRrhh: s.VerificadoRrhh,
+            ObservacionMigracion: s.ObservacionMigracion);
     }
 
     // =========================================================================
