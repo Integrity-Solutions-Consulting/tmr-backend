@@ -58,7 +58,7 @@ internal static class BaselineAdoption
 
         string[] candidates = applied.Count == 0
             ? ["Produccion", "SQL01a23"]
-            : ["Desarrollo", "SQL01a23ConPerfil"];
+            : ["Desarrollo", "SQL01a23ConPerfil", "DesarrolloConRevisionPerfilEImportacionFaltas"];
         var comparisons = candidates.Select(name =>
         {
             var expected = references[name];
