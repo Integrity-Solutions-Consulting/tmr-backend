@@ -617,6 +617,13 @@ public static partial class PermisosEndpoints
 
         // 10. Bandeja de Validación Talento Humano (Paso 3)
         group.MapGet("/rrhh", async (
+            [FromQuery] string? bandeja,
+            [FromQuery] string? buscar,
+            [FromQuery] string? tipo,
+            [FromQuery] string? desde,
+            [FromQuery] string? hasta,
+            [FromQuery] int? page,
+            [FromQuery] int? pageSize,
             ApplicationDbContext db,
             ICurrentUserService currentUser,
             CancellationToken ct) =>
@@ -628,13 +635,56 @@ public static partial class PermisosEndpoints
             if (!actor.EsAdmin && !actor.EsRrhh)
                 return Results.Json(ApiResponse<object>.Fail(403, "Acceso exclusivo para Talento Humano (RRHH).", []), statusCode: 403);
 
-            var lista = await ConsultarSolicitudesBase(db)
-                .Where(s => s.Activo)
-                .OrderByDescending(s => s.FechaCreacion)
-                .ToListAsync(ct);
+            // Sin "page" se conserva el comportamiento anterior (lista completa)
+            if (page is null)
+            {
+                var lista = await ConsultarSolicitudesBase(db)
+                    .Where(s => s.Activo)
+                    .OrderByDescending(s => s.FechaCreacion)
+                    .ToListAsync(ct);
+                return Results.Ok(ApiResponse<IReadOnlyList<PermisoItemDto>>.Ok(
+                    lista.Select(s => MapearSolicitudDto(s, null)).ToList()));
+            }
 
-            var dtos = lista.Select(s => MapearSolicitudDto(s, null)).ToList();
-            return Results.Ok(ApiResponse<IReadOnlyList<PermisoItemDto>>.Ok(dtos));
+            var filtro = db.TblTimeReportSolicitudes.AsNoTracking().Where(s => s.Activo);
+            filtro = AplicarBusquedaSolicitudes(filtro, buscar);
+            if (!string.IsNullOrWhiteSpace(tipo) && !string.Equals(tipo, "TODOS", StringComparison.OrdinalIgnoreCase))
+            {
+                var patronTipo = PatronesBusqueda(tipo).FirstOrDefault();
+                if (patronTipo is not null)
+                    filtro = filtro.Where(s => System.Text.RegularExpressions.Regex.IsMatch(
+                        s.TipoPermiso.Nombre, patronTipo, System.Text.RegularExpressions.RegexOptions.IgnoreCase));
+            }
+            var fechaDesde = ParsearFecha(desde);
+            var fechaHasta = ParsearFecha(hasta);
+            if (fechaDesde.HasValue)
+                filtro = filtro.Where(s => s.FechaFin >= fechaDesde.Value);
+            if (fechaHasta.HasValue)
+                filtro = filtro.Where(s => s.FechaInicio <= fechaHasta.Value);
+
+            // La bandeja depende de las revisiones vigentes: se clasifica con una consulta ligera
+            // y solo se carga el detalle completo de la página solicitada.
+            var clasificadas = (await ConsultarClasificacionBandeja(filtro)
+                    .OrderByDescending(s => s.FechaCreacion)
+                    .ThenByDescending(s => s.Id)
+                    .ToListAsync(ct))
+                .Select(s => (s.Id, Estado: ResolverEstadoBandejaRrhh(s)));
+
+            var bandejaNorm = (bandeja ?? "").Trim().ToUpperInvariant();
+            clasificadas = bandejaNorm switch
+            {
+                "POR_CONFIRMAR" => clasificadas.Where(x => x.Estado == "CONFIRMADO_LIDER"),
+                "LIDER_EXTERNO" => clasificadas.Where(x => x.Estado == "PENDIENTE_LIDER_EXT"),
+                "HISTORIAL" => clasificadas.Where(x => x.Estado is not ("CONFIRMADO_LIDER" or "PENDIENTE_LIDER_EXT")),
+                _ => clasificadas,
+            };
+
+            var ids = clasificadas.Select(x => x.Id).ToList();
+            var (pagina, tamano) = NormalizarPaginacion(page, pageSize);
+            var idsPagina = ids.Skip((pagina - 1) * tamano).Take(tamano).ToList();
+            var dtos = await CargarSolicitudesPorIdsAsync(db, idsPagina, ct);
+
+            return ResponderPagina(dtos, pagina, tamano, ids.Count);
         }).RequireAuthorization("PERMISOS_RRHH_READ");
 
         // 11. Decisión de Talento Humano RRHH (Paso 3: confirmar | devolver)
@@ -1552,6 +1602,50 @@ public static partial class PermisosEndpoints
                     .ThenInclude(u => u!.IdpersonaNavigation);
     }
 
+    /// <summary>
+    /// Última revisión del líder y de Talento Humano dentro del ciclo vigente
+    /// (una observación reinicia el ciclo de revisiones).
+    /// </summary>
+    private static (TblTimeReportSolicitudRevision? RevLider, TblTimeReportSolicitudRevision? RevTh) ResolverRevisionesVigentes(
+        TblTimeReportSolicitud s)
+    {
+        var observaciones = s.Revisiones.Where(r => r.Decision == "OBSERVADO")
+            .OrderByDescending(r => r.FechaRevision);
+        var limiteCiclo = (s.Estado.Codigo == "OBSERVADA" ? observaciones.Skip(1) : observaciones)
+            .Select(r => (DateTime?)r.FechaRevision).FirstOrDefault();
+        var revisionesVigentes = limiteCiclo is null ? s.Revisiones.AsEnumerable()
+            : s.Revisiones.Where(r => r.FechaRevision > limiteCiclo.Value);
+        var revLider = revisionesVigentes
+            .Where(r => r.EtapaRevision == "JEFE_INMEDIATO")
+            .OrderByDescending(r => r.FechaRevision)
+            .FirstOrDefault();
+        var revTh = revisionesVigentes
+            .Where(r => r.EtapaRevision == "TALENTO_HUMANO")
+            .OrderByDescending(r => r.FechaRevision)
+            .FirstOrDefault();
+        return (revLider, revTh);
+    }
+
+    /// <summary>
+    /// Estado de la solicitud desde la óptica de la bandeja de Talento Humano
+    /// (CONFIRMADO_LIDER, PENDIENTE_LIDER_EXT, PENDIENTE_LIDER_INT, APROBADO_RRHH, OBSERVADO_RRHH, RECHAZADO).
+    /// Requiere Estado, Revisiones y el líder (con su tipo) cargados.
+    /// </summary>
+    internal static string ResolverEstadoBandejaRrhh(TblTimeReportSolicitud s)
+    {
+        var liderEfectivo = s.Lider ?? s.AsignacionProyecto?.IdliderNavigation;
+        var (revLider, revTh) = ResolverRevisionesVigentes(s);
+        var aprobadoLider = revLider?.Decision == "APROBADO" || s.Estado.Codigo is "PENDIENTE_TH" or "APROBADA";
+        var confirmadoRrhh = revTh?.Decision == "APROBADO" || s.Estado.Codigo == "APROBADA";
+        return ResolverEstados(
+            s.Estado.Codigo,
+            aprobadoLider,
+            confirmadoRrhh,
+            EsLiderExterno(liderEfectivo),
+            revLider?.Decision,
+            revTh?.Decision).EstadoRrhh;
+    }
+
     public static PermisoItemDto MapearSolicitudDto(TblTimeReportSolicitud s, string? traslapeAlerta)
     {
         var persona = s.Empleado.IdpersonaNavigation;
@@ -1572,21 +1666,7 @@ public static partial class PermisosEndpoints
         var liderTipo = esLiderExt ? "EXT" : "INT";
         var liderCorreo = liderEfectivo?.IdpersonaNavigation?.Email;
 
-        var observaciones = s.Revisiones.Where(r => r.Decision == "OBSERVADO")
-            .OrderByDescending(r => r.FechaRevision);
-        var limiteCiclo = (s.Estado.Codigo == "OBSERVADA" ? observaciones.Skip(1) : observaciones)
-            .Select(r => (DateTime?)r.FechaRevision).FirstOrDefault();
-        var revisionesVigentes = limiteCiclo is null ? s.Revisiones.AsEnumerable()
-            : s.Revisiones.Where(r => r.FechaRevision > limiteCiclo.Value);
-        var revLider = revisionesVigentes
-            .Where(r => r.EtapaRevision == "JEFE_INMEDIATO")
-            .OrderByDescending(r => r.FechaRevision)
-            .FirstOrDefault();
-
-        var revTh = revisionesVigentes
-            .Where(r => r.EtapaRevision == "TALENTO_HUMANO")
-            .OrderByDescending(r => r.FechaRevision)
-            .FirstOrDefault();
+        var (revLider, revTh) = ResolverRevisionesVigentes(s);
 
         var adjuntosActivos = s.Adjuntos
             .Where(a => a.Activo)

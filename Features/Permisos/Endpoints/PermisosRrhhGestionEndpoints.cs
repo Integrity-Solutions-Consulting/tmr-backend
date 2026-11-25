@@ -82,12 +82,16 @@ public static partial class PermisosEndpoints
             return Results.Ok(ApiResponse<IReadOnlyList<ColaboradorSelectorPermisoDto>>.Ok(result));
         }).RequireAuthorization("PERMISOS_RRHH_READ");
 
-        // B. Historial completo editable de permisos y vacaciones (incluye carga histórica)
+        // B. Historial editable de permisos y vacaciones (incluye carga histórica), paginado en servidor
         group.MapGet("/rrhh/historial", async (
             [FromQuery] int? idEmpleado,
             [FromQuery] int? anio,
             [FromQuery] bool? soloPendientesVerificar,
             [FromQuery] bool? soloHistoricos,
+            [FromQuery] string? buscar,
+            [FromQuery] string? tipo,
+            [FromQuery] int? page,
+            [FromQuery] int? pageSize,
             ApplicationDbContext db,
             ICurrentUserService currentUser,
             CancellationToken ct) =>
@@ -98,24 +102,79 @@ public static partial class PermisosEndpoints
             if (!actor.EsRrhh && !actor.EsAdmin)
                 return Results.Json(ApiResponse<object>.Fail(403, "Acceso exclusivo para Talento Humano o Administradores.", []), statusCode: 403);
 
-            var query = ConsultarSolicitudesBase(db).Where(s => s.Activo);
+            var filtro = db.TblTimeReportSolicitudes.AsNoTracking().Where(s => s.Activo);
 
             if (idEmpleado is > 0)
-                query = query.Where(s => s.IdEmpleado == idEmpleado.Value);
+                filtro = filtro.Where(s => s.IdEmpleado == idEmpleado.Value);
             if (anio is >= 2000 and <= 2100)
-                query = query.Where(s => s.FechaInicio.Year == anio.Value || s.FechaFin.Year == anio.Value);
+                filtro = filtro.Where(s => s.FechaInicio.Year == anio.Value || s.FechaFin.Year == anio.Value);
             if (soloPendientesVerificar == true)
-                query = query.Where(s => !s.VerificadoRrhh);
+                filtro = filtro.Where(s => !s.VerificadoRrhh);
             if (soloHistoricos == true)
-                query = query.Where(s => s.EsHistorico);
+                filtro = filtro.Where(s => s.EsHistorico);
+            if (!string.IsNullOrWhiteSpace(tipo) && !string.Equals(tipo, "TODOS", StringComparison.OrdinalIgnoreCase))
+            {
+                var tipoCodigo = tipo.Trim().ToUpperInvariant();
+                filtro = filtro.Where(s => s.TipoPermiso.Codigo == tipoCodigo);
+            }
+            filtro = AplicarBusquedaSolicitudes(filtro, buscar);
 
-            var items = await query
-                .OrderByDescending(s => s.FechaInicio)
-                .ThenByDescending(s => s.Id)
-                .ToListAsync(ct);
+            var ordenados = filtro.OrderByDescending(s => s.FechaInicio).ThenByDescending(s => s.Id);
 
-            var dtos = items.Select(s => MapearSolicitudDto(s, null)).ToList();
-            return Results.Ok(ApiResponse<IReadOnlyList<PermisoItemDto>>.Ok(dtos));
+            // Sin "page" se conserva el comportamiento anterior (lista completa)
+            if (page is null)
+            {
+                var idsTodos = await ordenados.Select(s => s.Id).ToListAsync(ct);
+                return Results.Ok(ApiResponse<IReadOnlyList<PermisoItemDto>>.Ok(
+                    await CargarSolicitudesPorIdsAsync(db, idsTodos, ct)));
+            }
+
+            var (pagina, tamano) = NormalizarPaginacion(page, pageSize);
+            var total = await filtro.CountAsync(ct);
+            var idsPagina = await ordenados.Skip((pagina - 1) * tamano).Take(tamano).Select(s => s.Id).ToListAsync(ct);
+            var dtos = await CargarSolicitudesPorIdsAsync(db, idsPagina, ct);
+
+            return ResponderPagina(dtos, pagina, tamano, total);
+        }).RequireAuthorization("PERMISOS_RRHH_READ");
+
+        // B2. Resumen ligero para KPIs y contadores de pestañas (evita descargar listas completas)
+        group.MapGet("/rrhh/resumen", async (
+            ApplicationDbContext db,
+            ICurrentUserService currentUser,
+            CancellationToken ct) =>
+        {
+            var actor = await ResolverActorActualAsync(db, currentUser, ct);
+            if (actor is null)
+                return Results.Json(ApiResponse<object>.Fail(401, "Sesión no válida.", []), statusCode: 401);
+            if (!actor.EsRrhh && !actor.EsAdmin)
+                return Results.Json(ApiResponse<object>.Fail(403, "Acceso exclusivo para Talento Humano o Administradores.", []), statusCode: 403);
+
+            var activas = db.TblTimeReportSolicitudes.AsNoTracking().Where(s => s.Activo);
+            var totalHistorial = await activas.CountAsync(ct);
+            var porVerificar = await activas.CountAsync(s => !s.VerificadoRrhh, ct);
+
+            var aniosInicio = await activas.Select(s => s.FechaInicio.Year).Distinct().ToListAsync(ct);
+            var aniosFin = await activas.Select(s => s.FechaFin.Year).Distinct().ToListAsync(ct);
+            var anios = aniosInicio.Union(aniosFin).OrderByDescending(a => a).ToList();
+
+            var estados = (await ConsultarClasificacionBandeja(activas).ToListAsync(ct))
+                .Select(ResolverEstadoBandejaRrhh)
+                .ToList();
+
+            var totalColaboradores = await db.TblAdministracionEmpleados
+                .AsNoTracking()
+                .CountAsync(e => e.Activo && e.Fechaterminacion == null, ct);
+
+            var dto = new ResumenGestionRrhhDto(
+                PorConfirmar: estados.Count(e => e == "CONFIRMADO_LIDER"),
+                PendientesLiderExterno: estados.Count(e => e == "PENDIENTE_LIDER_EXT"),
+                Confirmadas: estados.Count(e => e == "APROBADO_RRHH"),
+                TotalHistorial: totalHistorial,
+                PorVerificar: porVerificar,
+                TotalColaboradores: totalColaboradores,
+                AniosDisponibles: anios);
+
+            return Results.Ok(ApiResponse<ResumenGestionRrhhDto>.Ok(dto));
         }).RequireAuthorization("PERMISOS_RRHH_READ");
 
         // El cliente anterior conserva /historial durante el despliegue escalonado.
@@ -347,8 +406,13 @@ public static partial class PermisosEndpoints
             return Results.Ok(ApiResponse<object>.Ok(new { id }, "Registro anulado correctamente."));
         }).RequireAuthorization("PERMISOS_RRHH_CONFIRM");
 
-        // F. Tablero de Saldos y Ciclos de Vacaciones por Colaborador Activo
+        // F. Tablero de Saldos y Ciclos de Vacaciones por Colaborador Activo (paginado en servidor)
         group.MapGet("/rrhh/saldos", async (
+            [FromQuery] string? buscar,
+            [FromQuery] string? regimen,
+            [FromQuery] bool? soloSaldoNegativo,
+            [FromQuery] int? page,
+            [FromQuery] int? pageSize,
             ApplicationDbContext db,
             ICurrentUserService currentUser,
             CancellationToken ct) =>
@@ -359,106 +423,60 @@ public static partial class PermisosEndpoints
             if (!actor.EsRrhh && !actor.EsAdmin && !actor.EsGerente)
                 return Results.Json(ApiResponse<object>.Fail(403, "Acceso exclusivo para Talento Humano, Gerencia o Administradores.", []), statusCode: 403);
 
-            var empleados = await db.TblAdministracionEmpleados
+            var filtro = db.TblAdministracionEmpleados
                 .AsNoTracking()
-                .Where(e => e.Activo && e.Fechaterminacion == null)
-                .Include(e => e.IdpersonaNavigation)
-                .Include(e => e.IdcargoNavigation)
-                .Include(e => e.IdtipocontratoNavigation)
-                .Include(e => e.IdempresacatalogoNavigation)
+                .Where(e => e.Activo && e.Fechaterminacion == null);
+
+            foreach (var patron in PatronesBusqueda(buscar))
+            {
+                filtro = filtro.Where(e =>
+                    System.Text.RegularExpressions.Regex.IsMatch(e.IdpersonaNavigation.Apellidos + " " + e.IdpersonaNavigation.Nombres, patron, System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+                    || System.Text.RegularExpressions.Regex.IsMatch(e.IdpersonaNavigation.Numeroidentificacion, patron, System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+                    || System.Text.RegularExpressions.Regex.IsMatch(e.Codigoempleado, patron, System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+                    || (e.IdcargoNavigation != null && System.Text.RegularExpressions.Regex.IsMatch(e.IdcargoNavigation.Nombrecargo, patron, System.Text.RegularExpressions.RegexOptions.IgnoreCase)));
+            }
+
+            var ordenados = filtro
                 .OrderBy(e => e.IdpersonaNavigation.Apellidos)
                 .ThenBy(e => e.IdpersonaNavigation.Nombres)
-                .ToListAsync(ct);
+                .ThenBy(e => e.Id);
 
-            var empIds = empleados.Select(e => e.Id).ToList();
+            var regimenFiltro = string.IsNullOrWhiteSpace(regimen) || string.Equals(regimen, "TODOS", StringComparison.OrdinalIgnoreCase)
+                ? null
+                : regimen.Trim().ToUpperInvariant();
+            var filtraCalculado = regimenFiltro is not null || soloSaldoNegativo == true;
+            var (pagina, tamano) = NormalizarPaginacion(page, pageSize);
 
-            var contratos = await db.TblAdministracionEmpleadoContratos
-                .AsNoTracking()
-                .Where(c => empIds.Contains(c.Idempleado) && c.Activo)
-                .ToListAsync(ct);
-
-            var solicitudes = await db.TblTimeReportSolicitudes
-                .AsNoTracking()
-                .Where(s => empIds.Contains(s.IdEmpleado) && s.Activo)
-                .Include(s => s.Estado)
-                .Include(s => s.TipoPermiso)
-                .ToListAsync(ct);
-
-            var ajustes = await db.TblTimeReportAjustesVacaciones
-                .AsNoTracking()
-                .Where(a => empIds.Contains(a.IdEmpleado) && a.Activo)
-                .OrderByDescending(a => a.FechaCreacion)
-                .ToListAsync(ct);
-
-            var catIds = new HashSet<int>();
-            foreach (var e in empleados)
+            List<int> idsEmpleados;
+            int total;
+            if (page is not null && !filtraCalculado)
             {
-                if (e.Idtipocontrato.HasValue) catIds.Add(e.Idtipocontrato.Value);
-                if (e.Idempresacatalogo.HasValue) catIds.Add(e.Idempresacatalogo.Value);
+                // Caso común: se paginan los colaboradores en SQL y solo se calculan los saldos de la página
+                total = await filtro.CountAsync(ct);
+                idsEmpleados = await ordenados.Skip((pagina - 1) * tamano).Take(tamano).Select(e => e.Id).ToListAsync(ct);
             }
-            foreach (var c in contratos) catIds.Add(c.Idtipocontrato);
-
-            var catalogos = catIds.Count == 0
-                ? new Dictionary<int, TblAdministracionCatalogoDetalle>()
-                : await db.TblAdministracionCatalogoDetalles
-                    .AsNoTracking()
-                    .Where(d => catIds.Contains(d.Id))
-                    .ToDictionaryAsync(d => d.Id, ct);
-
-            var contratosPorEmp = contratos.GroupBy(c => c.Idempleado).ToDictionary(g => g.Key, g => (IReadOnlyCollection<TblAdministracionEmpleadoContrato>)g.ToList());
-            var solicitudesPorEmp = solicitudes.GroupBy(s => s.IdEmpleado).ToDictionary(g => g.Key, g => (IReadOnlyCollection<TblTimeReportSolicitud>)g.ToList());
-            var ajustesPorEmp = ajustes.GroupBy(a => a.IdEmpleado).ToDictionary(g => g.Key, g => (IReadOnlyCollection<TblTimeReportAjusteVacaciones>)g.ToList());
-
-            var resultado = empleados.Select(e =>
+            else
             {
-                var solEmp = solicitudesPorEmp.GetValueOrDefault(e.Id) ?? [];
-                var ajEmp = ajustesPorEmp.GetValueOrDefault(e.Id) ?? [];
-                var resumen = VacacionesSaldoService.CalcularSaldo(
-                    e,
-                    contratosPorEmp.GetValueOrDefault(e.Id) ?? [],
-                    catalogos,
-                    solEmp,
-                    ajEmp);
+                idsEmpleados = await ordenados.Select(e => e.Id).ToListAsync(ct);
+                total = idsEmpleados.Count;
+            }
 
-                var ajustesDto = ajEmp.Select(a => new AjusteVacacionesItemDto(
-                    Id: a.Id,
-                    TipoAjuste: a.TipoAjuste,
-                    DiasAjuste: a.DiasAjuste,
-                    PermiteVacaciones: a.PermiteVacaciones,
-                    Motivo: a.Motivo,
-                    UsuarioCreacion: a.UsuarioCreacion,
-                    FechaCreacion: a.FechaCreacion.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture),
-                    FechaAfiliacionBase: a.FechaAfiliacionBase?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)
-                )).ToList();
+            var saldos = await CalcularSaldosColaboradoresAsync(db, idsEmpleados, ct);
 
-                return new SaldoVacacionesColaboradorDto(
-                    IdEmpleado: e.Id,
-                    CodigoEmpleado: e.Codigoempleado,
-                    Cedula: e.IdpersonaNavigation?.Numeroidentificacion ?? "",
-                    ApellidosNombres: e.IdpersonaNavigation is not null
-                        ? $"{e.IdpersonaNavigation.Apellidos} {e.IdpersonaNavigation.Nombres}".Trim()
-                        : e.Codigoempleado,
-                    Cargo: e.IdcargoNavigation?.Nombrecargo ?? "",
-                    Empresa: resumen.EmpresaNombre,
-                    TipoContrato: resumen.TipoContratoNombre,
-                    Regimen: resumen.Regimen,
-                    TieneDerechoVacaciones: resumen.TieneDerechoVacaciones,
-                    ExcepcionFacturaActiva: resumen.ExcepcionFacturaActiva,
-                    FechaIngresoOriginal: resumen.FechaIngresoOriginal?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
-                    FechaInicioVacaciones: resumen.FechaInicioVacaciones?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
-                    AniosAntiguedad: resumen.AniosAntiguedad,
-                    DiasGanadosAcumulados: resumen.DiasGanadosAcumulados,
-                    DiasProporcionalesCiclo: resumen.DiasProporcionalesCicloActual,
-                    DiasConsumidos: resumen.DiasConsumidos,
-                    DiasAjuste: resumen.DiasAjuste,
-                    SaldoDisponible: resumen.SaldoDisponible,
-                    TotalRegistrosHistorial: solEmp.Count,
-                    RegistrosPorVerificar: solEmp.Count(s => !s.VerificadoRrhh),
-                    Ajustes: ajustesDto,
-                    OrigenFechaInicioVacaciones: resumen.OrigenFechaInicioVacaciones);
-            }).ToList();
+            if (filtraCalculado)
+            {
+                saldos = saldos
+                    .Where(s => regimenFiltro is null || s.Regimen == regimenFiltro)
+                    .Where(s => soloSaldoNegativo != true || s.SaldoDisponible < 0)
+                    .ToList();
+                total = saldos.Count;
+                if (page is not null)
+                    saldos = saldos.Skip((pagina - 1) * tamano).Take(tamano).ToList();
+            }
 
-            return Results.Ok(ApiResponse<IReadOnlyList<SaldoVacacionesColaboradorDto>>.Ok(resultado));
+            if (page is null)
+                return Results.Ok(ApiResponse<IReadOnlyList<SaldoVacacionesColaboradorDto>>.Ok(saldos));
+            return ResponderPagina(saldos, pagina, tamano, total);
         }).RequireAuthorization("PERMISOS_RRHH_READ");
 
         // G. Registrar ajuste manual de saldo o excepción de factura por colaborador
@@ -683,5 +701,222 @@ public static partial class PermisosEndpoints
         }
 
         return $"{basePrefijo}{(max + 1 + offset):000}";
+    }
+
+    // =========================================================================
+    // Paginación y búsqueda en servidor para Gestión Talento Humano
+    // =========================================================================
+    private const int TamanoPaginaPorDefecto = 10;
+    private const int TamanoPaginaMaximo = 100;
+
+    /// <summary>
+    /// Respuesta paginada: la página va dentro de "data" (el interceptor del frontend descarta
+    /// el resto del sobre) y también en "meta" por consistencia con el resto de la API.
+    /// </summary>
+    private static IResult ResponderPagina<T>(IReadOnlyList<T> items, int pagina, int tamano, int total)
+    {
+        var meta = new PaginationMeta(pagina, tamano, total);
+        var dto = new PaginaResultadoDto<T>(items, pagina, tamano, total, meta.TotalPages);
+        return Results.Ok(ApiResponse<PaginaResultadoDto<T>>.Ok(dto, meta: meta));
+    }
+
+    private static (int Pagina, int Tamano) NormalizarPaginacion(int? page, int? pageSize)
+    {
+        var tamano = Math.Clamp(pageSize is > 0 ? pageSize.Value : TamanoPaginaPorDefecto, 1, TamanoPaginaMaximo);
+        var pagina = Math.Max(1, page ?? 1);
+        return (pagina, tamano);
+    }
+
+    /// <summary>
+    /// Convierte el texto de búsqueda en expresiones regulares de PostgreSQL (~*, sin distinguir
+    /// mayúsculas), una por palabra; todas deben coincidir. No distingue tildes: cada vocal y la ñ
+    /// se buscan como clase ("guzman" encuentra "Guzmán"). El resto de caracteres se escapa.
+    /// </summary>
+    private static IReadOnlyList<string> PatronesBusqueda(string? buscar)
+    {
+        if (string.IsNullOrWhiteSpace(buscar)) return [];
+        return buscar
+            .Replace("\0", "")
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(t => t.Length > 0)
+            .Take(6)
+            .Select(t => t.Length > 60 ? t[..60] : t)
+            .Select(PatronSinTildes)
+            .ToList();
+    }
+
+    private static string PatronSinTildes(string palabra)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var ch in palabra.Normalize(System.Text.NormalizationForm.FormD))
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(ch) == UnicodeCategory.NonSpacingMark) continue;
+            sb.Append(char.ToLowerInvariant(ch) switch
+            {
+                'a' => "[aáàä]",
+                'e' => "[eéèë]",
+                'i' => "[iíìï]",
+                'o' => "[oóòö]",
+                'u' => "[uúùü]",
+                'n' => "[nñ]",
+                var c => System.Text.RegularExpressions.Regex.Escape(c.ToString()),
+            });
+        }
+        return sb.ToString();
+    }
+
+    private static IQueryable<TblTimeReportSolicitud> AplicarBusquedaSolicitudes(
+        IQueryable<TblTimeReportSolicitud> query,
+        string? buscar)
+    {
+        const System.Text.RegularExpressions.RegexOptions ci = System.Text.RegularExpressions.RegexOptions.IgnoreCase;
+        foreach (var patron in PatronesBusqueda(buscar))
+        {
+            query = query.Where(s =>
+                System.Text.RegularExpressions.Regex.IsMatch(s.Empleado.IdpersonaNavigation.Apellidos + " " + s.Empleado.IdpersonaNavigation.Nombres, patron, ci)
+                || System.Text.RegularExpressions.Regex.IsMatch(s.Empleado.IdpersonaNavigation.Numeroidentificacion, patron, ci)
+                || System.Text.RegularExpressions.Regex.IsMatch(s.Empleado.Codigoempleado, patron, ci)
+                || System.Text.RegularExpressions.Regex.IsMatch(s.Codigo, patron, ci)
+                || System.Text.RegularExpressions.Regex.IsMatch(s.Motivo, patron, ci)
+                || System.Text.RegularExpressions.Regex.IsMatch(s.TipoPermiso.Nombre, patron, ci)
+                || (s.ObservacionMigracion != null && System.Text.RegularExpressions.Regex.IsMatch(s.ObservacionMigracion, patron, ci)));
+        }
+        return query;
+    }
+
+    /// <summary>Carga completa (con todas las relaciones) solo de los IDs indicados, respetando su orden.</summary>
+    private static async Task<IReadOnlyList<PermisoItemDto>> CargarSolicitudesPorIdsAsync(
+        ApplicationDbContext db,
+        IReadOnlyList<int> ids,
+        CancellationToken ct)
+    {
+        if (ids.Count == 0) return [];
+        var entidades = await ConsultarSolicitudesBase(db)
+            .Where(s => ids.Contains(s.Id))
+            .AsSplitQuery()
+            .ToListAsync(ct);
+        var porId = entidades.ToDictionary(s => s.Id);
+        return ids.Where(porId.ContainsKey).Select(id => MapearSolicitudDto(porId[id], null)).ToList();
+    }
+
+    /// <summary>
+    /// Consulta ligera con lo mínimo para clasificar una solicitud en la bandeja de Talento Humano
+    /// (estado, revisiones y tipo de líder), sin adjuntos ni datos de presentación.
+    /// </summary>
+    private static IQueryable<TblTimeReportSolicitud> ConsultarClasificacionBandeja(IQueryable<TblTimeReportSolicitud> query) =>
+        query
+            .Include(s => s.Estado)
+            .Include(s => s.Revisiones)
+            .Include(s => s.Lider)
+                .ThenInclude(l => l!.IdtipoNavigation)
+            .Include(s => s.AsignacionProyecto)
+                .ThenInclude(a => a!.IdliderNavigation)
+                    .ThenInclude(l => l!.IdtipoNavigation)
+            .AsSplitQuery();
+
+    /// <summary>Calcula el saldo de vacaciones de los colaboradores indicados, respetando el orden recibido.</summary>
+    private static async Task<List<SaldoVacacionesColaboradorDto>> CalcularSaldosColaboradoresAsync(
+        ApplicationDbContext db,
+        IReadOnlyList<int> empIds,
+        CancellationToken ct)
+    {
+        if (empIds.Count == 0) return [];
+
+        var empleados = await db.TblAdministracionEmpleados
+            .AsNoTracking()
+            .Where(e => empIds.Contains(e.Id))
+            .Include(e => e.IdpersonaNavigation)
+            .Include(e => e.IdcargoNavigation)
+            .Include(e => e.IdtipocontratoNavigation)
+            .Include(e => e.IdempresacatalogoNavigation)
+            .ToListAsync(ct);
+
+        var contratos = await db.TblAdministracionEmpleadoContratos
+            .AsNoTracking()
+            .Where(c => empIds.Contains(c.Idempleado) && c.Activo)
+            .ToListAsync(ct);
+
+        var solicitudes = await db.TblTimeReportSolicitudes
+            .AsNoTracking()
+            .Where(s => empIds.Contains(s.IdEmpleado) && s.Activo)
+            .Include(s => s.Estado)
+            .Include(s => s.TipoPermiso)
+            .ToListAsync(ct);
+
+        var ajustes = await db.TblTimeReportAjustesVacaciones
+            .AsNoTracking()
+            .Where(a => empIds.Contains(a.IdEmpleado) && a.Activo)
+            .OrderByDescending(a => a.FechaCreacion)
+            .ToListAsync(ct);
+
+        var catIds = new HashSet<int>();
+        foreach (var e in empleados)
+        {
+            if (e.Idtipocontrato.HasValue) catIds.Add(e.Idtipocontrato.Value);
+            if (e.Idempresacatalogo.HasValue) catIds.Add(e.Idempresacatalogo.Value);
+        }
+        foreach (var c in contratos) catIds.Add(c.Idtipocontrato);
+
+        var catalogos = catIds.Count == 0
+            ? new Dictionary<int, TblAdministracionCatalogoDetalle>()
+            : await db.TblAdministracionCatalogoDetalles
+                .AsNoTracking()
+                .Where(d => catIds.Contains(d.Id))
+                .ToDictionaryAsync(d => d.Id, ct);
+
+        var contratosPorEmp = contratos.GroupBy(c => c.Idempleado).ToDictionary(g => g.Key, g => (IReadOnlyCollection<TblAdministracionEmpleadoContrato>)g.ToList());
+        var solicitudesPorEmp = solicitudes.GroupBy(s => s.IdEmpleado).ToDictionary(g => g.Key, g => (IReadOnlyCollection<TblTimeReportSolicitud>)g.ToList());
+        var ajustesPorEmp = ajustes.GroupBy(a => a.IdEmpleado).ToDictionary(g => g.Key, g => (IReadOnlyCollection<TblTimeReportAjusteVacaciones>)g.ToList());
+        var empleadosPorId = empleados.ToDictionary(e => e.Id);
+
+        return empIds.Where(empleadosPorId.ContainsKey).Select(id =>
+        {
+            var e = empleadosPorId[id];
+            var solEmp = solicitudesPorEmp.GetValueOrDefault(e.Id) ?? [];
+            var ajEmp = ajustesPorEmp.GetValueOrDefault(e.Id) ?? [];
+            var resumen = VacacionesSaldoService.CalcularSaldo(
+                e,
+                contratosPorEmp.GetValueOrDefault(e.Id) ?? [],
+                catalogos,
+                solEmp,
+                ajEmp);
+
+            var ajustesDto = ajEmp.Select(a => new AjusteVacacionesItemDto(
+                Id: a.Id,
+                TipoAjuste: a.TipoAjuste,
+                DiasAjuste: a.DiasAjuste,
+                PermiteVacaciones: a.PermiteVacaciones,
+                Motivo: a.Motivo,
+                UsuarioCreacion: a.UsuarioCreacion,
+                FechaCreacion: a.FechaCreacion.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture),
+                FechaAfiliacionBase: a.FechaAfiliacionBase?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)
+            )).ToList();
+
+            return new SaldoVacacionesColaboradorDto(
+                IdEmpleado: e.Id,
+                CodigoEmpleado: e.Codigoempleado,
+                Cedula: e.IdpersonaNavigation?.Numeroidentificacion ?? "",
+                ApellidosNombres: e.IdpersonaNavigation is not null
+                    ? $"{e.IdpersonaNavigation.Apellidos} {e.IdpersonaNavigation.Nombres}".Trim()
+                    : e.Codigoempleado,
+                Cargo: e.IdcargoNavigation?.Nombrecargo ?? "",
+                Empresa: resumen.EmpresaNombre,
+                TipoContrato: resumen.TipoContratoNombre,
+                Regimen: resumen.Regimen,
+                TieneDerechoVacaciones: resumen.TieneDerechoVacaciones,
+                ExcepcionFacturaActiva: resumen.ExcepcionFacturaActiva,
+                FechaIngresoOriginal: resumen.FechaIngresoOriginal?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
+                FechaInicioVacaciones: resumen.FechaInicioVacaciones?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
+                AniosAntiguedad: resumen.AniosAntiguedad,
+                DiasGanadosAcumulados: resumen.DiasGanadosAcumulados,
+                DiasProporcionalesCiclo: resumen.DiasProporcionalesCicloActual,
+                DiasConsumidos: resumen.DiasConsumidos,
+                DiasAjuste: resumen.DiasAjuste,
+                SaldoDisponible: resumen.SaldoDisponible,
+                TotalRegistrosHistorial: solEmp.Count,
+                RegistrosPorVerificar: solEmp.Count(s => !s.VerificadoRrhh),
+                Ajustes: ajustesDto,
+                OrigenFechaInicioVacaciones: resumen.OrigenFechaInicioVacaciones);
+        }).ToList();
     }
 }

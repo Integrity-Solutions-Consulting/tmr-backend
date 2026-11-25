@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.11.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.10.1...v1.11.0) (2026-11-25)
+
+
+### Features
+
+* **db:** aplicar migraciones al arrancar cuando se habilite en el entorno ([6dd4fd2](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/6dd4fd265c0d57ed6019d46d4bb3188e0bfd0d71))
+* **migraciones:** agrega' ([f41e7a2](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/f41e7a29b2dccc24b9a91304899f06e7d13ee389))
+* **migraciones:** agregando migraciones v2 ([ba7688f](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/ba7688f236c0fb6f8d6a1318e114a0ba6203d230))
+
+
+### Bug Fixes
+
+* El acto de amor mas grande hacia los empleados ([61a7347](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/61a7347252e06f7577b5040a1ce605787b9d2b7c))
+* **permisos:** excluir históricos dudosos y distinguir origen de fecha base ([c800389](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/c800389d3f893b694aed0a8339b509babfc37075))
+
+
+### Performance Improvements
+
+* **auth:** reutilizar indicador de cambio de contraseña del login ([08e9cdc](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/08e9cdccfc3575a8dd5d515969f4e7b53f1ebf9d))
+* **permisos:** paginar historial RRHH y consultar por demanda ([a37facd](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/a37facd641964079e3c577ba361b8bf9019ccf64))
+
+## [1.10.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.10.0...v1.10.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **permisos:** usar fecha real de afiliacion IESS como base de vacaci… ([5cebf96](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/5cebf96ad24bf6efdde4775c22591ba24bd40716))
+* **permisos:** usar fecha real de afiliacion IESS como base de vacaciones ([04995e3](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/04995e3964804756262430dcbed576e3cbbdd6c2))
+
 ## [1.10.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.9.2...v1.10.0) (2026-11-24)
 
 
