@@ -10,6 +10,7 @@ base vacía y no debe ejecutarse sobre Desarrollo ni Producción.
 
 ## Requisitos
 
+
 - PostgreSQL 16, UTF-8 y almacenamiento persistente. El operador crea la base y
   el usuario del nuevo servidor. La cuenta instaladora necesita permisos para
   crear esquemas, tipos, tablas, funciones, índices, secuencias y triggers.
@@ -62,6 +63,16 @@ La línea base incluye tablas, tipos, secuencias, funciones, triggers, restricci
 `--prepare-database` sigue disponible para despliegues por etapas. En una base vacía instala solamente la línea base; en una que ya la tiene registrada termina sin retroceder de versión. `--apply-migrations` instala todas las pendientes. Ambos usan el historial configurado, `public."__EFMigrationsHistory"` por defecto. En ambientes que usan otro esquema configure `Database__MigrationsHistorySchema` tanto en la API como en el instalador.
 
 Los SQL numerados permanecen como archivo histórico. El backend usa los recursos versionados en `Migrations/Baseline`. El contenido de una migración ya distribuida es inmutable. Para el siguiente cambio actualice el modelo, genere y revise una migración EF y pruebe tanto instalación nueva como actualización. Los ocho mapeos públicos legados sin tabla en el esquema oficial siguen disponibles al código y están excluidos del DDL de EF.
+
+### Estructura e importaciones de permisos
+
+- La línea base incluye las tablas de solicitudes, revisiones, adjuntos, tipos y estados del módulo.
+- `20261124200005_VacacionesHistorialYAfiliacion` incorpora los scripts 24 y 25, con los campos del historial editable y la tabla de ajustes de vacaciones.
+- `20261125000000_ImportacionPermisosFaltas` crea la tabla operativa `time_report.tbl_time_report_permiso_falta_importacion`, con sus restricciones y vínculos a empleados y solicitudes. Una tabla creada previamente por el script de importación conserva sus registros.
+
+La tabla de importación se administra con SQL y carece de entidad de uso en la API. Su DDL está versionado en la migración explícita. Se mantiene fuera del modelo de entidades de EF.
+
+Después de `--apply-migrations`, la carga del Excel, la sincronización de fechas de HC y la publicación de las filas revisadas requieren su ejecución explícita y autorización sobre el ambiente de destino. La migración instala la estructura vacía. El script `01_cargar_origen.sql` comprueba que la tabla exista y carga los datos fuente.
 
 ## 3. Inicializar datos indispensables
 
