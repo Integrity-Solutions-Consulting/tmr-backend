@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.13.1...v1.14.0) (2026-11-25)
+
+
+### Features
+
+* recuperar proyectos del colaborador y actualizar instalación de mis datos ([66ebbba](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/66ebbba40d94c7f076eb34856c97304e37f1bacb))
+
 ## [1.13.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.13.0...v1.13.1) (2026-11-25)
 
 
