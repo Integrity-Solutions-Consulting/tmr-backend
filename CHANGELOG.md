@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.11.3](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.11.2...v1.11.3) (2026-11-25)
+
+
+### Bug Fixes
+
+* **migraciones:** arreglando migraciones v4 ([a247eaf](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/a247eaf44ef2e035f04ec0eac61d03ed233e5834))
+* **migraciones:** arreglando migraciones v4 ([3bb3a9f](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/3bb3a9fb6a19e39442a1f4b51a93efa2d75a8238))
+
 ## [1.11.2](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.11.1...v1.11.2) (2026-11-25)
 
 
