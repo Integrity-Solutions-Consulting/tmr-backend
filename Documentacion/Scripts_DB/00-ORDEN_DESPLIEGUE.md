@@ -63,6 +63,16 @@ La línea base incluye tablas, tipos, secuencias, funciones, triggers, restricci
 
 Los SQL numerados permanecen como archivo histórico. El backend usa los recursos versionados en `Migrations/Baseline`. El contenido de una migración ya distribuida es inmutable. Para el siguiente cambio actualice el modelo, genere y revise una migración EF y pruebe tanto instalación nueva como actualización. Los ocho mapeos públicos legados sin tabla en el esquema oficial siguen disponibles al código y están excluidos del DDL de EF.
 
+### Estructura e importaciones de permisos
+
+- La línea base incluye las tablas de solicitudes, revisiones, adjuntos, tipos y estados del módulo.
+- `20261124200005_VacacionesHistorialYAfiliacion` incorpora los scripts 24 y 25, con los campos del historial editable y la tabla de ajustes de vacaciones.
+- `20261125000000_ImportacionPermisosFaltas` crea la tabla operativa `time_report.tbl_time_report_permiso_falta_importacion`, con sus restricciones y vínculos a empleados y solicitudes. Una tabla creada previamente por el script de importación conserva sus registros.
+
+La tabla de importación se administra con SQL y carece de entidad de uso en la API. Su DDL está versionado en la migración explícita. Se mantiene fuera del modelo de entidades de EF.
+
+Después de `--apply-migrations`, la carga del Excel, la sincronización de fechas de HC y la publicación de las filas revisadas requieren su ejecución explícita y autorización sobre el ambiente de destino. La migración instala la estructura vacía. El script `01_cargar_origen.sql` comprueba que la tabla exista y carga los datos fuente.
+
 ## 3. Inicializar datos indispensables
 
 En Bash, introducir los datos del primer administrador sin poner la contraseña
