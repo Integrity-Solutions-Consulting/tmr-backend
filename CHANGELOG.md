@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.12.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.11.3...v1.12.0) (2026-11-25)
+
+
+### Features
+
+* **permisos:** paginación y filtros en servidor para Mis permisos, Aprobaciones del líder e Historial de gerencia ([8aba75f](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/8aba75f62a7548884832f1bc662e6b44569f30e4))
+* **permisos:** paginación y filtros en servidor para Mis permisos, Aprobaciones del líder e Historial de gerencia ([5b185cf](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/5b185cfdaecb014d1113c0c7cc4e8498e2f995d3))
+
+
+### Bug Fixes
+
+* **migraciones:** arreglando migraciones v5 ([f4bd68f](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/f4bd68f8e147c9531fc0ce8291f008fc4f170a22))
+
 ## [1.11.3](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.11.2...v1.11.3) (2026-11-25)
 
 
