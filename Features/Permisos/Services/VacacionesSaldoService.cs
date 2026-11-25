@@ -242,6 +242,53 @@ public static class VacacionesSaldoService
         return 15m + Math.Min(15m, numeroAnioCumplido - 5m);
     }
 
+    /// <summary>
+    /// Resuelve únicamente el régimen de afiliación ("AFILIADO" | "MIXTO" | "FACTURA")
+    /// usando la misma regla de contrato vigente y empresa que <see cref="CalcularSaldo"/>.
+    /// </summary>
+    public static string ResolverRegimen(
+        TblAdministracionEmpleado? empleado,
+        IReadOnlyCollection<TblAdministracionEmpleadoContrato> contratosEmpleado,
+        IReadOnlyDictionary<int, TblAdministracionCatalogoDetalle> catalogosPorId)
+    {
+        if (empleado is null) return "AFILIADO";
+
+        var contratoVigente = contratosEmpleado
+            .Where(c => c.Activo)
+            .OrderByDescending(c => c.Fechahasta == null)
+            .ThenByDescending(c => c.Fechadesde)
+            .FirstOrDefault();
+
+        var idTipoContratoActual = contratoVigente?.Idtipocontrato ?? empleado.Idtipocontrato;
+        TblAdministracionCatalogoDetalle? detalleContrato = null;
+        if (idTipoContratoActual.HasValue)
+        {
+            if (empleado.IdtipocontratoNavigation?.Id == idTipoContratoActual.Value)
+                detalleContrato = empleado.IdtipocontratoNavigation;
+            else
+                catalogosPorId.TryGetValue(idTipoContratoActual.Value, out detalleContrato);
+        }
+
+        var codContrato = detalleContrato?.Codigovalor?.Trim().ToUpperInvariant() ?? "";
+        var valContrato = detalleContrato?.Valor?.Trim() ?? "Relación de dependencia (Nómina)";
+
+        TblAdministracionCatalogoDetalle? detalleEmpresa = empleado.IdempresacatalogoNavigation;
+        if (detalleEmpresa is null && empleado.Idempresacatalogo.HasValue)
+            catalogosPorId.TryGetValue(empleado.Idempresacatalogo.Value, out detalleEmpresa);
+
+        var codEmpresa = detalleEmpresa?.Codigovalor?.Trim().ToUpperInvariant() ?? "";
+        var valEmpresa = detalleEmpresa?.Valor?.Trim();
+
+        var esFactura = EsContratoFactura(codContrato, valContrato);
+        var esMixto = !esFactura && (
+            codEmpresa == "RISC"
+            || (!string.IsNullOrWhiteSpace(valEmpresa)
+                && (valEmpresa.Contains("RPS E ISC", StringComparison.OrdinalIgnoreCase)
+                    || valEmpresa.Contains("RPS / ISC", StringComparison.OrdinalIgnoreCase))));
+
+        return esFactura ? "FACTURA" : (esMixto ? "MIXTO" : "AFILIADO");
+    }
+
     public static bool EsContratoFactura(string? codigoContrato, string? valorContrato)
     {
         var cod = codigoContrato?.Trim().ToUpperInvariant() ?? "";

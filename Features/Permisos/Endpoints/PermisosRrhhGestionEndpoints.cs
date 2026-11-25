@@ -86,6 +86,9 @@ public static partial class PermisosEndpoints
         group.MapGet("/rrhh/historial", async (
             [FromQuery] int? idEmpleado,
             [FromQuery] int? anio,
+            [FromQuery] string? desde,
+            [FromQuery] string? hasta,
+            [FromQuery] string? regimen,
             [FromQuery] bool? soloPendientesVerificar,
             [FromQuery] bool? soloHistoricos,
             [FromQuery] string? buscar,
@@ -108,6 +111,12 @@ public static partial class PermisosEndpoints
                 filtro = filtro.Where(s => s.IdEmpleado == idEmpleado.Value);
             if (anio is >= 2000 and <= 2100)
                 filtro = filtro.Where(s => s.FechaInicio.Year == anio.Value || s.FechaFin.Year == anio.Value);
+            var fechaDesde = ParsearFecha(desde);
+            var fechaHasta = ParsearFecha(hasta);
+            if (fechaDesde.HasValue)
+                filtro = filtro.Where(s => s.FechaFin >= fechaDesde.Value);
+            if (fechaHasta.HasValue)
+                filtro = filtro.Where(s => s.FechaInicio <= fechaHasta.Value);
             if (soloPendientesVerificar == true)
                 filtro = filtro.Where(s => !s.VerificadoRrhh);
             if (soloHistoricos == true)
@@ -119,20 +128,36 @@ public static partial class PermisosEndpoints
             }
             filtro = AplicarBusquedaSolicitudes(filtro, buscar);
 
+            var regimenFiltro = string.IsNullOrWhiteSpace(regimen) || string.Equals(regimen, "TODOS", StringComparison.OrdinalIgnoreCase)
+                ? null
+                : regimen.Trim().ToUpperInvariant();
+
+            Dictionary<int, string>? regimenesResueltos = null;
+            if (regimenFiltro is not null)
+            {
+                var empIdsFiltro = await filtro.Select(s => s.IdEmpleado).Distinct().ToListAsync(ct);
+                regimenesResueltos = await ResolverRegimenesPorEmpleadoAsync(db, empIdsFiltro, ct);
+                var empIdsCoincidentes = regimenesResueltos
+                    .Where(kv => string.Equals(kv.Value, regimenFiltro, StringComparison.OrdinalIgnoreCase))
+                    .Select(kv => kv.Key)
+                    .ToList();
+                filtro = filtro.Where(s => empIdsCoincidentes.Contains(s.IdEmpleado));
+            }
+
             var ordenados = filtro.OrderByDescending(s => s.FechaInicio).ThenByDescending(s => s.Id);
 
-            // Sin "page" se conserva el comportamiento anterior (lista completa)
+            // Sin "page" se devuelve la lista completa filtrada (usada para exportación Excel/PDF)
             if (page is null)
             {
                 var idsTodos = await ordenados.Select(s => s.Id).ToListAsync(ct);
-                return Results.Ok(ApiResponse<IReadOnlyList<PermisoItemDto>>.Ok(
-                    await CargarSolicitudesPorIdsAsync(db, idsTodos, ct)));
+                var dtosTodos = await CargarSolicitudesConRegimenPorIdsAsync(db, idsTodos, regimenesResueltos, ct);
+                return Results.Ok(ApiResponse<IReadOnlyList<PermisoItemDto>>.Ok(dtosTodos));
             }
 
             var (pagina, tamano) = NormalizarPaginacion(page, pageSize);
             var total = await filtro.CountAsync(ct);
             var idsPagina = await ordenados.Skip((pagina - 1) * tamano).Take(tamano).Select(s => s.Id).ToListAsync(ct);
-            var dtos = await CargarSolicitudesPorIdsAsync(db, idsPagina, ct);
+            var dtos = await CargarSolicitudesConRegimenPorIdsAsync(db, idsPagina, regimenesResueltos, ct);
 
             return ResponderPagina(dtos, pagina, tamano, total);
         }).RequireAuthorization("PERMISOS_RRHH_READ");
@@ -312,8 +337,9 @@ public static partial class PermisosEndpoints
             }
 
             var cargada = await ConsultarSolicitudesBase(db).FirstAsync(s => s.Id == nueva!.Id, ct);
+            var regimenes = await ResolverRegimenesPorEmpleadoAsync(db, [cargada.IdEmpleado], ct);
             return Results.Ok(ApiResponse<PermisoItemDto>.Ok(
-                MapearSolicitudDto(cargada, null),
+                MapearSolicitudDto(cargada, null) with { Regimen = regimenes.GetValueOrDefault(cargada.IdEmpleado) },
                 "Registro guardado correctamente en el historial."));
         }).RequireAuthorization("PERMISOS_RRHH_CONFIRM");
 
@@ -372,8 +398,9 @@ public static partial class PermisosEndpoints
             await db.SaveChangesAsync(ct);
 
             var cargada = await ConsultarSolicitudesBase(db).FirstAsync(s => s.Id == id, ct);
+            var regimenes = await ResolverRegimenesPorEmpleadoAsync(db, [cargada.IdEmpleado], ct);
             return Results.Ok(ApiResponse<PermisoItemDto>.Ok(
-                MapearSolicitudDto(cargada, null),
+                MapearSolicitudDto(cargada, null) with { Regimen = regimenes.GetValueOrDefault(cargada.IdEmpleado) },
                 "Registro actualizado correctamente."));
         }).RequireAuthorization("PERMISOS_RRHH_CONFIRM");
 
@@ -797,6 +824,73 @@ public static partial class PermisosEndpoints
             .ToListAsync(ct);
         var porId = entidades.ToDictionary(s => s.Id);
         return ids.Where(porId.ContainsKey).Select(id => MapearSolicitudDto(porId[id], null)).ToList();
+    }
+
+    private static async Task<IReadOnlyList<PermisoItemDto>> CargarSolicitudesConRegimenPorIdsAsync(
+        ApplicationDbContext db,
+        IReadOnlyList<int> ids,
+        Dictionary<int, string>? regimenesPrecargados,
+        CancellationToken ct)
+    {
+        var dtos = await CargarSolicitudesPorIdsAsync(db, ids, ct);
+        if (dtos.Count == 0) return dtos;
+
+        var regimenes = regimenesPrecargados;
+        if (regimenes is null)
+        {
+            var empIds = dtos.Select(d => d.IdEmpleado).Distinct().ToList();
+            regimenes = await ResolverRegimenesPorEmpleadoAsync(db, empIds, ct);
+        }
+
+        return dtos
+            .Select(d => d with { Regimen = regimenes.GetValueOrDefault(d.IdEmpleado) })
+            .ToList();
+    }
+
+    private static async Task<Dictionary<int, string>> ResolverRegimenesPorEmpleadoAsync(
+        ApplicationDbContext db,
+        IReadOnlyCollection<int> empIds,
+        CancellationToken ct)
+    {
+        if (empIds.Count == 0) return [];
+
+        var empleados = await db.TblAdministracionEmpleados
+            .AsNoTracking()
+            .Where(e => empIds.Contains(e.Id))
+            .Include(e => e.IdtipocontratoNavigation)
+            .Include(e => e.IdempresacatalogoNavigation)
+            .ToListAsync(ct);
+
+        var contratos = await db.TblAdministracionEmpleadoContratos
+            .AsNoTracking()
+            .Where(c => empIds.Contains(c.Idempleado) && c.Activo)
+            .ToListAsync(ct);
+
+        var catIds = new HashSet<int>();
+        foreach (var e in empleados)
+        {
+            if (e.Idtipocontrato.HasValue) catIds.Add(e.Idtipocontrato.Value);
+            if (e.Idempresacatalogo.HasValue) catIds.Add(e.Idempresacatalogo.Value);
+        }
+        foreach (var c in contratos) catIds.Add(c.Idtipocontrato);
+
+        var catalogos = catIds.Count == 0
+            ? new Dictionary<int, TblAdministracionCatalogoDetalle>()
+            : await db.TblAdministracionCatalogoDetalles
+                .AsNoTracking()
+                .Where(d => catIds.Contains(d.Id))
+                .ToDictionaryAsync(d => d.Id, ct);
+
+        var contratosPorEmp = contratos
+            .GroupBy(c => c.Idempleado)
+            .ToDictionary(g => g.Key, g => (IReadOnlyCollection<TblAdministracionEmpleadoContrato>)g.ToList());
+
+        return empleados.ToDictionary(
+            e => e.Id,
+            e => VacacionesSaldoService.ResolverRegimen(
+                e,
+                contratosPorEmp.GetValueOrDefault(e.Id) ?? [],
+                catalogos));
     }
 
     /// <summary>
