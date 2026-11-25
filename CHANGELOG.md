@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.11.2](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.11.1...v1.11.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* **migraciones:** actualizar el script de adopción para usar variables de esquema y tabla ([ef9c367](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/ef9c367ad9c5acb5c70fe027a102706dc9fec621))
+* **migraciones:** arreglando migraciones v3 ([affad89](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/affad89cc139d87d577dd36769db4f50045011c9))
+* **migraciones:** arreglando migraciones v3.1 ([b32ccc9](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/b32ccc9cb047ff2c8127486f1c4460f4f4de120f))
+
 ## [1.11.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.11.0...v1.11.1) (2026-11-25)
 
 
