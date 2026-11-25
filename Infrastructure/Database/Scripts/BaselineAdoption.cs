@@ -57,7 +57,7 @@ internal static class BaselineAdoption
             throw new InvalidOperationException("Historial parcial o desconocido. Verifique las migraciones en una copia antes de adoptar.");
 
         string[] candidates = applied.Count == 0
-            ? ["Produccion", "SQL01a23"]
+            ? ["Produccion", "SQL01a23", "ProduccionConVacaciones24y25", "ProduccionConVacaciones24y25CastDeArray"]
             : ["Desarrollo", "SQL01a23ConPerfil", "DesarrolloConRevisionPerfilEImportacionFaltas",
                "DesarrolloConRevisionPerfilEImportacionFaltasCastDeArray"];
         var comparisons = candidates.Select(name =>
