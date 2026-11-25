@@ -54,6 +54,20 @@ expected=$(signature "$fresh")
 actual=$(signature "$copy")
 test -n "$expected"
 test "$expected" = "$actual"
+
+# Simular una importación que ya tenía la tabla antes de registrarse en EF.
+staging=time_report.tbl_time_report_permiso_falta_importacion
+query "$copy" "INSERT INTO $staging
+ (fila_excel,nombre_excel,requerimiento_excel,fecha_excel,huella,nota_revision)
+ VALUES (2,'Persona CI','PERMISO','2026-01-10',repeat('a',64),'Pendiente de respaldo')"
+staging_row="SELECT md5(row_to_json(p)::text) FROM $staging p WHERE fila_excel=2"
+staging_before=$(query "$copy" "$staging_row")
+query "$copy" "DELETE FROM public.\"__EFMigrationsHistory\" WHERE \"MigrationId\" = '20261125000000_ImportacionPermisosFaltas'"
+run_app "$copy" --apply-migrations
+run_app "$copy" --apply-migrations
+test "$(query "$copy" "$staging_row")" = "$staging_before"
+test "$(query "$copy" "SELECT count(*) FROM public.\"__EFMigrationsHistory\" WHERE \"MigrationId\" = '20261125000000_ImportacionPermisosFaltas'")" = 1
+test "$(query "$copy" "SELECT count(*) FROM $staging WHERE id_solicitud IS NOT NULL")" = 0
 history='SELECT "MigrationId" FROM public."__EFMigrationsHistory" ORDER BY 1'
 expected=$(query "$fresh" "$history")
 actual=$(query "$copy" "$history")
