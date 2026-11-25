@@ -43,7 +43,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Documentacion/Scripts_DB/*.sql" Exclude="Documentacion/Scripts_DB/06-*.sql" />
+    <EmbeddedResource Include="Migrations/Baseline/*.sql" LogicalName="Tmr.Baseline.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Migrations/Baseline/Estructuras.json" LogicalName="Tmr.Baseline.Estructuras.json" />
+    <Compile Remove="Migrations/20260527194023_InitialCreate*.cs" />
     <Content Include="Features/Permisos/Templates/*.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 

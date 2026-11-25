@@ -82,7 +82,7 @@ AppDomain.CurrentDomain.UnhandledException += (_, e) =>
     Log.CloseAndFlush();
 };
 
-var databaseCommands = new[] { "--prepare-database", "--apply-migrations", "--initialize-data", "--verify-database" };
+var databaseCommands = new[] { "--prepare-database", "--adopt-baseline", "--apply-migrations", "--initialize-data", "--verify-database" };
 var requestedCommands = args.Where(databaseCommands.Contains).ToArray();
 if (requestedCommands.Length > 1)
     throw new InvalidOperationException("Ejecute una sola etapa de base de datos por comando.");
@@ -158,7 +158,8 @@ if (string.IsNullOrWhiteSpace(defaultConnection))
         "en el entorno del contenedor (o DB_CONNECTION_STRING para Docker Compose).");
 
 builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
-    options.UseNpgsql(defaultConnection)
+    options.UseNpgsql(defaultConnection, pg => pg.MigrationsHistoryTable(
+        MigrationHistory.TableName, MigrationHistory.GetMigrationsHistorySchema(builder.Configuration)))
            .AddInterceptors(
                sp.GetRequiredService<AuditInterceptor>(),
                // Despierta al EventDispatcher con los eventos publicados en una transacción, al confirmarla
@@ -267,6 +268,24 @@ builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>()
 // VALIDADORES DE COLABORADORES (nuevo)
 // ================================================================
 builder.Services.AddScoped<IValidator<RegistrarSalidaRequest>, RegistrarSalidaRequestValidator>();
+if (builder.Environment.IsDevelopment())
+{
+    var envPath = Path.Combine(builder.Environment.ContentRootPath, ".env");
+    if (File.Exists(envPath))
+    {
+        foreach (var line in File.ReadLines(envPath))
+        {
+            var separator = line.IndexOf('=');
+            if (separator < 0) continue;
+            var key = line[..separator].Trim();
+            if (key is not ("AWS_ACCESS_KEY_ID" or "AWS_SECRET_ACCESS_KEY" or "AWS_SESSION_TOKEN") ||
+                !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(key))) continue;
+            var value = line[(separator + 1)..].Trim().Trim((char)34, (char)39);
+            if (value.Length > 0) Environment.SetEnvironmentVariable(key, value);
+        }
+    }
+}
+
 builder.Services.Configure<FileStorageOptions>(builder.Configuration.GetSection("FileStorage"));
 builder.Services.Configure<LocalStorageOptions>(builder.Configuration.GetSection("FileStorage"));
 builder.Services.Configure<S3StorageOptions>(builder.Configuration.GetSection("FileStorage:S3"));
@@ -433,6 +452,11 @@ app.MapActualizacionDatosEndpoints();
 app.MapNotificacionesEndpoints();
 app.MapPermisosEndpoints();
 app.MapIntegracionRpsEndpoints();
+if (app.Configuration.GetValue<bool>("Database:ApplyMigrationsOnStartup"))
+{
+    await tmr_backend.Infrastructure.Database.Scripts.DatabaseInstaller.RunAsync(
+        "--apply-migrations", app.Configuration);
+}
 app.Run();
 
 Log.CloseAndFlush();

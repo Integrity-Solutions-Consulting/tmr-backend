@@ -5,9 +5,8 @@
 --   * Resuelve id_empleado dinámicamente por CÉDULA normalizada a 10 dígitos
 --     (NO depende de IDs de la base de migración).
 --   * 100% idempotente: no duplica registros si se ejecuta más de una vez.
---   * Genera códigos HIST-YYYY-NNN y deja marcados con verificado_rrhh = FALSE
---     los registros con fechas normalizadas o notas de seguimiento para revisión
---     en la ventana de Historial Editable de Talento Humano.
+--   * Genera códigos HIST-YYYY-NNN solo para casos verificados y sin conflictos.
+--     Los casos pendientes permanecen en la fuente para revisión de RR. HH.
 -- Generado: 2026-11-24 09:38 | Colaboradores: 33 | Registros: 219
 -- ============================================================================
 
@@ -23,6 +22,8 @@ DECLARE
     v_insertados     INT := 0;
     v_existentes     INT := 0;
     v_sin_match      INT := 0;
+    v_pendientes     INT := 0;
+    v_coincidencias  INT;
     rec              RECORD;
 BEGIN
     SELECT id INTO v_id_tipo_vac FROM time_report.tbl_time_report_tipo_permiso WHERE codigo = 'VACACIONES' LIMIT 1;
@@ -33,7 +34,7 @@ BEGIN
     END IF;
 
     FOR rec IN
-        SELECT * FROM (VALUES
+        WITH origen AS (SELECT * FROM (VALUES
             ('0918839739', 'Villegas Avilés Pablo Roberto', DATE '2013-07-27', DATE '2013-07-27', DATE '2013-07-29', 1::numeric, 'PERMISO VACACIONES', TRUE, FALSE, TRUE, NULL),
             ('0918839739', 'Villegas Avilés Pablo Roberto', DATE '2013-09-10', DATE '2013-09-10', DATE '2013-09-11', 1::numeric, 'PERMISO VACACIONES', TRUE, FALSE, TRUE, NULL),
             ('0918839739', 'Villegas Avilés Pablo Roberto', DATE '2013-10-25', DATE '2013-10-25', DATE '2013-10-28', 1::numeric, 'PERMISO VACACIONES', TRUE, FALSE, TRUE, NULL),
@@ -253,19 +254,24 @@ BEGIN
             ('0929583243', 'Reyes Montalvan Yandri David', DATE '2026-11-05', DATE '2026-11-06', DATE '2026-11-09', 2::numeric, 'VACACIONES', TRUE, FALSE, FALSE, 'Formato MM/DD normalizado desde ''11/05/2026'' | Formato MM/DD normalizado desde ''11/06/2026'''),
             ('0921541728', 'Ramirez Castro Hector David', DATE '2026-11-10', DATE '2026-11-24', DATE '2026-11-25', 15::numeric, 'VACACIONES', TRUE, FALSE, FALSE, 'Nota Excel: AZUL??? | Formato MM/DD normalizado desde ''11/10/2026'''),
             ('0918281106', 'Lopez Espinoza Diego Emilio', DATE '2026-11-12', DATE '2026-11-17', DATE '2026-11-18', 6::numeric, 'VACACIONES', TRUE, FALSE, FALSE, 'Nota Excel: FALTA DOCUMENTACIÓN | Formato MM/DD normalizado desde ''11/12/2026''')
-        ) AS t(cedula, nombre_hc, fecha_inicio, fecha_fin, fecha_regreso, dias, motivo, descuenta_vac, es_anticipada, verificado_rrhh, observacion)
+        ) AS t(cedula, nombre_hc, fecha_inicio, fecha_fin, fecha_regreso, dias, motivo, descuenta_vac, es_anticipada, verificado_rrhh, observacion))
+        SELECT o.*, (SELECT count(*) FROM origen x WHERE x.cedula = o.cedula
+            AND x.fecha_inicio <= o.fecha_fin AND o.fecha_inicio <= x.fecha_fin) AS cruces
+        FROM origen o
     LOOP
+        IF NOT rec.verificado_rrhh OR rec.cruces > 1 THEN
+            v_pendientes := v_pendientes + 1;
+            CONTINUE;
+        END IF;
         -- Match por identificación normalizada sin ceros a la izquierda (soporta cédulas 9/10 dígitos y pasaportes/cédulas extranjeras)
-        SELECT e.id INTO v_id_empleado
+        SELECT min(e.id), count(*) INTO v_id_empleado, v_coincidencias
         FROM administracion.tbl_administracion_empleado e
         JOIN administracion.tbl_administracion_persona p ON p.id = e.idpersona
         WHERE LTRIM(REGEXP_REPLACE(COALESCE(p.numeroidentificacion, ''), '[^0-9]', '', 'g'), '0') = LTRIM(rec.cedula, '0')
           AND e.activo = TRUE
-          AND e.codigoempleado NOT LIKE 'EMP-%'
-        ORDER BY (e.fechaterminacion IS NULL) DESC, e.id ASC
-        LIMIT 1;
+          AND e.codigoempleado NOT LIKE 'EMP-%';
 
-        IF v_id_empleado IS NULL THEN
+        IF v_coincidencias <> 1 THEN
             v_sin_match := v_sin_match + 1;
             RAISE NOTICE 'SIN MATCH EN BD -> Cédula: %, Nombre HC: %, Fecha: % (% d)', rec.cedula, rec.nombre_hc, rec.fecha_inicio, rec.dias;
             CONTINUE;
@@ -281,6 +287,15 @@ BEGIN
               AND s.activo = TRUE
         ) THEN
             v_existentes := v_existentes + 1;
+            CONTINUE;
+        END IF;
+
+        IF EXISTS (
+            SELECT 1 FROM time_report.tbl_time_report_solicitud s
+            WHERE s.activo AND s.id_empleado = v_id_empleado
+              AND s.fecha_inicio <= rec.fecha_fin AND rec.fecha_inicio <= s.fecha_fin
+        ) THEN
+            v_pendientes := v_pendientes + 1;
             CONTINUE;
         END IF;
 
@@ -308,7 +323,7 @@ BEGIN
         v_insertados := v_insertados + 1;
     END LOOP;
 
-    RAISE NOTICE 'CARGA HISTÓRICA COMPLETADA -> Insertados: %, Ya existentes (omitidos): %, Sin match en BD: %', v_insertados, v_existentes, v_sin_match;
+    RAISE NOTICE 'CARGA HISTÓRICA COMPLETADA -> Insertados: %, Ya existentes (omitidos): %, Sin identidad única: %, Pendientes por revisar: %', v_insertados, v_existentes, v_sin_match, v_pendientes;
 END $$;
 
 COMMIT;

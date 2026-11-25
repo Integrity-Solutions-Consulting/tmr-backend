@@ -20,6 +20,12 @@ namespace tmr_backend.Infrastructure.Database;
 
 public partial class ApplicationDbContext : DbContext
 {
+    [DbFunction("translate", IsBuiltIn = true)]
+    public static string NormalizarBusqueda(string texto, string origen, string destino) => throw new NotSupportedException();
+
+    [DbFunction("to_char", IsBuiltIn = true)]
+    public static string FormatearFecha(DateOnly fecha, string formato) => throw new NotSupportedException();
+
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
         : base(options)
     {
@@ -130,38 +136,26 @@ public partial class ApplicationDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder
-            // ─── FIX: HasPostgresEnum debe declarar TODOS los valores del enum C# RevocacionRazonEnum ───
-            // Si tu enum C# tiene más valores que los declarados aquí, Npgsql no puede mapearlos.
-            // También debes asegurarte de que el tipo en PostgreSQL tenga estos valores.
-            // Si la columna revocadorazon en PG es de tipo "autenticacion.revocacion_razon_enum",
-            // la alternativa más simple y robusta es eliminar esa restricción de tipo y usar TEXT.
             .HasPostgresEnum("autenticacion", "audit_evento_enum", new[]
             {
                 "LOGIN_OK", "LOGIN_FAIL", "LOGOUT", "REFRESH_OK", "REFRESH_FAIL",
                 "TOKEN_REVOKE", "PASSWORD_CHANGE", "USER_CREATE", "USER_BLOCK"
             })
-            // ─── CORREGIDO: se agregan todos los valores que usa RevocacionRazonEnum en C# ───
             .HasPostgresEnum("autenticacion", "revocacion_razon_enum", new[]
             {
-                "LOGOUT",
-                "ADMIN_REVOKE",
-                "ADMIN_REVOKE_ALL",
-                "PASSWORD_CHANGE",
-                "SECURITY_BREACH",
-                "EXPIRED",
-                "SESSION_LIMIT",
-                "TOKEN_REUSED",
-                "TOKEN_REVOKED",
-                "TOKEN_INVALID",
-                "TOKEN_EXPIRED",
-                "IP_MISMATCH",
-                "USER_AGENT_MISMATCH",
-                "SESSION_IDLE_TIMEOUT",
-                "SESSION_EXPIRED",
-                "REVOKE"
-            })
-            .HasPostgresExtension("pgcrypto")
-            .HasPostgresExtension("uuid-ossp");
+                "LOGOUT", "ADMIN_REVOKE", "PASSWORD_CHANGE", "SECURITY_BREACH", "EXPIRED", "SESSION_LIMIT"
+            });
+
+        // Estos modelos históricos siguen disponibles para sus consumidores, pero sus tablas
+        // no pertenecen al esquema instalado por TMR.
+        modelBuilder.Entity<Actividad>().ToTable(nameof(Actividades), table => table.ExcludeFromMigrations());
+        modelBuilder.Entity<Cliente>().ToTable(nameof(Clientes), table => table.ExcludeFromMigrations());
+        modelBuilder.Entity<Colaborador>().ToTable(nameof(Colaboradores), table => table.ExcludeFromMigrations());
+        modelBuilder.Entity<DashboardItem>().ToTable(nameof(DashboardItems), table => table.ExcludeFromMigrations());
+        modelBuilder.Entity<Lider>().ToTable(nameof(Lideres), table => table.ExcludeFromMigrations());
+        modelBuilder.Entity<Proyecto>().ToTable(nameof(Proyectos), table => table.ExcludeFromMigrations());
+        modelBuilder.Entity<RegistroTiempo>().ToTable(nameof(RegistrosTiempo), table => table.ExcludeFromMigrations());
+        modelBuilder.Entity<Reporte>().ToTable(nameof(Reportes), table => table.ExcludeFromMigrations());
 
         modelBuilder.Entity<TblAdministracionApariencium>(entity =>
         {
@@ -1009,7 +1003,7 @@ public partial class ApplicationDbContext : DbContext
                 .HasMaxLength(100)
                 .HasColumnName("codigo");
             entity.Property(e => e.Accion)
-                .HasMaxLength(50)
+                .HasMaxLength(40)
                 .HasColumnName("accion");
             entity.Property(e => e.Descripcion).HasColumnName("descripcion");
             entity.Property(e => e.Activo)
@@ -2502,7 +2496,7 @@ public partial class ApplicationDbContext : DbContext
         modelBuilder.Entity<ActualizacionFamiliar>(e => { e.ToTable("tbl_actualizacion_familiar", "administracion"); e.HasKey(x=>x.Id); e.Property(x=>x.Id).UseIdentityAlwaysColumn().HasColumnName("id"); e.Property(x=>x.IdSolicitud).HasColumnName("idsolicitud"); e.Property(x=>x.TipoRelacion).HasColumnName("tiporelacion").HasMaxLength(30).IsRequired(); e.Property(x=>x.Nombres).HasColumnName("nombres").HasMaxLength(100).IsRequired(); e.Property(x=>x.Apellidos).HasColumnName("apellidos").HasMaxLength(100).IsRequired(); e.Property(x=>x.FechaNacimiento).HasColumnName("fechanacimiento"); e.Property(x=>x.TieneDiscapacidad).HasColumnName("tienediscapacidad").HasMaxLength(20); e.Property(x=>x.TipoDiscapacidad).HasColumnName("tipodiscapacidad").HasMaxLength(120); e.Property(x=>x.PorcentajeDiscapacidad).HasColumnName("porcentajediscapacidad"); e.HasOne(x=>x.Solicitud).WithMany(x=>x.Familiares).HasForeignKey(x=>x.IdSolicitud).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<ColaboradorInformacionFamiliar>(e => { e.ToTable("tbl_colaborador_informacion_familiar", "administracion"); e.HasKey(x=>x.IdEmpleado); e.Property(x=>x.IdEmpleado).HasColumnName("idempleado"); e.Property(x=>x.EstadoCivil).HasColumnName("estadocivil").HasMaxLength(80); e.Property(x=>x.TieneHijos).HasColumnName("tienehijos").HasMaxLength(20); e.Property(x=>x.TieneDiscapacidad).HasColumnName("tienediscapacidad").HasMaxLength(20); e.Property(x=>x.TipoDiscapacidad).HasColumnName("tipodiscapacidad").HasMaxLength(120); e.Property(x=>x.PorcentajeDiscapacidad).HasColumnName("porcentajediscapacidad"); });
         modelBuilder.Entity<ColaboradorFamiliar>(e => { e.ToTable("tbl_colaborador_familiar", "administracion"); e.HasKey(x=>x.Id); e.Property(x=>x.Id).UseIdentityAlwaysColumn().HasColumnName("id"); e.Property(x=>x.IdEmpleado).HasColumnName("idempleado"); e.Property(x=>x.TipoRelacion).HasColumnName("tiporelacion").HasMaxLength(30).IsRequired(); e.Property(x=>x.Nombres).HasColumnName("nombres").HasMaxLength(100).IsRequired(); e.Property(x=>x.Apellidos).HasColumnName("apellidos").HasMaxLength(100).IsRequired(); e.Property(x=>x.FechaNacimiento).HasColumnName("fechanacimiento"); e.Property(x=>x.TieneDiscapacidad).HasColumnName("tienediscapacidad").HasMaxLength(20); e.Property(x=>x.TipoDiscapacidad).HasColumnName("tipodiscapacidad").HasMaxLength(120); e.Property(x=>x.PorcentajeDiscapacidad).HasColumnName("porcentajediscapacidad"); e.Property(x=>x.Activo).HasColumnName("activo"); e.Property(x=>x.Identificacion).HasColumnName("identificacion").HasMaxLength(40); e.Property(x=>x.Clave).HasColumnName("clave").HasMaxLength(40).IsRequired(); e.HasIndex(x=>new{x.IdEmpleado,x.Activo}); e.HasIndex(x=>new{x.IdEmpleado,x.Clave}).IsUnique(); e.HasOne(x=>x.Informacion).WithMany(x=>x.Familiares).HasForeignKey(x=>x.IdEmpleado).HasPrincipalKey(x=>x.IdEmpleado).OnDelete(DeleteBehavior.Restrict); });
-        modelBuilder.Entity<ColaboradorDatosControl>(e => { e.ToTable("tbl_colaborador_datos_control", "administracion"); e.HasKey(x=>x.IdEmpleado); e.Property(x=>x.IdEmpleado).HasColumnName("idempleado"); e.Property(x=>x.Version).HasColumnName("version"); e.Property(x=>x.FechaModificacion).HasColumnName("fechamodificacion"); });
+        modelBuilder.Entity<ColaboradorDatosControl>(e => { e.ToTable("tbl_colaborador_datos_control", "administracion"); e.HasKey(x=>x.IdEmpleado); e.Property(x=>x.IdEmpleado).HasColumnName("idempleado"); e.Property(x=>x.Version).HasColumnName("version"); e.Property(x=>x.ConocimientosJson).HasColumnName("conocimientos").HasColumnType("jsonb"); e.Property(x=>x.FechaModificacion).HasColumnName("fechamodificacion"); });
         modelBuilder.Entity<ColaboradorDocumento>(e => { e.ToTable("tbl_colaborador_documento", "administracion"); e.HasKey(x=>x.Id); e.Property(x=>x.Id).UseIdentityAlwaysColumn().HasColumnName("id"); e.Property(x=>x.IdEmpleado).HasColumnName("idempleado"); e.Property(x=>x.Seccion).HasColumnName("seccion").HasMaxLength(40).IsRequired(); e.Property(x=>x.ReferenciaId).HasColumnName("referenciaid"); e.Property(x=>x.ReferenciaClave).HasColumnName("referenciaclave").HasMaxLength(80); e.Property(x=>x.NombreOriginal).HasColumnName("nombreoriginal").HasMaxLength(255).IsRequired(); e.Property(x=>x.ContentType).HasColumnName("contenttype").HasMaxLength(120).IsRequired(); e.Property(x=>x.Tamano).HasColumnName("tamano"); e.Property(x=>x.StorageKey).HasColumnName("storagekey").HasMaxLength(255).IsRequired(); e.Property(x=>x.Provider).HasColumnName("provider").HasMaxLength(30).IsRequired(); e.Property(x=>x.Sha256).HasColumnName("sha256").HasMaxLength(128).IsRequired(); e.Property(x=>x.FechaCreacion).HasColumnName("fechacreacion"); e.Property(x=>x.Activo).HasColumnName("activo"); e.HasIndex(x=>new{x.IdEmpleado,x.Seccion,x.ReferenciaId,x.ReferenciaClave}); });
         modelBuilder.Entity<ColaboradorSolicitud>(e => { e.ToTable("tbl_colaborador_solicitud", "administracion"); e.HasKey(x=>x.Id); e.Property(x=>x.Id).UseIdentityAlwaysColumn().HasColumnName("id"); e.Property(x=>x.IdEmpleado).HasColumnName("idempleado"); e.Property(x=>x.Asunto).HasColumnName("asunto").HasMaxLength(200).IsRequired(); e.Property(x=>x.Descripcion).HasColumnName("descripcion").HasMaxLength(4000).IsRequired(); e.Property(x=>x.FechaCreacion).HasColumnName("fechacreacion"); e.Property(x=>x.FechaEnvio).HasColumnName("fechaenvio"); e.Property(x=>x.Enviada).HasColumnName("enviada"); e.HasIndex(x=>new{x.IdEmpleado,x.FechaCreacion}); });
         modelBuilder.Entity<ColaboradorSolicitudArchivo>(e => { e.ToTable("tbl_colaborador_solicitud_archivo", "administracion"); e.HasKey(x=>x.Id); e.Property(x=>x.Id).UseIdentityAlwaysColumn().HasColumnName("id"); e.Property(x=>x.IdSolicitud).HasColumnName("idsolicitud"); e.Property(x=>x.NombreOriginal).HasColumnName("nombreoriginal").HasMaxLength(255).IsRequired(); e.Property(x=>x.ContentType).HasColumnName("contenttype").HasMaxLength(120).IsRequired(); e.Property(x=>x.Tamano).HasColumnName("tamano"); e.Property(x=>x.StorageKey).HasColumnName("storagekey").HasMaxLength(255).IsRequired(); e.Property(x=>x.Provider).HasColumnName("provider").HasMaxLength(30).IsRequired(); e.Property(x=>x.Sha256).HasColumnName("sha256").HasMaxLength(128).IsRequired(); e.Property(x=>x.FechaCreacion).HasColumnName("fechacreacion"); e.HasOne(x=>x.Solicitud).WithMany(x=>x.Archivos).HasForeignKey(x=>x.IdSolicitud).OnDelete(DeleteBehavior.Cascade); });
@@ -2729,6 +2723,10 @@ public partial class ApplicationDbContext : DbContext
             entity.ToTable("tbl_time_report_solicitud", "time_report");
 
             entity.HasIndex(e => e.Codigo, "uq_tr_solicitud_codigo").IsUnique();
+            entity.HasIndex(e => new { e.VerificadoRrhh, e.FechaInicio }, "idx_tr_solicitud_verificado_rrhh")
+                .IsDescending(false, true).HasFilter("activo = TRUE");
+            entity.HasIndex(e => new { e.IdEmpleado, e.DescuentaVacaciones }, "idx_tr_solicitud_descuenta_vac")
+                .HasFilter("activo = TRUE");
 
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.Codigo).HasMaxLength(30).HasColumnName("codigo");
@@ -2857,7 +2855,16 @@ public partial class ApplicationDbContext : DbContext
         modelBuilder.Entity<TblTimeReportAjusteVacaciones>(entity =>
         {
             entity.HasKey(e => e.Id);
-            entity.ToTable("tbl_time_report_ajuste_vacaciones", "time_report");
+            entity.ToTable("tbl_time_report_ajuste_vacaciones", "time_report", table =>
+            {
+                table.HasCheckConstraint("ck_tr_ajuste_vacaciones_tipo",
+                    "tipo_ajuste IN ('AJUSTE_DIAS', 'EXCEPCION_FACTURA', 'FECHA_AFILIACION')");
+                table.HasCheckConstraint("ck_tr_ajuste_vacaciones_motivo", "NULLIF(BTRIM(motivo), '') IS NOT NULL");
+                table.HasCheckConstraint("ck_tr_ajuste_vacaciones_fecha_afil",
+                    "tipo_ajuste <> 'FECHA_AFILIACION' OR fecha_afiliacion_base IS NOT NULL");
+            });
+            entity.HasIndex(e => new { e.IdEmpleado, e.FechaCreacion }, "idx_tr_ajuste_vacaciones_empleado")
+                .IsDescending(false, true).HasFilter("activo = TRUE");
 
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.IdEmpleado).HasColumnName("id_empleado");

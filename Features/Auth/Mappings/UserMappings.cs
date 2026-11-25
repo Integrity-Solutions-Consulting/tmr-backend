@@ -7,5 +7,5 @@ namespace tmr_backend.Features.Auth.Mappings;
 public static class UserMappings
 {
     public static UserResponse ToUserResponse(this TblAutenticacionUsuario user, int? idEmpleado) =>
-        new(user.Id, user.Email, user.IdpersonaNavigation?.Nombres ?? "Usuario", user.Fechacreacion, idEmpleado);
+        new(user.Id, user.Email, user.IdpersonaNavigation?.Nombres ?? "Usuario", user.Fechacreacion, idEmpleado, user.Debecambiarpassword);
 }

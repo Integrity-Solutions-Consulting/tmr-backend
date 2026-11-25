@@ -227,7 +227,8 @@ public sealed record SaldoVacacionesColaboradorDto(
     decimal SaldoDisponible,
     int TotalRegistrosHistorial,
     int RegistrosPorVerificar,
-    IReadOnlyList<AjusteVacacionesItemDto> Ajustes);
+    IReadOnlyList<AjusteVacacionesItemDto> Ajustes,
+    string? OrigenFechaInicioVacaciones);
 
 public sealed record CrearAjusteVacacionesRequest(
     string TipoAjuste, // "AJUSTE_DIAS" | "EXCEPCION_FACTURA" | "FECHA_AFILIACION"

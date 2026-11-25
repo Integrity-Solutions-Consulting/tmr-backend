@@ -118,6 +118,71 @@ public static partial class PermisosEndpoints
             return Results.Ok(ApiResponse<IReadOnlyList<PermisoItemDto>>.Ok(dtos));
         }).RequireAuthorization("PERMISOS_RRHH_READ");
 
+        // El cliente anterior conserva /historial durante el despliegue escalonado.
+        group.MapGet("/rrhh/historial/pagina", async (
+            int? pagina, int? tamano, int? idEmpleado, int? anio, string? tipo,
+            string? buscar, bool? soloPendientesVerificar, bool? soloHistoricos,
+            ApplicationDbContext db, ICurrentUserService currentUser, CancellationToken ct) =>
+        {
+            var actor = await ResolverActorActualAsync(db, currentUser, ct);
+            if (actor is null)
+                return Results.Unauthorized();
+            if (!actor.EsRrhh && !actor.EsAdmin)
+                return Results.Forbid();
+            if (pagina is < 1 || tamano is < 1 or > 100 || buscar?.Length > 200)
+                return Results.BadRequest(ApiResponse<object>.Fail(400, "Página o filtros inválidos. El tamaño permitido es de 1 a 100.", []));
+
+            var activas = db.TblTimeReportSolicitudes.AsNoTracking().Where(s => s.Activo);
+            var query = activas;
+            if (idEmpleado.HasValue)
+                query = query.Where(s => s.IdEmpleado == idEmpleado);
+            if (anio.HasValue)
+                query = query.Where(s => s.FechaInicio.Year == anio || s.FechaFin.Year == anio);
+            if (!string.IsNullOrWhiteSpace(tipo))
+                query = query.Where(s => s.TipoPermiso.Codigo == tipo);
+            if (soloPendientesVerificar == true)
+                query = query.Where(s => !s.VerificadoRrhh);
+            if (soloHistoricos == true)
+                query = query.Where(s => s.EsHistorico);
+
+            foreach (var palabra in (buscar ?? "").ToLowerInvariant().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+            {
+                query = query.Where(s => ApplicationDbContext.NormalizarBusqueda((
+                    s.Codigo + " " + s.Empleado.IdpersonaNavigation.Apellidos + " " + s.Empleado.IdpersonaNavigation.Nombres
+                    + " " + s.Empleado.IdpersonaNavigation.Numeroidentificacion + " " + s.Empleado.Codigoempleado
+                    + " " + s.TipoPermiso.Nombre + " " + s.Motivo + " " + (s.ObservacionMigracion ?? "")
+                    + " " + ApplicationDbContext.FormatearFecha(s.FechaInicio, "DD/MM/YYYY")
+                    + " " + ApplicationDbContext.FormatearFecha(s.FechaFin, "DD/MM/YYYY")
+                    + " " + (s.Estado.Codigo == "APROBADA" ? "Confirmado" : s.Estado.Codigo == "PENDIENTE_TH" ? "En Talento Humano"
+                        : s.Estado.Codigo == "PENDIENTE_JEFE" ? "Pendiente Jefe" : s.Estado.Codigo == "OBSERVADA" ? "Observado" : s.Estado.Codigo == "RECHAZADA" ? "Rechazado" : s.Estado.Nombre)
+                    ).ToLower(), "áéíóúüñ", "aeiouun").Contains(
+                        ApplicationDbContext.NormalizarBusqueda(palabra, "áéíóúüñ", "aeiouun")));
+            }
+
+            var total = await query.CountAsync(ct);
+            var numero = pagina ?? 1;
+            var limite = tamano ?? 25;
+            var offset = ((long)numero - 1) * limite;
+            var items = new List<PermisoItemDto>();
+            if (offset < total)
+            {
+                var ids = query.OrderByDescending(s => s.FechaInicio).ThenByDescending(s => s.Id)
+                    .Skip((int)offset).Take(limite).Select(s => s.Id);
+                var filas = await ConsultarSolicitudesBase(db).Where(s => ids.Contains(s.Id))
+                    .OrderByDescending(s => s.FechaInicio).ThenByDescending(s => s.Id).AsSplitQuery().ToListAsync(ct);
+                items.AddRange(filas.Select(s => MapearSolicitudDto(s, null)));
+            }
+
+            var resumen = await activas.GroupBy(s => 1).Select(g => new {
+                registros = g.Count(), porVerificar = g.Count(s => !s.VerificadoRrhh),
+                porConfirmar = g.Count(s => s.Estado.Codigo == "PENDIENTE_TH"),
+                confirmados = g.Count(s => s.Estado.Codigo == "APROBADA")
+            }).SingleOrDefaultAsync(ct);
+            var anios = await activas.Select(s => s.FechaInicio.Year).Union(activas.Select(s => s.FechaFin.Year))
+                .OrderByDescending(a => a).ToListAsync(ct);
+            return Results.Ok(ApiResponse<object>.Ok(new { items, total, pagina = numero, tamano = limite, resumen, anios }));
+        }).RequireAuthorization("PERMISOS_RRHH_READ");
+
         // C. Crear registro directo de permiso/vacación por RRHH (histórico o regularización)
         group.MapPost("/rrhh/registro", async (
             [FromBody] GuardarPermisoRrhhRequest request,
@@ -389,7 +454,8 @@ public static partial class PermisosEndpoints
                     SaldoDisponible: resumen.SaldoDisponible,
                     TotalRegistrosHistorial: solEmp.Count,
                     RegistrosPorVerificar: solEmp.Count(s => !s.VerificadoRrhh),
-                    Ajustes: ajustesDto);
+                    Ajustes: ajustesDto,
+                    OrigenFechaInicioVacaciones: resumen.OrigenFechaInicioVacaciones);
             }).ToList();
 
             return Results.Ok(ApiResponse<IReadOnlyList<SaldoVacacionesColaboradorDto>>.Ok(resultado));
