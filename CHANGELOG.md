@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.13.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.13.0...v1.13.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* dejar cuatro espacios de firma manual en formulario PDF ([8b6f478](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/8b6f4787b359b2389a52f361c7c089a8b5c79f6d))
+* dejar cuatro espacios de firma manual en formulario PDF ([ca35c6c](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/ca35c6c00083d87f1f353f91edb57b6e67777395))
+
 ## [1.13.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.12.0...v1.13.0) (2026-11-25)
 
 
