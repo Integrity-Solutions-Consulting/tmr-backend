@@ -93,8 +93,32 @@ public sealed class ActualizacionDirectaService(
             FechaCreacion = now, FechaEnvio = now, EstadoRevision = section == "conocimientos" ? "Guardada" : "EnRevision",
             Propuesta = JsonSerializer.Serialize(input)
         });
+        List<int> revisores = [];
+        if (section != "conocimientos")
+        {
+            revisores = await db.TblAutenticacionUsuarioRols.AsNoTracking()
+                .Where(ur => ur.Activo && ur.IdusuarioNavigation.Activo && ur.IdrolNavigation.Activo &&
+                    (ur.IdrolNavigation.Nombre.ToUpper() == "RECURSOS HUMANOS" ||
+                     ur.IdrolNavigation.Nombre.ToUpper() == "RECURSOS_HUMANOS") &&
+                    ur.IdrolNavigation.TblAutenticacionRolPermisos.Any(rp => rp.Activo &&
+                        rp.IdpermisoNavigation.Activo && rp.IdpermisoNavigation.Codigo == "COLABORADORES_DATOS_REVISAR"))
+                .Select(ur => ur.Idusuario)
+                .Distinct()
+                .ToListAsync(ct);
+
+            var colaborador = $"{owner.Person.Nombres} {owner.Person.Apellidos}".Trim();
+            db.NotificacionesUsuario.AddRange(revisores.Select(idUsuario => new NotificacionUsuario
+            {
+                IdUsuarioDestino = idUsuario,
+                Titulo = "Solicitud de perfil pendiente de revisión",
+                Mensaje = $"{colaborador} envió a revisión la sección {NombreSeccion(section)}.",
+                UrlDestino = $"/revision-perfiles/{owner.Employee.Id}",
+                FechaCreacion = now
+            }));
+        }
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+        if (revisores.Count > 0) notificaciones.NotificarUsuarios(revisores);
         return (control?.Version ?? db.Set<ColaboradorDatosControl>().Local.SingleOrDefault(x => x.IdEmpleado == owner.Employee.Id)?.Version ?? 0, section != "conocimientos");
     }
 
@@ -209,6 +233,15 @@ public sealed class ActualizacionDirectaService(
             Documentos = docs.Where(x => DocumentSection(x.Seccion) == row.Seccion).Select(ToDoc) };
     }
 
+    private static string NombreSeccion(string seccion) => seccion switch
+    {
+        "personal" => "Información personal",
+        "familia" => "Información familiar",
+        "formacion" => "Formación académica",
+        "certificaciones" => "Certificaciones",
+        _ => seccion
+    };
+
     public async Task<bool> DecideAsync(long id, string estado, string? observacion, CancellationToken ct)
     {
         if (estado is not ("EnRevision" or "Aprobada" or "RequiereCorreccion"))
@@ -225,17 +258,24 @@ public sealed class ActualizacionDirectaService(
         {
             var employee = await db.TblAdministracionEmpleados.Include(x => x.IdpersonaNavigation).SingleAsync(x => x.Id == row.IdEmpleado, ct);
             await ApplyAsync(JsonSerializer.Deserialize<ActualizacionRequest>(row.Propuesta!)!, employee, employee.IdpersonaNavigation, ct);
-
-            destinatarios = await db.TblAutenticacionUsuarios.AsNoTracking()
-                .Where(usuario => usuario.Idpersona == employee.Idpersona && usuario.Activo)
-                .Select(usuario => usuario.Id)
-                .ToListAsync(ct);
+        }
+        if (estado is "Aprobada" or "RequiereCorreccion")
+        {
+            var seccion = NombreSeccion(row.Seccion);
+            var aprobada = estado == "Aprobada";
+            destinatarios = await (from usuario in db.TblAutenticacionUsuarios.AsNoTracking()
+                                   join empleado in db.TblAdministracionEmpleados.AsNoTracking()
+                                       on usuario.Idpersona equals empleado.Idpersona
+                                   where empleado.Id == row.IdEmpleado && usuario.Activo
+                                   select usuario.Id).ToListAsync(ct);
             db.NotificacionesUsuario.AddRange(destinatarios.Select(idUsuario => new NotificacionUsuario
             {
                 IdUsuarioDestino = idUsuario,
-                Titulo = "Cambios de perfil aprobados",
-                Mensaje = "Recursos Humanos aprobó los cambios de tu solicitud. Ya puedes consultarlos en Mi perfil.",
-                UrlDestino = "/mi-perfil",
+                Titulo = aprobada ? "Cambios de perfil aprobados" : "Corrección de perfil solicitada",
+                Mensaje = aprobada
+                    ? $"Recursos Humanos aprobó los cambios en {seccion}."
+                    : $"Recursos Humanos solicitó una corrección en {seccion}: {observacion?.Trim()}",
+                UrlDestino = aprobada ? "/mi-perfil" : $"/mis-datos?tab={row.Seccion}",
                 FechaCreacion = DateTime.UtcNow
             }));
         }
