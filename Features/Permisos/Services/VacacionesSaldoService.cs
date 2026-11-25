@@ -205,7 +205,6 @@ public static class VacacionesSaldoService
         // 5. Días consumidos y ajustes manuales
         var diasConsumidos = solicitudesEmpleado
             .Where(s => s.Activo
-                        && (!s.EsHistorico || s.VerificadoRrhh)
                         && s.Estado?.Codigo is not ("RECHAZADA" or "OBSERVADA")
                         && (s.DescuentaVacaciones || string.Equals(s.TipoPermiso?.Codigo, "VACACIONES", StringComparison.OrdinalIgnoreCase)))
             .Sum(s => s.DiasSolicitados);

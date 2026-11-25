@@ -176,7 +176,6 @@ public static partial class PermisosEndpoints
 
             var activas = db.TblTimeReportSolicitudes.AsNoTracking().Where(s => s.Activo);
             var totalHistorial = await activas.CountAsync(ct);
-            var porVerificar = await activas.CountAsync(s => !s.VerificadoRrhh, ct);
 
             var aniosInicio = await activas.Select(s => s.FechaInicio.Year).Distinct().ToListAsync(ct);
             var aniosFin = await activas.Select(s => s.FechaFin.Year).Distinct().ToListAsync(ct);
@@ -195,7 +194,7 @@ public static partial class PermisosEndpoints
                 PendientesLiderExterno: estados.Count(e => e == "PENDIENTE_LIDER_EXT"),
                 Confirmadas: estados.Count(e => e == "APROBADO_RRHH"),
                 TotalHistorial: totalHistorial,
-                PorVerificar: porVerificar,
+                PorVerificar: 0,
                 TotalColaboradores: totalColaboradores,
                 AniosDisponibles: anios);
 
@@ -313,7 +312,7 @@ public static partial class PermisosEndpoints
                     EsRecuperable = request.EsRecuperable,
                     EsAnticipada = request.EsAnticipada,
                     EsHistorico = request.EsHistorico,
-                    VerificadoRrhh = request.VerificadoRrhh,
+                    VerificadoRrhh = true,
                     ObservacionMigracion = string.IsNullOrWhiteSpace(request.ObservacionMigracion) ? null : request.ObservacionMigracion.Trim(),
                     Activo = true,
                     UsuarioCreacion = actor.Email,
@@ -387,7 +386,7 @@ public static partial class PermisosEndpoints
             solicitud.EsRecuperable = request.EsRecuperable;
             solicitud.EsAnticipada = request.EsAnticipada;
             solicitud.EsHistorico = request.EsHistorico;
-            solicitud.VerificadoRrhh = request.VerificadoRrhh;
+            solicitud.VerificadoRrhh = true;
             solicitud.ObservacionMigracion = string.IsNullOrWhiteSpace(request.ObservacionMigracion)
                 ? null
                 : request.ObservacionMigracion.Trim();
@@ -1008,7 +1007,7 @@ public static partial class PermisosEndpoints
                 DiasAjuste: resumen.DiasAjuste,
                 SaldoDisponible: resumen.SaldoDisponible,
                 TotalRegistrosHistorial: solEmp.Count,
-                RegistrosPorVerificar: solEmp.Count(s => !s.VerificadoRrhh),
+                RegistrosPorVerificar: 0,
                 Ajustes: ajustesDto,
                 OrigenFechaInicioVacaciones: resumen.OrigenFechaInicioVacaciones);
         }).ToList();
