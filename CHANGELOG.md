@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.13.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.12.0...v1.13.0) (2026-11-25)
+
+
+### Features
+
+* **permisos:** filtros de fechas y afiliacion en historial RRHH ([be4d190](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/be4d190b61b0449f6d6db46194bbc2391f73846f))
+* **permisos:** filtros de fechas y afiliacion en historial RRHH ([db3ade7](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/db3ade778319ba111672181374d45c148cd53851))
+
 ## [1.12.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.11.3...v1.12.0) (2026-11-25)
 
 
