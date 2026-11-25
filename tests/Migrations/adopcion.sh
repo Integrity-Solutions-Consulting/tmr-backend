@@ -20,7 +20,8 @@ pg createdb -U "$PGUSER" "$fresh"
 run_app "$fresh" --prepare-database
 pg createdb -U "$PGUSER" -T "$fresh" "$copy"
 # Solo sobre la copia recién creada: simular una base preexistente sin historial.
-query "$copy" 'DROP TABLE public."__EFMigrationsHistory"'
+query "$copy" 'DROP TABLE migraciones."__EFMigrationsHistory"'
+query "$copy" 'DROP SCHEMA migraciones'
 query "$copy" "INSERT INTO administracion.tbl_administracion_persona
  (numeroidentificacion,tipopersona,nombres,apellidos,usuariocreacion,ipcreacion)
  VALUES ('CI-PR2','NATURAL','Prueba','Migraciones','CI','127.0.0.1')"
@@ -40,7 +41,7 @@ test "$(query "$copy" "$grant_sql")" = f
 
 query "$copy" 'ALTER TABLE administracion.tbl_administracion_persona ADD COLUMN prueba_ci integer'
 if run_app "$copy" --adopt-baseline; then echo 'Se aceptó una estructura distinta' >&2; exit 1; fi
-test "$(query "$copy" "SELECT to_regclass('public.\"__EFMigrationsHistory\"') IS NULL")" = t
+test "$(query "$copy" "SELECT to_regclass('migraciones.\"__EFMigrationsHistory\"') IS NULL")" = t
 query "$copy" 'ALTER TABLE administracion.tbl_administracion_persona DROP COLUMN prueba_ci'
 run_app "$copy" --adopt-baseline
 run_app "$copy" --adopt-baseline
@@ -54,7 +55,7 @@ expected=$(signature "$fresh")
 actual=$(signature "$copy")
 test -n "$expected"
 test "$expected" = "$actual"
-history='SELECT "MigrationId" FROM public."__EFMigrationsHistory" ORDER BY 1'
+history='SELECT "MigrationId" FROM migraciones."__EFMigrationsHistory" ORDER BY 1'
 expected=$(query "$fresh" "$history")
 actual=$(query "$copy" "$history")
 test -n "$expected"
