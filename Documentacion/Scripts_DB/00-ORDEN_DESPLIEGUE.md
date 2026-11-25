@@ -10,6 +10,7 @@ base vacía y no debe ejecutarse sobre Desarrollo ni Producción.
 
 ## Requisitos
 
+
 - PostgreSQL 16, UTF-8 y almacenamiento persistente. El operador crea la base y
   el usuario del nuevo servidor. La cuenta instaladora necesita permisos para
   crear esquemas, tipos, tablas, funciones, índices, secuencias y triggers.
