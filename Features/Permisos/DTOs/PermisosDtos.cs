@@ -255,3 +255,23 @@ public sealed record PaginaResultadoDto<T>(
     int PageSize,
     int TotalCount,
     int TotalPages);
+
+/// <summary>Indicadores de un listado de solicitudes (Mis permisos, Aprobaciones del líder, Gerencia).</summary>
+public sealed record ResumenListadoPermisosDto(
+    int Total,
+    int EnProceso,
+    int Confirmados,
+    int Rechazados,
+    int PendientesLider,
+    int AprobadosLider,
+    int AusentesHoy,
+    IReadOnlyList<string> Proyectos);
+
+/// <summary>Página de solicitudes con los indicadores de la vista.</summary>
+public sealed record PaginaPermisosDto(
+    IReadOnlyList<PermisoItemDto> Items,
+    int Page,
+    int PageSize,
+    int TotalCount,
+    int TotalPages,
+    ResumenListadoPermisosDto Resumen);

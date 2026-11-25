@@ -11,6 +11,7 @@ namespace tmr_backend.Infrastructure.Database.Scripts;
 internal static class BaselineAdoption
 {
     private const string LegacyInitial = "20260527194023_InitialCreate";
+    private const string ProduccionConColaboradoresYVacaciones = "ProduccionConColaboradoresYVacaciones";
 
     // IDs distribuidos hasta la versión del respaldo de desarrollo. La lista es histórica:
     // no debe crecer al incorporar nuevas migraciones.
@@ -57,7 +58,8 @@ internal static class BaselineAdoption
             throw new InvalidOperationException("Historial parcial o desconocido. Verifique las migraciones en una copia antes de adoptar.");
 
         string[] candidates = applied.Count == 0
-            ? ["Produccion", "SQL01a23", "ProduccionConVacaciones24y25", "ProduccionConVacaciones24y25CastDeArray"]
+            ? ["Produccion", "SQL01a23", "ProduccionConVacaciones24y25", "ProduccionConVacaciones24y25CastDeArray",
+               ProduccionConColaboradoresYVacaciones]
             : ["Desarrollo", "SQL01a23ConPerfil", "DesarrolloConRevisionPerfilEImportacionFaltas",
                "DesarrolloConRevisionPerfilEImportacionFaltasCastDeArray"];
         var comparisons = candidates.Select(name =>
@@ -75,6 +77,12 @@ internal static class BaselineAdoption
         var history = db.GetService<IHistoryRepository>();
         await db.Database.ExecuteSqlRawAsync(history.GetCreateIfNotExistsScript());
         await db.Database.ExecuteSqlRawAsync(history.GetInsertScript(new HistoryRow(BaselineProduccion.Id, "10.0.8")));
+        if (closest.Name == ProduccionConColaboradoresYVacaciones)
+        {
+            // Esta firma incluye las cinco migraciones y el NOT NULL de las tres columnas clave.
+            foreach (var migration in DevelopmentMigrations)
+                await db.Database.ExecuteSqlRawAsync(history.GetInsertScript(new HistoryRow(migration, "10.0.8")));
+        }
         await transaction.CommitAsync();
         Console.WriteLine($"Línea base registrada sobre estructura verificada de {closest.Name}.");
     }
