@@ -250,57 +250,24 @@ public sealed class PermisosPdfService : IPermisosPdfService
                             .Text(d.HorasSolicitadas).FontSize(9).Bold().FontColor(ColorCorporativo);
                     });
 
-                    // 8. TABLA: FIRMAS / APROBACIONES
-                    col.Item().Table(table =>
+                    // 8. FIRMAS MANUSCRITAS
+                    col.Item().Column(sec =>
                     {
-                        table.ColumnsDefinition(columns =>
+                        BarraSeccionAzul(sec.Item(), "FIRMAS PARA APROBACIÓN DE SOLICITUD");
+                        sec.Item().Table(table =>
                         {
-                            columns.RelativeColumn(1.8f);
-                            columns.RelativeColumn(2.73f);
-                            columns.RelativeColumn(2.73f);
-                            columns.RelativeColumn(2.74f);
+                            table.ColumnsDefinition(columns =>
+                            {
+                                columns.RelativeColumn();
+                                columns.RelativeColumn();
+                            });
+
+                            CeldaFirma(table.Cell(), "Firma del Empleado");
+                            CeldaFirma(table.Cell(), "Jefe Administrativo");
+                            CeldaFirma(table.Cell(), "Gerente General");
+                            CeldaFirma(table.Cell(), "Talento Humano");
                         });
-
-                        table.Cell().RowSpan(2).Border(1).BorderColor(ColorBorde).Background(ColorGrisCabecera)
-                            .Padding(5).AlignMiddle().Text("Firmas").FontSize(8.5f).Bold();
-
-                        CeldaSubHeader(table.Cell(), "Firma del solicitante");
-                        CeldaSubHeader(table.Cell(), "Jefe inmediato");
-                        CeldaSubHeader(table.Cell(), "Talento Humano");
-
-                        table.Cell().Border(1).BorderColor(ColorBorde).MinHeight(46).Padding(5)
-                            .AlignCenter().AlignMiddle().Column(c =>
-                            {
-                                c.Item().AlignCenter().Text(d.Colaborador).FontSize(8.5f).Bold();
-                                c.Item().AlignCenter().Text($"Registrado en TMR · {d.FechaSolicitud}").FontSize(7).FontColor("#475569");
-                            });
-
-                        table.Cell().Border(1).BorderColor(ColorBorde).MinHeight(46).Padding(5)
-                            .AlignCenter().AlignMiddle().Column(c =>
-                            {
-                                c.Item().AlignCenter().Text(d.LiderNombre).FontSize(8.5f).Bold();
-                                var textoLider = d.AprobadoLider
-                                    ? $"APROBADO · {d.MetodoLider} ({d.FechaAprobacionLider ?? d.FechaAprobacion})"
-                                    : d.EstadoClase == "rechazado"
-                                        ? "RECHAZADO"
-                                        : "Pendiente de aprobación";
-                                c.Item().AlignCenter().Text(textoLider).FontSize(7)
-                                    .FontColor(d.AprobadoLider ? "#15803D" : d.EstadoClase == "rechazado" ? "#B91C1C" : "#B45309");
-                            });
-
-                        table.Cell().Border(1).BorderColor(ColorBorde).MinHeight(46).Padding(5)
-                            .AlignCenter().AlignMiddle().Column(c =>
-                            {
-                                c.Item().AlignCenter().Text(string.IsNullOrWhiteSpace(d.ResponsableRrhh) ? "Talento Humano ISC" : d.ResponsableRrhh)
-                                    .FontSize(8.5f).Bold();
-                                var textoRrhh = d.ConfirmadoRrhh
-                                    ? $"CONFIRMADO · {d.FechaConfirmacionRrhh ?? d.FechaAprobacion}"
-                                    : "Pendiente de confirmación";
-                                c.Item().AlignCenter().Text(textoRrhh).FontSize(7)
-                                    .FontColor(d.ConfirmadoRrhh ? "#15803D" : "#64748B");
-                            });
                     });
-
                     // 9. SECCIÓN: COMENTARIOS
                     col.Item().Column(sec =>
                     {
@@ -331,6 +298,17 @@ public sealed class PermisosPdfService : IPermisosPdfService
             .Text(titulo).FontSize(8.5f).Bold().FontColor(Colors.White);
     }
 
+    private static void CeldaFirma(IContainer container, string cargo)
+    {
+        container.Border(1).BorderColor(ColorBorde)
+            .PaddingHorizontal(16).PaddingTop(5).PaddingBottom(5)
+            .Column(col =>
+            {
+                col.Item().Height(37).Text(" ");
+                col.Item().BorderBottom(1).BorderColor(ColorTexto).Height(2).Text(" ");
+                col.Item().PaddingTop(3).AlignCenter().Text(cargo).FontSize(8);
+            });
+    }
     private static void CeldaSubHeader(IContainer container, string texto)
     {
         container.Border(1).BorderColor(ColorBorde).Background(ColorGrisSub)

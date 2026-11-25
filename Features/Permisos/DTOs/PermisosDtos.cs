@@ -52,7 +52,15 @@ public sealed record ContextoColaboradorPermisoDto(
     bool EsNomina = true,
     string TipoContrato = "Nómina",
     IReadOnlyList<TipoPermisoCatalogoDto>? TiposPermiso = null,
-    IReadOnlyList<RrhhDisponiblePermisoDto>? RrhhDisponibles = null);
+    IReadOnlyList<RrhhDisponiblePermisoDto>? RrhhDisponibles = null,
+    string RegimenVacaciones = "AFILIADO",
+    bool TieneDerechoVacaciones = true,
+    string? FechaInicioVacaciones = null,
+    decimal DiasGanadosAcumulados = 0m,
+    decimal DiasConsumidosVacaciones = 0m,
+    decimal DiasAjusteVacaciones = 0m,
+    decimal DiasProporcionalesCiclo = 0m,
+    decimal MaximoAnticipoDias = 15m);
 
 public sealed record AdjuntoPermisoDto(
     int Id,
@@ -121,7 +129,14 @@ public sealed record PermisoItemDto(
     string? TokenExterno,
     IReadOnlyList<AdjuntoPermisoDto>? Adjuntos = null,
     string? AvisoNotificacion = null,
-    string? VersionSolicitud = null);
+    string? VersionSolicitud = null,
+    bool DescuentaVacaciones = false,
+    bool EsRecuperable = false,
+    bool EsAnticipada = false,
+    bool EsHistorico = false,
+    bool VerificadoRrhh = true,
+    string? ObservacionMigracion = null,
+    string? Regimen = null);
 
 public sealed record CrearPermisoRequest(
     int? IdProyecto,
@@ -152,3 +167,112 @@ public sealed record DecisionRrhhRequest(
 public sealed record DecisionExternaRequest(
     string Accion, // "aprobar" | "observar" | "rechazar"
     string? Comentario, string? VersionSolicitud = null);
+
+public sealed record ColaboradorSelectorPermisoDto(
+    int IdEmpleado,
+    string CodigoEmpleado,
+    string Cedula,
+    string ApellidosNombres,
+    string Regimen,
+    string TipoContrato,
+    string? Empresa,
+    bool Activo);
+
+public sealed record GuardarPermisoRrhhRequest(
+    int IdEmpleado,
+    string TipoOficial,
+    string FechaInicio,         // YYYY-MM-DD o DD/MM/YYYY
+    string FechaFin,            // YYYY-MM-DD o DD/MM/YYYY
+    string? FechaRegreso,       // opcional
+    decimal? TotalDias,         // opcional: si no se envía, se calcula automáticamente
+    string? Horario,            // COMPLETA | MANANA | TARDE | OTROS
+    string? DetalleHorario,
+    string Motivo,
+    bool DescuentaVacaciones,
+    bool EsRecuperable,
+    bool EsAnticipada,
+    bool EsHistorico,
+    bool VerificadoRrhh,
+    string? ObservacionMigracion,
+    string? EstadoCodigo = null,       // APROBADA, PENDIENTE_TH, etc. (opcional)
+    string? ImpactoTimeReport = null); // RESTA_META, SUMA_REPORTADAS, SIN_IMPACTO
+
+public sealed record AjusteVacacionesItemDto(
+    int Id,
+    string TipoAjuste,
+    decimal DiasAjuste,
+    bool? PermiteVacaciones,
+    string Motivo,
+    string UsuarioCreacion,
+    string FechaCreacion,
+    string? FechaAfiliacionBase = null);
+
+public sealed record SaldoVacacionesColaboradorDto(
+    int IdEmpleado,
+    string CodigoEmpleado,
+    string Cedula,
+    string ApellidosNombres,
+    string Cargo,
+    string? Empresa,
+    string TipoContrato,
+    string Regimen, // AFILIADO | MIXTO | FACTURA
+    bool TieneDerechoVacaciones,
+    bool ExcepcionFacturaActiva,
+    string? FechaIngresoOriginal,
+    string? FechaInicioVacaciones,
+    int AniosAntiguedad,
+    decimal DiasGanadosAcumulados,
+    decimal DiasProporcionalesCiclo,
+    decimal DiasConsumidos,
+    decimal DiasAjuste,
+    decimal SaldoDisponible,
+    int TotalRegistrosHistorial,
+    int RegistrosPorVerificar,
+    IReadOnlyList<AjusteVacacionesItemDto> Ajustes,
+    string? OrigenFechaInicioVacaciones);
+
+public sealed record CrearAjusteVacacionesRequest(
+    string TipoAjuste, // "AJUSTE_DIAS" | "EXCEPCION_FACTURA" | "FECHA_AFILIACION"
+    decimal DiasAjuste,
+    bool? PermiteVacaciones,
+    string Motivo,
+    string? FechaAfiliacionBase = null); // YYYY-MM-DD o DD/MM/YYYY (solo FECHA_AFILIACION)
+
+public sealed record ResumenGestionRrhhDto(
+    int PorConfirmar,
+    int PendientesLiderExterno,
+    int Confirmadas,
+    int TotalHistorial,
+    int PorVerificar,
+    int TotalColaboradores,
+    IReadOnlyList<int> AniosDisponibles);
+
+/// <summary>
+/// Página de resultados dentro de "data" (el interceptor del frontend solo conserva "data").
+/// </summary>
+public sealed record PaginaResultadoDto<T>(
+    IReadOnlyList<T> Items,
+    int Page,
+    int PageSize,
+    int TotalCount,
+    int TotalPages);
+
+/// <summary>Indicadores de un listado de solicitudes (Mis permisos, Aprobaciones del líder, Gerencia).</summary>
+public sealed record ResumenListadoPermisosDto(
+    int Total,
+    int EnProceso,
+    int Confirmados,
+    int Rechazados,
+    int PendientesLider,
+    int AprobadosLider,
+    int AusentesHoy,
+    IReadOnlyList<string> Proyectos);
+
+/// <summary>Página de solicitudes con los indicadores de la vista.</summary>
+public sealed record PaginaPermisosDto(
+    IReadOnlyList<PermisoItemDto> Items,
+    int Page,
+    int PageSize,
+    int TotalCount,
+    int TotalPages,
+    ResumenListadoPermisosDto Resumen);

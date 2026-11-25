@@ -229,7 +229,38 @@ public static class TimeReportEndpoints
         // su líder en ese proyecto. Devuelve la vigencia para validar las mismas fechas que puede registrar el colaborador.
         groupActividades.MapGet("/completar-lider", async (int idEmpleado, int idProyecto, ClaimsPrincipal user, ApplicationDbContext db) =>
         {
-            return Results.Forbid();
+            var idLider = await ObtenerLiderSesionAsync(user, db);
+            if (idLider is null || await ObtenerEmpleadoSesionAsync(user, db) == idEmpleado)
+                return Results.Ok(new CompletarLiderDto(false));
+
+            var asignaciones = await db.TblTimeReportAsignacionProyectos
+                .AsNoTracking()
+                .Where(ep => ep.Activo && ep.Idempleado == idEmpleado && ep.Idproyecto == idProyecto && ep.Idlider == idLider)
+                .Select(ep => new
+                {
+                    ep.IdproyectoNavigation.Nombre,
+                    ep.IdproyectoNavigation.Codigo,
+                    ep.Fechaasignacion,
+                    ep.Fechafinasignacion,
+                    FinProyecto = ep.IdproyectoNavigation.Fechafinreal ?? ep.IdproyectoNavigation.Fechafinplaneada
+                })
+                .ToListAsync();
+            if (asignaciones.Count == 0) return Results.Ok(new CompletarLiderDto(false));
+
+            var salidaColaborador = await db.TblAdministracionEmpleados
+                .AsNoTracking()
+                .Where(e => e.Id == idEmpleado)
+                .Select(e => e.Activo ? null : e.Fechaterminacion)
+                .FirstOrDefaultAsync();
+
+            return Results.Ok(new CompletarLiderDto(true, idLider, new ProyectoLookupDto(
+                idProyecto,
+                asignaciones[0].Nombre,
+                asignaciones[0].Codigo,
+                asignaciones.Any(a => a.Fechaasignacion == null) ? null : asignaciones.Min(a => a.Fechaasignacion),
+                asignaciones.Any(a => a.Fechafinasignacion == null) ? null : asignaciones.Max(a => a.Fechafinasignacion),
+                salidaColaborador,
+                asignaciones[0].FinProyecto)));
         });
 
         // sm - idsProyecto / incluirSinProyecto (opcionales): filtro de proyectos del calendario de Actividades. El
@@ -318,7 +349,13 @@ public static class TimeReportEndpoints
         {
             // sm - Solo actividades propias (antes se aceptaba cualquier IdEmpleado del cuerpo), o las que el líder del
             // colaborador en ese proyecto completa a su nombre desde Seguimiento (queda guardado quién la cargó).
-            if (await ObtenerEmpleadoSesionAsync(user, db) != request.IdEmpleado) return Results.Forbid();
+            int? idLiderRegistro = null;
+            if (await ObtenerEmpleadoSesionAsync(user, db) != request.IdEmpleado)
+            {
+                if (!request.IdProyecto.HasValue) return Results.Forbid();
+                idLiderRegistro = await ObtenerLiderDeAsignacionAsync(user, request.IdEmpleado, request.IdProyecto.Value, db);
+                if (idLiderRegistro is null) return Results.Forbid();
+            }
 
             var horasRegistradasHoy = await db.TblTimeReportActividadDiaria
                 .Where(a => a.Activo && a.Idempleado == request.IdEmpleado && a.Fechaactividad == request.FechaActividad)
@@ -336,7 +373,7 @@ public static class TimeReportEndpoints
             // sm - Solo se registran horas en proyectos donde el colaborador está asignado y dentro de las fechas de la
             // asignación (primero se asigna y luego se carga; no al revés).
             if (request.IdProyecto.HasValue
-                && await ValidarAsignacionAsync(db, request.IdEmpleado, request.IdProyecto.Value, request.FechaActividad) is { } errorAsignacion)
+                && await ValidarAsignacionAsync(db, request.IdEmpleado, request.IdProyecto.Value, request.FechaActividad, idLiderRegistro) is { } errorAsignacion)
                 return Results.BadRequest(new { Mensaje = errorAsignacion });
 
             // TC-007/TC-009: no se registran horas después de la fecha fin del proyecto (aunque siga activo).
@@ -355,10 +392,10 @@ public static class TimeReportEndpoints
                 Descripcionactividad = request.DescripcionActividad,
                 Notas = request.Notas,
                 Esbillable = request.EsBillable ?? true,
-                Idliderregistro = null,
+                Idliderregistro = idLiderRegistro,
                 Activo = true,
                 Fechacreacion = DateTime.UtcNow,
-                Usuariocreacion = "Sistema", // Debería tomarse del token
+                Usuariocreacion = UsuarioSesion(user),
                 Ipcreacion = "127.0.0.1"
             };
 
@@ -373,9 +410,12 @@ public static class TimeReportEndpoints
             var actividad = await db.TblTimeReportActividadDiaria.FindAsync(id);
 
             if (actividad is null) return Results.NotFound();
-            // sm - Solo actividades propias, o las que el líder de la sesión cargó a nombre del colaborador.
+            // sm - Solo actividades propias, o las del colaborador en un proyecto donde la sesión es su líder (o que el
+            // líder cargó a su nombre). El líder no puede pasarla a "Sin proyecto".
             var esPropia = await ObtenerEmpleadoSesionAsync(user, db) == actividad.Idempleado;
-            if (!esPropia) return Results.Forbid();
+            int? idLiderEditor = esPropia ? null : await ObtenerLiderEditorAsync(user, actividad, db);
+            if (!esPropia && idLiderEditor is null) return Results.Forbid();
+            if (!esPropia && !request.IdProyecto.HasValue) return Results.Forbid();
 
             // Validar horas registradas en el día si cambia la fecha o la cantidad de horas
             var totalHorasDia = await db.TblTimeReportActividadDiaria
@@ -396,7 +436,7 @@ public static class TimeReportEndpoints
             // se permite editar (hay actividades antiguas de asignaciones que ya no están activas y deben poder corregirse).
             if (request.IdProyecto.HasValue
                 && (request.IdProyecto != actividad.Idproyecto || request.FechaActividad != actividad.Fechaactividad)
-                && await ValidarAsignacionAsync(db, actividad.Idempleado, request.IdProyecto.Value, request.FechaActividad) is { } errorAsignacion)
+                && await ValidarAsignacionAsync(db, actividad.Idempleado, request.IdProyecto.Value, request.FechaActividad, idLiderEditor) is { } errorAsignacion)
                 return Results.BadRequest(new { Mensaje = errorAsignacion });
 
             // TC-007/TC-009: misma regla al mover la actividad a otro proyecto o fecha (si no cambian, se permite corregirla).
@@ -414,7 +454,8 @@ public static class TimeReportEndpoints
             actividad.Notas = request.Notas;
             actividad.Esbillable = request.EsBillable ?? true;
             actividad.Fechamodificacion = DateTime.UtcNow;
-            actividad.Usuariomodificacion = "Sistema";
+            // sm - Quién la modificó (el colaborador o su líder desde Seguimiento). Antes: siempre "Sistema".
+            actividad.Usuariomodificacion = UsuarioSesion(user);
             actividad.Ipmodificacion = "127.0.0.1";
 
             await db.SaveChangesAsync();
@@ -427,13 +468,14 @@ public static class TimeReportEndpoints
             var actividad = await db.TblTimeReportActividadDiaria.FindAsync(id);
 
             if (actividad is null) return Results.NotFound();
-            // sm - Solo actividades propias, o las que el líder de la sesión cargó a nombre del colaborador.
-            if (await ObtenerEmpleadoSesionAsync(user, db) != actividad.Idempleado) return Results.Forbid();
+            // sm - Solo actividades propias, o las del colaborador en un proyecto donde la sesión es su líder.
+            if (await ObtenerEmpleadoSesionAsync(user, db) != actividad.Idempleado
+                && await ObtenerLiderEditorAsync(user, actividad, db) is null) return Results.Forbid();
 
             // Eliminación lógica
             actividad.Activo = false;
             actividad.Fechamodificacion = DateTime.UtcNow;
-            actividad.Usuariomodificacion = "Sistema";
+            actividad.Usuariomodificacion = UsuarioSesion(user);
             actividad.Ipmodificacion = "127.0.0.1";
 
             await db.SaveChangesAsync();
@@ -758,6 +800,17 @@ public static class TimeReportEndpoints
         return empleado is null ? null : EmpleadoSesion.ErrorFechaPosteriorSalida(empleado, fecha);
     }
 
+    // sm - Correo del usuario de la sesión para las columnas de auditoría (VARCHAR(50) en la tabla, se recorta).
+    private static string UsuarioSesion(ClaimsPrincipal user)
+    {
+        var usuario = user.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Email)?.Value
+                      ?? user.FindFirst(ClaimTypes.Email)?.Value
+                      ?? user.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value
+                      ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                      ?? "Sistema";
+        return usuario.Length > 50 ? usuario[..50] : usuario;
+    }
+
     private static async Task<int?> ObtenerPersonaSesionAsync(ClaimsPrincipal user, ApplicationDbContext db)
     {
         var sub = user.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value
@@ -771,8 +824,43 @@ public static class TimeReportEndpoints
     }
 
     // sm - Registro de líder activo de la persona de la sesión; null si no es líder.
+    private static async Task<int?> ObtenerLiderSesionAsync(ClaimsPrincipal user, ApplicationDbContext db)
+    {
+        var idPersona = await ObtenerPersonaSesionAsync(user, db);
+        if (idPersona is null) return null;
+
+        return await db.TblAdministracionLiders
+            .Where(l => l.Activo && l.Idpersona == idPersona)
+            .Select(l => (int?)l.Id)
+            .FirstOrDefaultAsync();
+    }
+
     // sm - Líder de la sesión, solo si tiene a este colaborador asignado a su cargo en este proyecto.
-    // sm - El líder solo puede modificar lo que él mismo cargó; las actividades del colaborador tienen Idliderregistro null.
+    private static async Task<int?> ObtenerLiderDeAsignacionAsync(ClaimsPrincipal user, int idEmpleado, int idProyecto, ApplicationDbContext db)
+    {
+        var idLider = await ObtenerLiderSesionAsync(user, db);
+        if (idLider is null) return null;
+
+        var aCargo = await db.TblTimeReportAsignacionProyectos
+            .AnyAsync(ep => ep.Activo && ep.Idempleado == idEmpleado && ep.Idproyecto == idProyecto && ep.Idlider == idLider);
+        return aCargo ? idLider : null;
+    }
+
+    // sm - Líder de la sesión que puede modificar/eliminar esta actividad del colaborador: el que la cargó a su nombre, o
+    // su líder en el proyecto de la actividad (aunque la haya cargado el colaborador). null si no puede.
+    // Antes: solo el líder que la cargó (Idliderregistro); las del colaborador quedaban de solo lectura.
+    private static async Task<int?> ObtenerLiderEditorAsync(ClaimsPrincipal user, tmr_backend.Infrastructure.Database.Entities.TblTimeReportActividadDiarium actividad, ApplicationDbContext db)
+    {
+        var idLider = await ObtenerLiderSesionAsync(user, db);
+        if (idLider is null) return null;
+        if (actividad.Idliderregistro == idLider) return idLider;
+        if (!actividad.Idproyecto.HasValue) return null;
+
+        var aCargo = await db.TblTimeReportAsignacionProyectos
+            .AnyAsync(ep => ep.Activo && ep.Idempleado == actividad.Idempleado && ep.Idproyecto == actividad.Idproyecto && ep.Idlider == idLider);
+        return aCargo ? idLider : null;
+    }
+
     private static async Task<int?> ObtenerEmpleadoSesionAsync(ClaimsPrincipal user, ApplicationDbContext db)
     {
         var idPersona = await ObtenerPersonaSesionAsync(user, db);
