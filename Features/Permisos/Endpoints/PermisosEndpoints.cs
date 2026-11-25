@@ -252,6 +252,14 @@ public static partial class PermisosEndpoints
 
         // 2. Listar Mis Solicitudes (Colaborador actual)
         group.MapGet("/mis-permisos", async (
+            [FromQuery] string? buscar,
+            [FromQuery] string? tipo,
+            [FromQuery] string? estado,
+            [FromQuery] string? desde,
+            [FromQuery] string? hasta,
+            [FromQuery] string? proyecto,
+            [FromQuery] int? page,
+            [FromQuery] int? pageSize,
             ApplicationDbContext db,
             ICurrentUserService currentUser,
             CancellationToken ct) =>
@@ -263,13 +271,11 @@ public static partial class PermisosEndpoints
             if (actor?.IdEmpleado is null)
                 return Results.Ok(ApiResponse<IReadOnlyList<PermisoItemDto>>.Ok([]));
 
-            var items = await ConsultarSolicitudesBase(db)
-                .Where(s => s.IdEmpleado == actor.IdEmpleado.Value && s.Activo)
-                .OrderByDescending(s => s.FechaCreacion)
-                .ToListAsync(ct);
-
-            var dtos = items.Select(s => MapearSolicitudDto(s, null)).ToList();
-            return Results.Ok(ApiResponse<IReadOnlyList<PermisoItemDto>>.Ok(dtos));
+            var idEmpleado = actor.IdEmpleado.Value;
+            var alcance = db.TblTimeReportSolicitudes.AsNoTracking()
+                .Where(s => s.IdEmpleado == idEmpleado && s.Activo);
+            return await ResponderListadoPermisosAsync(db, alcance, VistaListadoPermisos.Colaborador,
+                new FiltrosListadoPermisos(buscar, tipo, estado, desde, hasta, proyecto), page, pageSize, ct);
         }).RequireAuthorization("MIS_PERMISOS_READ");
 
         // 3. Crear nueva solicitud sin adjunto (JSON)
@@ -485,6 +491,14 @@ public static partial class PermisosEndpoints
 
         // 8. Bandeja de Aprobación Líder (Paso 2)
         group.MapGet("/equipo", async (
+            [FromQuery] string? buscar,
+            [FromQuery] string? tipo,
+            [FromQuery] string? estado,
+            [FromQuery] string? desde,
+            [FromQuery] string? hasta,
+            [FromQuery] string? proyecto,
+            [FromQuery] int? page,
+            [FromQuery] int? pageSize,
             ApplicationDbContext db,
             ICurrentUserService currentUser,
             CancellationToken ct) =>
@@ -496,7 +510,7 @@ public static partial class PermisosEndpoints
             if (!actor.EsAdmin && !actor.EsLider)
                 return Results.Json(ApiResponse<object>.Fail(403, "Acceso exclusivo para líderes o administradores.", []), statusCode: 403);
 
-            var query = ConsultarSolicitudesBase(db).Where(s => s.Activo);
+            var query = db.TblTimeReportSolicitudes.AsNoTracking().Where(s => s.Activo);
 
             if (!actor.EsAdmin)
             {
@@ -508,12 +522,8 @@ public static partial class PermisosEndpoints
                                          || (s.IdLider == null && s.AsignacionProyecto != null && s.AsignacionProyecto.Idlider == idLiderActor));
             }
 
-            var lista = await query
-                .OrderByDescending(s => s.FechaCreacion)
-                .ToListAsync(ct);
-
-            var dtos = lista.Select(s => MapearSolicitudDto(s, CalcularAlertaTraslape(s, lista))).ToList();
-            return Results.Ok(ApiResponse<IReadOnlyList<PermisoItemDto>>.Ok(dtos));
+            return await ResponderListadoPermisosAsync(db, query, VistaListadoPermisos.Lider,
+                new FiltrosListadoPermisos(buscar, tipo, estado, desde, hasta, proyecto), page, pageSize, ct);
         }).RequireAuthorization("PERMISOS_LIDER_READ");
 
         // 9. Decisión del Jefe Inmediato / Líder (Paso 2: aprobar | observar | rechazar)
@@ -852,6 +862,14 @@ public static partial class PermisosEndpoints
 
         // 13. Historial General (Gerencia / RRHH / Admin)
         group.MapGet("/gerencia", async (
+            [FromQuery] string? buscar,
+            [FromQuery] string? tipo,
+            [FromQuery] string? estado,
+            [FromQuery] string? desde,
+            [FromQuery] string? hasta,
+            [FromQuery] string? proyecto,
+            [FromQuery] int? page,
+            [FromQuery] int? pageSize,
             ApplicationDbContext db,
             ICurrentUserService currentUser,
             CancellationToken ct) =>
@@ -863,14 +881,9 @@ public static partial class PermisosEndpoints
             if (!actor.EsAdmin && !actor.EsGerente && !actor.EsRrhh)
                 return Results.Json(ApiResponse<object>.Fail(403, "Acceso exclusivo para Gerencia, Talento Humano o Administradores.", []), statusCode: 403);
 
-            var lista = await ConsultarSolicitudesBase(db)
-                .Where(s => s.Activo)
-                .OrderByDescending(s => s.FechaInicio)
-                .ThenByDescending(s => s.FechaCreacion)
-                .ToListAsync(ct);
-
-            var dtos = lista.Select(s => MapearSolicitudDto(s, null)).ToList();
-            return Results.Ok(ApiResponse<IReadOnlyList<PermisoItemDto>>.Ok(dtos));
+            var alcance = db.TblTimeReportSolicitudes.AsNoTracking().Where(s => s.Activo);
+            return await ResponderListadoPermisosAsync(db, alcance, VistaListadoPermisos.Gerencia,
+                new FiltrosListadoPermisos(buscar, tipo, estado, desde, hasta, proyecto), page, pageSize, ct);
         }).RequireAuthorization("PERMISOS_GERENCIA_READ");
 
         // 14. Portal externo para Líderes de Clientes vía Magic Link (con expiración y un solo uso)
