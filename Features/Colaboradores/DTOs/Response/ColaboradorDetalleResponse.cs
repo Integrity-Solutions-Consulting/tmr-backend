@@ -61,10 +61,15 @@ public record ColaboradorDetalleResponse(
 
 // Sub-DTO para cada proyecto que aparece en el detalle.
 public record ProyectoAsignadoResponse(
+    int IdAsignacion,
     int Id,
-    string Nombre,
-    string Cliente,
-    string Estado,
+    string? Codigo,
+    string? Nombre,
+    string? Cliente,
+    string? Rol,
+    DateOnly? FechaAsignacion,
+    DateOnly? FechaFinAsignacion,
+    string? EstadoProyecto,
     // sm - Estado de asignación del colaborador en el proyecto (true = Activo, false = Inactivo).
-    bool EstadoAsignacion
+    bool AsignacionActiva
 );
