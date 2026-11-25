@@ -13,7 +13,7 @@ public partial class TblAutenticacionPermiso
 
     public string Accion { get; set; } = null!;
 
-    public string? Descripcion { get; set; }
+    public string Descripcion { get; set; } = null!;
 
     public bool Activo { get; set; }
 
