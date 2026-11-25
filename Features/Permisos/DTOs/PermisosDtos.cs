@@ -236,3 +236,22 @@ public sealed record CrearAjusteVacacionesRequest(
     bool? PermiteVacaciones,
     string Motivo,
     string? FechaAfiliacionBase = null); // YYYY-MM-DD o DD/MM/YYYY (solo FECHA_AFILIACION)
+
+public sealed record ResumenGestionRrhhDto(
+    int PorConfirmar,
+    int PendientesLiderExterno,
+    int Confirmadas,
+    int TotalHistorial,
+    int PorVerificar,
+    int TotalColaboradores,
+    IReadOnlyList<int> AniosDisponibles);
+
+/// <summary>
+/// Página de resultados dentro de "data" (el interceptor del frontend solo conserva "data").
+/// </summary>
+public sealed record PaginaResultadoDto<T>(
+    IReadOnlyList<T> Items,
+    int Page,
+    int PageSize,
+    int TotalCount,
+    int TotalPages);
