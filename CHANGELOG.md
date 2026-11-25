@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.11.0...v1.11.1) (2026-11-25)
+
+
+### Performance Improvements
+
+* **permisos:** paginar en servidor historial, saldos y bandeja RRHH ([b2e5d51](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/b2e5d51f1c7ce6a5bd4df6d7022fd55aaa8b1596))
+
 ## [1.11.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.10.1...v1.11.0) (2026-11-25)
 
 
