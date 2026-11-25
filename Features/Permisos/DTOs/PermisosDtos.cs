@@ -135,7 +135,8 @@ public sealed record PermisoItemDto(
     bool EsAnticipada = false,
     bool EsHistorico = false,
     bool VerificadoRrhh = true,
-    string? ObservacionMigracion = null);
+    string? ObservacionMigracion = null,
+    string? Regimen = null);
 
 public sealed record CrearPermisoRequest(
     int? IdProyecto,
