@@ -10,7 +10,6 @@ public sealed record FormacionRequest(string Nivel, string Institucion, string T
 public sealed record CertificacionRequest(string Nombre, string EntidadEmisora, DateOnly FechaEmision, DateOnly? FechaVencimiento, long? Id = null, string? Clave = null, IReadOnlyList<DocumentoResponse>? Archivos = null);
 public sealed record ConocimientoDto(string Area, int? Porcentaje);
 public sealed record ActualizacionRequest(PersonaPropuesta Persona, IReadOnlyList<FormacionRequest> Formaciones, IReadOnlyList<CertificacionRequest> Certificaciones, bool Enviar = false, InformacionFamiliarRequest? Familia = null, long? ControlVersion = null, bool LimpiarDiscapacidad = false, IReadOnlyList<ConocimientoDto>? Conocimientos = null, string? Seccion = null);
-public sealed record RevisionRequest(string? Observacion, int Version);
 public sealed record SolicitudLista(long Id, int IdEmpleado, string Colaborador, string Estado, DateTime Fechamodificacion, string? Observacion, int Version);
 public sealed record ArchivoResponse(long Id, string NombreOriginal, string ContentType, long Tamano, DateTime Fecha);
 public sealed record SolicitudPropiaResponse(long Id, string Asunto, string Descripcion, DateTime FechaCreacion, DateTime? FechaEnvio, bool Enviada, IReadOnlyList<DocumentoResponse> Archivos);

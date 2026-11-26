@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using tmr_backend.Features.ActualizacionDatos.DTOs;
 using tmr_backend.Features.ActualizacionDatos.Domain;
 using tmr_backend.Features.ActualizacionDatos.Services;
@@ -32,7 +33,30 @@ public static class ActualizacionDatosEndpoints
                 Extensions = { ["code"] = inactive ? "EMPLOYEE_INACTIVE" : "EMPLOYEE_LINK_MISSING" }
             });
         });
-        mine.MapPut("", async (ActualizacionRequest request, ActualizacionDirectaService service, CancellationToken ct) => { try { var saved = await service.SaveAsync(request, ct); return Results.Ok(new { version = saved.Version, validacionEnviada = saved.ValidacionEnviada }); } catch (DbUpdateConcurrencyException ex) { return Results.Conflict(new ProblemDetails { Detail = ex.Message, Status = 409 }); } catch (FieldValidationException ex) { return Results.BadRequest(ApiResponse<object>.Fail(400, "Error de validación", ex.Errors)); } catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { return Results.BadRequest(new ProblemDetails { Detail=ex.Message, Status=400 }); } });
+        mine.MapPut("", async (ActualizacionRequest request, ActualizacionDirectaService service, CancellationToken ct) =>
+        {
+            try
+            {
+                var saved = await service.SaveAsync(request, ct);
+                return Results.Ok(new { version = saved.Version, validacionEnviada = saved.ValidacionEnviada });
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                return Results.Conflict(new ProblemDetails { Detail = ex.Message, Status = 409 });
+            }
+            catch (Exception ex) when (IsSerializationConflict(ex))
+            {
+                return Results.Conflict(new ProblemDetails { Detail = "El perfil cambió mientras guardabas. Recarga el perfil y vuelve a intentarlo.", Status = 409 });
+            }
+            catch (FieldValidationException ex)
+            {
+                return Results.BadRequest(ApiResponse<object>.Fail(400, "Error de validación", ex.Errors));
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+            {
+                return Results.BadRequest(new ProblemDetails { Detail = ex.Message, Status = 400 });
+            }
+        });
         mine.MapGet("/revisiones", async (ActualizacionDirectaService service, CancellationToken ct) => Results.Ok(await service.MyReviewsAsync(ct)));
         mine.MapGet("/solicitudes", async (ActualizacionDirectaService service, CancellationToken ct) => Results.Ok(await service.SolicitudesAsync(ct)));
         mine.MapPost("/solicitudes", async (CrearSolicitudRequest request, ActualizacionDirectaService service, CancellationToken ct) => { try { return Results.Ok(new { id = await service.CrearSolicitudAsync(request.Asunto, request.Descripcion, request.Enviar, ct) }); } catch (ArgumentException ex) { return Results.BadRequest(new { message = ex.Message }); } });
@@ -107,6 +131,10 @@ public static class ActualizacionDatosEndpoints
         {
             try { return await service.DecideAsync(id, input.Estado, input.Observacion, ct) ? Results.NoContent() : Results.NotFound(); }
             catch (DbUpdateConcurrencyException ex) { return Results.Conflict(new { message = ex.Message }); }
+            catch (Exception ex) when (IsSerializationConflict(ex))
+            {
+                return Results.Conflict(new { message = "La solicitud cambió mientras la revisabas. Recarga el perfil antes de continuar." });
+            }
             catch (ArgumentException ex) { return Results.BadRequest(new { message = ex.Message }); }
             catch (FieldValidationException) { return Results.Conflict(new { message = "Los respaldos ya no estan disponibles." }); }
         });
@@ -133,4 +161,8 @@ public static class ActualizacionDatosEndpoints
         review.MapGet("/{id:long}/archivos/{archivoId:long}", async (long id,long archivoId,ApplicationDbContext db,IFileStorage storage,CancellationToken ct)=>{var file=await db.Set<ActualizacionArchivo>().SingleOrDefaultAsync(x=>x.Id==archivoId&&x.IdSolicitud==id,ct);if(file is null)return Results.NotFound();var stream=await storage.OpenReadAsync(file.StorageKey,ct,file.Provider);return stream is null?Results.NotFound():Results.File(stream,file.ContentType,file.NombreOriginal);});
     }
     public sealed record PerfilDecision(string Estado, string? Observacion);
+
+    private static bool IsSerializationConflict(Exception exception) =>
+        exception is PostgresException { SqlState: PostgresErrorCodes.SerializationFailure }
+        || exception is DbUpdateException { InnerException: PostgresException { SqlState: PostgresErrorCodes.SerializationFailure } };
 }
