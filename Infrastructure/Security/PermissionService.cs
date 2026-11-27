@@ -6,14 +6,24 @@ namespace tmr_backend.Infrastructure.Security;
 
 public sealed class PermissionService(ApplicationDbContext db, IMemoryCache cache) : IPermissionService
 {
-    private static string CacheKey(int userId) => $"permissions:{userId}";
+    // Generación global: al cambiar roles o la matriz rol-permiso se incrementa y todas las
+    // entradas anteriores quedan inalcanzables (expiran solas). Ver PermisosCacheInterceptor.
+    private static long _generacion;
+
+    private static string CacheKey(int userId) => $"permissions:{Interlocked.Read(ref _generacion)}:{userId}";
+
+    /// <summary>Invalida la caché de permisos de todos los usuarios de este proceso.</summary>
+    public static void InvalidarTodos() => Interlocked.Increment(ref _generacion);
 
     // TTL alineado con el lifetime del Access Token (15 min)
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(15);
 
     public async Task<IReadOnlyList<string>> GetUserPermissionsAsync(int userId, CancellationToken ct = default)
     {
-        if (cache.TryGetValue(CacheKey(userId), out IReadOnlyList<string>? cached))
+        // La clave se fija antes de consultar: si los roles cambian durante la consulta, el resultado
+        // viejo queda guardado con la generación anterior y nadie lo vuelve a leer.
+        var cacheKey = CacheKey(userId);
+        if (cache.TryGetValue(cacheKey, out IReadOnlyList<string>? cached))
             return cached!;
 
         // Consulta BD: permisos activos de todos los roles activos del usuario
@@ -30,7 +40,7 @@ public sealed class PermissionService(ApplicationDbContext db, IMemoryCache cach
             .ToListAsync(ct);
 
         var result = (IReadOnlyList<string>)permissions.AsReadOnly();
-        cache.Set(CacheKey(userId), result, CacheDuration);
+        cache.Set(cacheKey, result, CacheDuration);
         return result;
     }
 

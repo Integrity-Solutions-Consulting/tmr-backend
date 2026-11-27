@@ -26,14 +26,9 @@ Check(PermisoAvisoVigencia.EsVigente(aviso, solicitud), "precisión PostgreSQL d
 solicitud.Estado.Codigo = "APROBADA";
 Check(!PermisoAvisoVigencia.EsVigente(aviso, solicitud), "aviso atrasado omitido");
 solicitud.Estado.Codigo = "PENDIENTE_JEFE";
-solicitud.TokenExterno = "test-token"; solicitud.TokenExternoExpira = DateTime.UtcNow.AddMinutes(-1);
-Check(!PermisoAvisoVigencia.EsVigente(aviso with { IncluirTokenExterno = true }, solicitud), "enlace vencido");
-solicitud.TokenExternoExpira = DateTime.UtcNow.AddHours(1);
-Check(PermisoAvisoVigencia.EsVigente(aviso with { IncluirTokenExterno = true }, solicitud), "enlace vigente");
-solicitud.TokenExternoUsadoEn = DateTime.UtcNow;
-Check(!PermisoAvisoVigencia.EsVigente(aviso with { IncluirTokenExterno = true }, solicitud), "enlace usado");
 solicitud.Activo = false;
 Check(!PermisoAvisoVigencia.EsVigente(aviso, solicitud), "solicitud inactiva");
+solicitud.Activo = true;
 
 // Verificar vigencia cuando una solicitud nace directamente en APROBADA (informativa) o PENDIENTE_TH (sin líder)
 var solInformativa = new TblTimeReportSolicitud
@@ -60,17 +55,34 @@ var avisoInformativo = new CorreoPermisoEncolado(
     VersionSolicitud: version, EstadoSolicitud: "APROBADA");
 Check(PermisoAvisoVigencia.EsVigente(avisoInformativo, solInformativa), "aviso informativo naciente en APROBADA es vigente");
 
+// Magic link: en base de datos solo el hash; el aviso lleva el token en claro en su instantánea.
+const string tokenVigente = "0123456789abcdef0123456789abcdef";
+const string tokenAnterior = "fedcba9876543210fedcba9876543210";
+Check(TokenRevisionExterna.Hash(tokenVigente).Length == 64 && TokenRevisionExterna.Hash(tokenVigente) != tokenVigente, "token guardado como hash SHA-256");
+Check(TokenRevisionExterna.Coincide(tokenVigente, TokenRevisionExterna.Hash(tokenVigente)), "token en claro coincide con su hash");
+Check(!TokenRevisionExterna.Coincide(TokenRevisionExterna.Hash(tokenVigente), TokenRevisionExterna.Hash(tokenVigente)), "el hash no sirve como enlace");
+Check(!TokenRevisionExterna.FormatoValido("no-es-token") && TokenRevisionExterna.FormatoValido(TokenRevisionExterna.Generar()), "formato del token");
+var instantaneaConToken = PermisosEndpoints.MapearSolicitudDto(solInformativa, null) with { TokenExterno = tokenVigente };
+var avisoConEnlace = aviso with { IncluirTokenExterno = true, Instantanea = instantaneaConToken };
+solicitud.TokenExterno = TokenRevisionExterna.Hash(tokenVigente); solicitud.TokenExternoExpira = DateTime.UtcNow.AddMinutes(-1);
+Check(!PermisoAvisoVigencia.EsVigente(avisoConEnlace, solicitud), "enlace vencido");
+solicitud.TokenExternoExpira = DateTime.UtcNow.AddHours(1);
+Check(PermisoAvisoVigencia.EsVigente(avisoConEnlace, solicitud), "enlace vigente");
+Check(!PermisoAvisoVigencia.EsVigente(aviso with { IncluirTokenExterno = true }, solicitud), "aviso con enlace sin token en claro omitido");
+solicitud.TokenExternoUsadoEn = DateTime.UtcNow;
+Check(!PermisoAvisoVigencia.EsVigente(avisoConEnlace, solicitud), "enlace usado");
+
 // Una corrección vuelve al mismo estado, pero invalida avisos de la versión anterior.
 var corregida = new TblTimeReportSolicitud { Activo = true, FechaCreacion = version,
     FechaModificacion = version.AddMinutes(1), Estado = new TblTimeReportEstadoSolicitud { Codigo = "PENDIENTE_JEFE" },
-    TokenExterno = "nuevo-token", TokenExternoExpira = DateTime.UtcNow.AddHours(72) };
+    TokenExterno = TokenRevisionExterna.Hash(tokenVigente), TokenExternoExpira = DateTime.UtcNow.AddHours(72) };
 Check(!PermisoAvisoVigencia.EsVigente(aviso, corregida), "correo del ciclo anterior invalidado aunque el estado coincida");
 var reenvio = aviso with { Evento = EventoNotificacionPermiso.SolicitudCorregidaReenviada,
     VersionSolicitud = corregida.FechaModificacion, EstadoSolicitud = "PENDIENTE_JEFE" };
 Check(PermisoAvisoVigencia.EsVigente(reenvio, corregida), "correo de corrección vigente");
-var snapshot = PermisosEndpoints.MapearSolicitudDto(solInformativa, null) with { TokenExterno = "token-anterior" };
+var snapshot = PermisosEndpoints.MapearSolicitudDto(solInformativa, null) with { TokenExterno = tokenAnterior };
 Check(!PermisoAvisoVigencia.EsVigente(reenvio with { IncluirTokenExterno = true, Instantanea = snapshot }, corregida), "token anterior rechazado");
-Check(PermisoAvisoVigencia.EsVigente(reenvio with { IncluirTokenExterno = true, Instantanea = snapshot with { TokenExterno = "nuevo-token" } }, corregida), "token nuevo aceptado");
+Check(PermisoAvisoVigencia.EsVigente(reenvio with { IncluirTokenExterno = true, Instantanea = snapshot with { TokenExterno = tokenVigente } }, corregida), "token nuevo aceptado");
 corregida.Estado.Codigo = "PENDIENTE_TH";
 Check(PermisoAvisoVigencia.EsVigente(reenvio with { EstadoSolicitud = "PENDIENTE_TH" }, corregida), "reenvío directo a TH vigente");
 

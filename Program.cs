@@ -136,6 +136,7 @@ JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
 // ── Database Context ──
 builder.Services.AddScoped<AuditInterceptor>();
+builder.Services.AddSingleton<PermisosCacheInterceptor>();
 var defaultConnection = builder.Configuration.GetConnectionString("DefaultConnection") ?? string.Empty;
 if (defaultConnection.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase) ||
     defaultConnection.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase))
@@ -163,7 +164,9 @@ builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
            .AddInterceptors(
                sp.GetRequiredService<AuditInterceptor>(),
                // Despierta al EventDispatcher con los eventos publicados en una transacción, al confirmarla
-               sp.GetRequiredService<SenalesOutboxInterceptor>()));
+               sp.GetRequiredService<SenalesOutboxInterceptor>(),
+               // Invalida la caché de permisos al guardar cambios en roles o en la matriz rol-permiso
+               sp.GetRequiredService<PermisosCacheInterceptor>()));
 
 // ── CORS ──
  String[] allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? new[] { "http://localhost:3000" };

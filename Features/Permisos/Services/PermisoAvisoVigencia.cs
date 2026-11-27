@@ -19,7 +19,15 @@ public static class PermisoAvisoVigencia
         };
         if (solicitud.Estado.Codigo != esperado)
             return false;
-        if (evento.IncluirTokenExterno) { var reqSinUso = solicitud.Estado.Codigo == "PENDIENTE_JEFE"; return (!reqSinUso || !solicitud.TokenExternoUsadoEn.HasValue) && solicitud.TokenExternoExpira > DateTime.UtcNow && !string.IsNullOrWhiteSpace(solicitud.TokenExterno) && (evento.Instantanea is null || evento.Instantanea.TokenExterno == solicitud.TokenExterno); }
+        if (evento.IncluirTokenExterno)
+        {
+            // El aviso con enlace solo sirve si su token (en claro, en la instantánea) sigue siendo
+            // el vigente de la solicitud (guardado como hash): un reenvío o la decisión de RRHH lo rotan.
+            var requiereSinUso = solicitud.Estado.Codigo == "PENDIENTE_JEFE";
+            return (!requiereSinUso || !solicitud.TokenExternoUsadoEn.HasValue)
+                && solicitud.TokenExternoExpira > DateTime.UtcNow
+                && TokenRevisionExterna.Coincide(evento.Instantanea?.TokenExterno, solicitud.TokenExterno);
+        }
         return true;
     }
 }

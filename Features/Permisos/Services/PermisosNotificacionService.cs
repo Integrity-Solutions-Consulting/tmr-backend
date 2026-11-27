@@ -87,9 +87,10 @@ public sealed class EnviarCorreoPermisoHandler(
         }
         else
         {
+            // El token en claro solo existe en la instantánea del aviso; en base de datos está su hash.
             var dto = evento.Instantanea ?? PermisosEndpoints.MapearSolicitudDto(solicitud!, null);
-            if (evento.IncluirTokenExterno)
-                dto = dto with { TokenExterno = solicitud!.TokenExterno };
+            if (!evento.IncluirTokenExterno)
+                dto = dto with { TokenExterno = null };
 
             var plantilla = await PermisosNotificacionService.CargarPlantillaHtmlCoreAsync(env, ct);
             var frontendUrl = (configuration["EmailSettings:FrontendUrl"] ?? "http://localhost:4200").TrimEnd('/');
@@ -194,8 +195,9 @@ public sealed class PermisosNotificacionService(
 
             try
             {
+                // permiso.TokenExterno trae el token en claro recién generado por el endpoint.
                 var snapshot = dest.IncluirTokenExterno
-                    ? snapshotBase with { TokenExterno = solicitud.TokenExterno }
+                    ? snapshotBase with { TokenExterno = permiso.TokenExterno }
                     : snapshotBase;
 
                 await eventBus.PublishAsync(

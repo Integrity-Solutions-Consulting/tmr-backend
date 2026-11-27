@@ -19,8 +19,11 @@ public sealed class PermisoNotificacionTransactionFilter : IEndpointFilter
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         if (int.TryParse(http.Request.RouteValues["id"]?.ToString(), out var id))
             await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM time_report.tbl_time_report_solicitud WHERE id = {id} FOR UPDATE", ct);
-        else if (http.Request.RouteValues["token"] is string token)
-            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM time_report.tbl_time_report_solicitud WHERE token_externo = {token} FOR UPDATE", ct);
+        else if (http.Request.RouteValues["token"] is string token && TokenRevisionExterna.FormatoValido(token))
+        {
+            var hash = TokenRevisionExterna.Hash(token);
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM time_report.tbl_time_report_solicitud WHERE token_externo = {hash} FOR UPDATE", ct);
+        }
         var result = await next(context);
         if (result is IStatusCodeHttpResult status && status.StatusCode >= 400)
             await tx.RollbackAsync(ct);

@@ -775,7 +775,16 @@ public static partial class PermisosEndpoints
             solicitud.UsuarioModificacion = actor.Email;
             solicitud.FechaModificacion = DateTime.UtcNow;
             solicitud.IpModificacion = ObtenerIpCliente(httpContext);
-            if (EsLiderExterno(solicitud.Lider)) { solicitud.TokenExterno ??= Guid.NewGuid().ToString("N"); solicitud.TokenExternoUsadoEn ??= DateTime.UtcNow; solicitud.TokenExternoExpira = DateTime.UtcNow.AddDays(30); }
+            // El líder externo recibe un enlace nuevo, solo de consulta, con el resultado final.
+            // Como en base de datos solo está el hash, el enlace anterior no se puede reenviar: se rota.
+            string? tokenExternoPlano = null;
+            if (EsLiderExterno(solicitud.Lider))
+            {
+                tokenExternoPlano = TokenRevisionExterna.Generar();
+                solicitud.TokenExterno = TokenRevisionExterna.Hash(tokenExternoPlano);
+                solicitud.TokenExternoUsadoEn ??= DateTime.UtcNow;
+                solicitud.TokenExternoExpira = DateTime.UtcNow.AddDays(30);
+            }
 
             db.TblTimeReportSolicitudRevisiones.Add(new TblTimeReportSolicitudRevision
             {
@@ -797,7 +806,7 @@ public static partial class PermisosEndpoints
 
             var correoColab = recargada.Empleado.Emailcorporativo ?? recargada.Empleado.IdpersonaNavigation.Email;
             var correoOk = await NotificarCorreoSeguroAsync(db, notificacionService,
-                dto with { TokenExterno = recargada.TokenExterno },
+                dto with { TokenExterno = tokenExternoPlano },
                 correoColab,
                 confirmar ? EventoNotificacionPermiso.ConfirmadaPorRrhh : EventoNotificacionPermiso.DevueltaPorRrhh,
                 ct);
@@ -839,14 +848,15 @@ public static partial class PermisosEndpoints
             if (solicitud.Estado.Codigo != "PENDIENTE_JEFE")
                 return Results.BadRequest(ApiResponse<object>.Fail(400, "La solicitud ya no está pendiente del Jefe Inmediato.", []));
 
-            solicitud.TokenExterno = Guid.NewGuid().ToString("N");
+            var tokenExternoPlano = TokenRevisionExterna.Generar();
+            solicitud.TokenExterno = TokenRevisionExterna.Hash(tokenExternoPlano);
             solicitud.TokenExternoExpira = DateTime.UtcNow.AddHours(72);
             solicitud.TokenExternoUsadoEn = null;
 
             await db.SaveChangesAsync(ct);
 
             var recargada = await ConsultarSolicitudesBase(db).FirstAsync(s => s.Id == id, ct);
-            var dtoCorreo = MapearSolicitudDto(recargada, null) with { TokenExterno = recargada.TokenExterno };
+            var dtoCorreo = MapearSolicitudDto(recargada, null) with { TokenExterno = tokenExternoPlano };
             var correoColab = recargada.Empleado.Emailcorporativo ?? recargada.Empleado.IdpersonaNavigation.Email;
 
             var correoOk = await NotificarCorreoSeguroAsync(db, notificacionService,
@@ -894,7 +904,7 @@ public static partial class PermisosEndpoints
         {
             if (!EsTokenExternoValido(token)) return Results.NotFound(ApiResponse<object>.Fail(404, "El enlace de revisión no existe o ha expirado.", []));
             var solicitud = await ConsultarSolicitudesBase(db)
-                .FirstOrDefaultAsync(s => s.TokenExterno == token && s.Activo, ct);
+                .FirstOrDefaultAsync(s => s.TokenExterno == TokenRevisionExterna.Hash(token) && s.Activo, ct);
 
             if (!EsTokenExternoValido(token) || solicitud is null || !EsLiderExterno(solicitud.Lider) || (solicitud.TokenExternoExpira.HasValue && solicitud.TokenExternoExpira.Value < DateTime.UtcNow))
                 return Results.NotFound(ApiResponse<object>.Fail(404, "El enlace de revisión no existe o ha expirado.", []));
@@ -914,7 +924,7 @@ public static partial class PermisosEndpoints
                 .Include(s => s.Estado)
                 .Include(s => s.Lider)
                     .ThenInclude(l => l!.IdtipoNavigation)
-                .FirstOrDefaultAsync(s => s.TokenExterno == token && s.Activo, ct);
+                .FirstOrDefaultAsync(s => s.TokenExterno == TokenRevisionExterna.Hash(token) && s.Activo, ct);
 
             if (!EsTokenExternoValido(token) || solicitud is null || !EsLiderExterno(solicitud.Lider) || (solicitud.TokenExternoExpira.HasValue && solicitud.TokenExternoExpira.Value < DateTime.UtcNow))
                 return Results.NotFound(ApiResponse<object>.Fail(404, "El enlace de revisión no existe o ha expirado.", []));
@@ -983,7 +993,7 @@ public static partial class PermisosEndpoints
         {
             if (!EsTokenExternoValido(token)) return Results.NotFound(ApiResponse<object>.Fail(404, "El enlace de revisión no existe o ha expirado.", []));
             var solicitud = await ConsultarSolicitudesBase(db)
-                .FirstOrDefaultAsync(s => s.TokenExterno == token && s.Activo, ct);
+                .FirstOrDefaultAsync(s => s.TokenExterno == TokenRevisionExterna.Hash(token) && s.Activo, ct);
 
             if (!EsTokenExternoValido(token) || solicitud is null || !EsLiderExterno(solicitud.Lider) || (solicitud.TokenExternoExpira.HasValue && solicitud.TokenExternoExpira.Value < DateTime.UtcNow))
                 return Results.NotFound(ApiResponse<object>.Fail(404, "El enlace de revisión no existe o ha expirado.", []));
@@ -1003,7 +1013,7 @@ public static partial class PermisosEndpoints
             var solicitud = await db.TblTimeReportSolicitudes
                 .AsNoTracking()
                 .Include(s => s.Adjuntos).Include(s => s.Lider).ThenInclude(l => l!.IdtipoNavigation)
-                .FirstOrDefaultAsync(s => s.TokenExterno == token && s.Activo, ct);
+                .FirstOrDefaultAsync(s => s.TokenExterno == TokenRevisionExterna.Hash(token) && s.Activo, ct);
 
             if (!EsTokenExternoValido(token) || solicitud is null || !EsLiderExterno(solicitud.Lider) || (solicitud.TokenExternoExpira.HasValue && solicitud.TokenExternoExpira.Value < DateTime.UtcNow))
                 return Results.NotFound(ApiResponse<object>.Fail(404, "El enlace de revisión no existe o ha expirado.", []));
@@ -1403,6 +1413,8 @@ public static partial class PermisosEndpoints
 
         idEstadoPendiente = await ObtenerIdEstadoSolicitudAsync(db, esInformativo ? "APROBADA" : (idLider.HasValue ? "PENDIENTE_JEFE" : "PENDIENTE_TH"), ct);
         var esLiderExternoAsignado = idLider.HasValue && await db.TblAdministracionLiders.AsNoTracking().Include(l => l.IdtipoNavigation).FirstOrDefaultAsync(l => l.Id == idLider.Value && l.Activo, ct) is { } liderEnt && EsLiderExterno(liderEnt);
+        // Token en claro solo para el correo del líder externo; en base de datos va su hash.
+        var tokenExternoPlano = esLiderExternoAsignado ? TokenRevisionExterna.Generar() : null;
         var anio = fechaInicio!.Value.Year;
         int nuevaSolicitudId = 0;
         var objetosSubidos = new List<ArchivoAdjuntoSubido>();
@@ -1445,7 +1457,7 @@ public static partial class PermisosEndpoints
                         DetalleHorario = detalleHorarioLimpio,
                         HorasSolicitadas = horasTotales,
                         ImpactoTimeReport = esInformativo ? "SIN_IMPACTO" : "RESTA_META",
-                        TokenExterno = esLiderExternoAsignado ? Guid.NewGuid().ToString("N") : null,
+                        TokenExterno = tokenExternoPlano is null ? null : TokenRevisionExterna.Hash(tokenExternoPlano),
                         TokenExternoExpira = esLiderExternoAsignado ? (esInformativo ? DateTime.UtcNow.AddDays(30) : DateTime.UtcNow.AddHours(72)) : null,
                         TokenExternoUsadoEn = esLiderExternoAsignado && esInformativo ? DateTime.UtcNow : null,
                         DescuentaVacaciones = esVacaciones,
@@ -1530,7 +1542,7 @@ public static partial class PermisosEndpoints
 
                 // Solo el correo al líder externo usa el token; la respuesta HTTP no lo incluye
                 var correoOk = await NotificarCorreoSeguroAsync(db, notificacionService,
-                    dto with { TokenExterno = creada.TokenExterno },
+                    dto with { TokenExterno = tokenExternoPlano },
                     correoColab,
                     corregida is null ? EventoNotificacionPermiso.SolicitudCreada : EventoNotificacionPermiso.SolicitudCorregidaReenviada, request.IdUsuarioRrhh,
                     ct);
@@ -2390,10 +2402,7 @@ public static partial class PermisosEndpoints
         return codigo == "EXT" || (lider.IdtipoNavigation?.Valor?.Contains("Extern", StringComparison.OrdinalIgnoreCase) ?? false);
     }
 
-    private static bool EsTokenExternoValido(string? token) =>
-        !string.IsNullOrWhiteSpace(token)
-        && token.Length == 32
-        && Guid.TryParseExact(token, "N", out _);
+    private static bool EsTokenExternoValido(string? token) => TokenRevisionExterna.FormatoValido(token);
 
     private static string TruncarTexto(string texto, int maxLen) =>
         texto.Length <= maxLen ? texto : string.Concat(texto.AsSpan(0, maxLen - 3), "...");
