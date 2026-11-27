@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.16.1](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.16.0...v1.16.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **time-report:** inicializar permisos globales de forma segura ([1cee067](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/1cee067def88eebe5237d417415dd0867879adc1))
+* **time-report:** inicializar permisos globales de forma segura ([3646e0f](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/3646e0fd10541990bd2bedab28faebfd0b7bdde5))
+
 ## [1.16.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.15.0...v1.16.0) (2026-11-27)
 
 
