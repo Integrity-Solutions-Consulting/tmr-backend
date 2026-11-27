@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.15.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.14.0...v1.15.0) (2026-11-27)
+
+
+### Features
+
+* **time-report:** habilitar gestión global de actividades para líder general ([cd76c89](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/cd76c89df75e436cbb82dda2fbdc893ad48ec5fb))
+* **time-report:** habilitar gestión global de actividades para líder… ([b139e62](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/b139e624e5bdacfafb96505a94f9f10859cbbd35))
+
 ## [1.14.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.13.1...v1.14.0) (2026-11-25)
 
 
