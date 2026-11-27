@@ -9,6 +9,7 @@ services:
       - tmr_backend_data:/app/App_Data
     environment:
       ASPNETCORE_URLS: http://+:8080
+      Fixtures__EnableAccountSync: "false"
       Jwt__SecretKey: ${JWT_SECRET_KEY:?Define JWT_SECRET_KEY en .env}
       ConnectionStrings__DefaultConnection: ${DB_CONNECTION_STRING:?Define DB_CONNECTION_STRING en .env}
       IntegracionRps__ApiKey: ${RPS_API_KEY:-}
