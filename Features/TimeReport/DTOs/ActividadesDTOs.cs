@@ -60,7 +60,8 @@ public record CalendarioActividadDto(
 public record CompletarLiderDto(
     bool PuedeCompletar,
     int? IdLider = null,
-    ProyectoLookupDto? Proyecto = null
+    ProyectoLookupDto? Proyecto = null,
+    bool EsGlobal = false
 );
 
 public record ActualizarActividadDto(
