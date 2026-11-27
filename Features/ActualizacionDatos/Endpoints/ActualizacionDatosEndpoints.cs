@@ -75,7 +75,12 @@ public static class ActualizacionDatosEndpoints
             var owner = await service.Owner(ct); if (owner is null) return Results.Conflict(new { message = "No existe un colaborador activo asociado." });
             try { await service.EnsureEditable(owner.Value.Employee.Id, ActualizacionDirectaService.DocumentSection(seccion), ct); }
             catch (DbUpdateConcurrencyException ex) { return Results.Conflict(new { message = ex.Message }); }
-            var validSections = new[] { "Discapacidad", "Pareja", "Familiar", "Formacion", "Certificacion", "PartidaNacimiento" }; if (!validSections.Contains(seccion, StringComparer.OrdinalIgnoreCase)) return Results.BadRequest(new { message = "La sección documental no es válida." });
+            var validSections = new[] { "Discapacidad", "Pareja", "Familiar", "Formacion", "Certificacion", "PartidaNacimiento", "ActaNacimiento" };
+            var seccionValida = validSections.FirstOrDefault(value => string.Equals(value, seccion, StringComparison.OrdinalIgnoreCase));
+            if (seccionValida is null) return Results.BadRequest(new { message = "La sección documental no es válida." });
+            seccion = seccionValida;
+            if (seccion == "ActaNacimiento" && (referenciaId is not null || !string.IsNullOrEmpty(referenciaClave) || replaceId is not null))
+                return Results.BadRequest(new { message = "Adjunta el acta de nacimiento desde Información personal." });
             if (string.Equals(seccion, "PartidaNacimiento", StringComparison.OrdinalIgnoreCase))
             {
                 seccion = "PartidaNacimiento";

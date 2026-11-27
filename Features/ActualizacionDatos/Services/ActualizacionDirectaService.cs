@@ -46,7 +46,8 @@ public sealed class ActualizacionDirectaService(
         var family = new InformacionFamiliarResponse(info?.EstadoCivil, NormalizeTriState(info?.TieneHijos), NormalizeTriState(info?.TieneDiscapacidad), ownDisability ? info?.TipoDiscapacidad : null, ownDisability ? info?.PorcentajeDiscapacidad : null, IsYes(info?.TieneHijos) ? familyRows.Where(x => x.TipoRelacion == "Hijo").ToList() : [], pareja);
         var old = await db.Set<ActualizacionSolicitud>().AsNoTracking().Where(x => x.IdEmpleado == employee.Id).OrderByDescending(x => x.Fechamodificacion).ToListAsync(ct);
         var recoverable = old.FirstOrDefault(x => x.Estado != EstadoActualizacion.Aprobada);
-        return new(null, "Sin cambios", null, persona, formaciones.Select(x => ToFormacion(x, docs)).ToList(), certificaciones.Select(x => ToCertificacion(x, docs)).ToList(), ownDisability ? docs.Where(d => d.Seccion == "Discapacidad").Select(x => new ArchivoResponse(x.Id, x.NombreOriginal, x.ContentType, x.Tamano, x.FechaCreacion)).ToList() : [], family, control?.Version ?? 0, [], recoverable is null ? null : await LegacyDetail(recoverable, ct), hasCedula ? person.Numeroidentificacion : null, control?.ConocimientosJson is { } json ? JsonSerializer.Deserialize<ConocimientoDto[]>(json) : [], person.Fechanacimiento);
+        return new(null, "Sin cambios", null, persona, formaciones.Select(x => ToFormacion(x, docs)).ToList(), certificaciones.Select(x => ToCertificacion(x, docs)).ToList(), ownDisability ? docs.Where(d => d.Seccion == "Discapacidad").Select(x => new ArchivoResponse(x.Id, x.NombreOriginal, x.ContentType, x.Tamano, x.FechaCreacion)).ToList() : [], family, control?.Version ?? 0, [], recoverable is null ? null : await LegacyDetail(recoverable, ct), hasCedula ? person.Numeroidentificacion : null, control?.ConocimientosJson is { } json ? JsonSerializer.Deserialize<ConocimientoDto[]>(json) : [], person.Fechanacimiento,
+            docs.Where(d => d.Seccion == "ActaNacimiento").Select(ToDoc).ToList());
     }
 
     public async Task<(long Version, bool ValidacionEnviada)> SaveAsync(ActualizacionRequest input, CancellationToken ct)
@@ -69,13 +70,13 @@ public sealed class ActualizacionDirectaService(
         var guardadoDirecto = section == "conocimientos" ||
             (section == "familia" &&
              input.Familia is { Pareja: null, Familiares.Count: 0 } familia &&
-             string.Equals(familia.EstadoCivil, "Soltero", StringComparison.OrdinalIgnoreCase) &&
+             familia.EstadoCivil is "Soltero" or "Viudo" or "Divorciado" &&
              NormalizeTriState(familia.TieneHijos) == "No");
         await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
         if (section != "conocimientos") await EnsureEditable(owner.Employee.Id, section, ct);
         var control = await db.Set<ColaboradorDatosControl>().SingleOrDefaultAsync(x => x.IdEmpleado == owner.Employee.Id, ct);
         await ValidateInstitucionesAsync(input, owner.Employee.Id, ct);
-        await ValidateDocuments(input, owner.Employee.Id, ct);
+        await ValidateDocuments(input, owner.Employee.Id, ct, exigirActaPersonal: true);
         if ((input.ControlVersion ?? 0) != (control?.Version ?? 0))
             throw new DbUpdateConcurrencyException("Recarga el perfil antes de guardar.");
         if (section == "conocimientos" && input.Conocimientos is null)
@@ -199,7 +200,7 @@ public sealed class ActualizacionDirectaService(
 
     public static string DocumentSection(string section) => section.ToLowerInvariant() switch
     {
-        "discapacidad" => "personal",
+        "discapacidad" or "actanacimiento" => "personal",
         "formacion" => "formacion",
         "certificacion" => "certificaciones",
         _ => "familia"
@@ -561,7 +562,7 @@ public sealed class ActualizacionDirectaService(
         return active.Where(x => ids.Contains(x.Id)).ToList();
     }
 
-    private async Task ValidateDocuments(ActualizacionRequest input, int employeeId, CancellationToken ct)
+    private async Task ValidateDocuments(ActualizacionRequest input, int employeeId, CancellationToken ct, bool exigirActaPersonal = false)
     {
         if (input.Seccion is not ("personal" or "familia" or "formacion" or "certificaciones")) return;
         var docs = await db.Set<ColaboradorDocumento>().AsNoTracking()
@@ -575,16 +576,19 @@ public sealed class ActualizacionDirectaService(
         {
             var respaldo = docs.FirstOrDefault(doc => string.Equals(doc.Seccion, tipo, StringComparison.OrdinalIgnoreCase) &&
                 !respaldosUsados.Contains(doc.Id) &&
-                (tipo == "Discapacidad" ? doc.ReferenciaId is null && string.IsNullOrEmpty(doc.ReferenciaClave) :
+                (tipo is "Discapacidad" or "ActaNacimiento" ? doc.ReferenciaId is null && string.IsNullOrEmpty(doc.ReferenciaClave) :
                     (id.HasValue && doc.ReferenciaId == id) || (!string.IsNullOrWhiteSpace(clave) && doc.ReferenciaClave == clave)));
             if (respaldo is null)
-                errors.Add(new ApiError(path, "Sube los archivos solicitados.", "VALIDATION_ERROR"));
+                errors.Add(new ApiError(path, tipo == "ActaNacimiento" ? "Adjunta tu acta de nacimiento." : "Sube los archivos solicitados.", "VALIDATION_ERROR"));
             else
                 respaldosUsados.Add(respaldo.Id);
         }
 
-        if (input.Seccion == "personal" && IsYes(input.Persona.TieneDiscapacidad))
-            Require("persona.archivos", "Discapacidad", null, null);
+        if (input.Seccion == "personal")
+        {
+            if (exigirActaPersonal) Require("persona.actaNacimiento", "ActaNacimiento", null, null);
+            if (IsYes(input.Persona.TieneDiscapacidad)) Require("persona.archivos", "Discapacidad", null, null);
+        }
 
         if (input.Seccion == "familia" && input.Familia is { } familia)
         {
