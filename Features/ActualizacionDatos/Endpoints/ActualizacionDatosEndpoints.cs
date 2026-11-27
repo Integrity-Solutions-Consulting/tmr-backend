@@ -103,15 +103,17 @@ public static class ActualizacionDatosEndpoints
             return Results.Ok(new DocumentoResponse(record.Id, record.NombreOriginal, record.ContentType, record.Tamano, record.FechaCreacion, record.Seccion, record.ReferenciaId, record.ReferenciaClave));
         }).DisableAntiforgery();
         mine.MapGet("/archivos/{archivoId:long}", async (long archivoId, ApplicationDbContext db, IFileStorage storage, ActualizacionDirectaService service, CancellationToken ct) => { var owner = await service.Owner(ct); var file = await db.Set<ColaboradorDocumento>().SingleOrDefaultAsync(x => owner != null && x.Id == archivoId && x.IdEmpleado == owner.Value.Employee.Id && x.Activo, ct); if (file is null) return Results.NotFound(); var stream = await storage.OpenReadAsync(file.StorageKey, ct, file.Provider); return stream is null ? Results.NotFound() : Results.File(stream, file.ContentType, file.NombreOriginal); });
-        mine.MapDelete("/archivos/{archivoId:long}", async (long archivoId, IFileStorage storage, ActualizacionDirectaService service, CancellationToken ct) =>
+        mine.MapDelete("/archivos/{archivoId:long}", async (long archivoId, ActualizacionDirectaService service, CancellationToken ct) =>
         {
-            try { return await service.DeleteDocumentAsync(archivoId, storage, ct) ? Results.NoContent() : Results.NotFound(); }
+            try { return await service.DeleteDocumentAsync(archivoId, ct) ? Results.NoContent() : Results.NotFound(); }
             catch (DbUpdateConcurrencyException ex) { return Results.Conflict(new { message = ex.Message }); }
+            catch (Exception ex) when (IsSerializationConflict(ex)) { return Results.Conflict(new { message = "La sección cambió. Recarga el perfil antes de eliminar el documento." }); }
             catch (Exception) { return Results.Problem("No fue posible eliminar el documento. Reintenta sin cerrar la página.", statusCode: 502); }
         });
-        mine.MapDelete("/solicitudes/{id:long}/archivos/{archivoId:long}", async (long id, long archivoId, IFileStorage storage, ActualizacionDirectaService service, CancellationToken ct) =>
+        mine.MapDelete("/solicitudes/{id:long}/archivos/{archivoId:long}", async (long id, long archivoId, ActualizacionDirectaService service, CancellationToken ct) =>
         {
-            try { return await service.DeleteSolicitudDocumentAsync(id, archivoId, storage, ct) ? Results.NoContent() : Results.NotFound(); }
+            try { return await service.DeleteSolicitudDocumentAsync(id, archivoId, ct) ? Results.NoContent() : Results.NotFound(); }
+            catch (DbUpdateConcurrencyException) { return Results.NotFound(); }
             catch (Exception) { return Results.Problem("No fue posible eliminar el documento. Reintenta sin cerrar la página.", statusCode: 502); }
         });
         mine.MapPost("/legacy/{id:long}/archivos", async (long id, string? seccion, long? referenciaId, IFormFile file, ApplicationDbContext db, IFileStorage storage, ActualizacionDatosService service, CancellationToken ct) => {
@@ -136,7 +138,12 @@ public static class ActualizacionDatosEndpoints
                 return Results.Conflict(new { message = "La solicitud cambió mientras la revisabas. Recarga el perfil antes de continuar." });
             }
             catch (ArgumentException ex) { return Results.BadRequest(new { message = ex.Message }); }
-            catch (FieldValidationException) { return Results.Conflict(new { message = "Los respaldos ya no estan disponibles." }); }
+            catch (FieldValidationException ex)
+            {
+                if (ex.Errors.Any(error => error.Field.EndsWith(".institucion", StringComparison.Ordinal)))
+                    return Results.Conflict(new { message = "La propuesta tiene una institución inválida. Solicita al colaborador que la corrija." });
+                return Results.Conflict(new { message = "Los respaldos ya no estan disponibles." });
+            }
         });
         review.MapGet("/perfil/{id:long}/archivos/{fileId:long}", async (long id, long fileId, ApplicationDbContext db, IFileStorage storage, ILogger<ActualizacionDirectaService> logger, CancellationToken ct) =>
         {

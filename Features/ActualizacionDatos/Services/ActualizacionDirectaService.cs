@@ -4,7 +4,9 @@ using tmr_backend.Features.ActualizacionDatos.Domain;
 using tmr_backend.Features.ActualizacionDatos.DTOs;
 using tmr_backend.Features.Notificaciones.Application.Estado;
 using tmr_backend.Features.Notificaciones.Domain;
+using tmr_backend.Features.TimeReport.Services;
 using tmr_backend.Infrastructure.Database;
+using tmr_backend.Infrastructure.Messaging;
 using tmr_backend.Infrastructure.Database.Entities;
 using tmr_backend.Infrastructure.Shared;
 using tmr_backend.Features.ActualizacionDatos.Storage;
@@ -16,7 +18,7 @@ namespace tmr_backend.Features.ActualizacionDatos.Services;
 public sealed class ActualizacionDirectaService(
     ApplicationDbContext db,
     ICurrentUserService currentUser,
-    INotificacionInternaNotifier notificaciones)
+    INotificacionInternaNotifier notificaciones, IEventBus eventBus)
 {
     public async Task<MiDatosResponse?> GetAsync(CancellationToken ct)
     {
@@ -64,37 +66,48 @@ public sealed class ActualizacionDirectaService(
         };
         Validate(input);
         if (section is null) throw new ArgumentException("Selecciona una seccion.");
+        var guardadoDirecto = section == "conocimientos" ||
+            (section == "familia" &&
+             input.Familia is { Pareja: null, Familiares.Count: 0 } familia &&
+             string.Equals(familia.EstadoCivil, "Soltero", StringComparison.OrdinalIgnoreCase) &&
+             NormalizeTriState(familia.TieneHijos) == "No");
         await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
         if (section != "conocimientos") await EnsureEditable(owner.Employee.Id, section, ct);
         var control = await db.Set<ColaboradorDatosControl>().SingleOrDefaultAsync(x => x.IdEmpleado == owner.Employee.Id, ct);
+        await ValidateInstitucionesAsync(input, owner.Employee.Id, ct);
         await ValidateDocuments(input, owner.Employee.Id, ct);
         if ((input.ControlVersion ?? 0) != (control?.Version ?? 0))
             throw new DbUpdateConcurrencyException("Recarga el perfil antes de guardar.");
-        if (section == "conocimientos")
+        if (section == "conocimientos" && input.Conocimientos is null)
+            throw new ArgumentException("Indica los conocimientos que deseas guardar.");
+
+        if (guardadoDirecto)
         {
-            if (input.Conocimientos is null) throw new ArgumentException("Indica los conocimientos que deseas guardar.");
             await ApplyAsync(input, owner.Employee, owner.Person, ct);
             var pending = await db.ColaboradorSolicitudes.Where(x => x.IdEmpleado == owner.Employee.Id &&
                 x.Seccion == section && (x.EstadoRevision == "EnRevision" || x.EstadoRevision == "RequiereCorreccion")).ToListAsync(ct);
             foreach (var old in pending) old.EstadoRevision = "Reenviada";
         }
-        var previous = await db.ColaboradorSolicitudes.SingleOrDefaultAsync(x =>
-            x.IdEmpleado == owner.Employee.Id && x.Seccion == section && x.EstadoRevision == "RequiereCorreccion", ct);
-        if (previous is not null)
+        else
         {
-            previous.EstadoRevision = "Reenviada";
-            await db.SaveChangesAsync(ct);
+            var previous = await db.ColaboradorSolicitudes.SingleOrDefaultAsync(x =>
+                x.IdEmpleado == owner.Employee.Id && x.Seccion == section && x.EstadoRevision == "RequiereCorreccion", ct);
+            if (previous is not null)
+            {
+                previous.EstadoRevision = "Reenviada";
+                await db.SaveChangesAsync(ct);
+            }
         }
         var now = DateTime.UtcNow;
         db.Add(new ColaboradorSolicitud
         {
             IdEmpleado = owner.Employee.Id, Seccion = section, Asunto = section,
             Descripcion = "Revision de cambios del perfil", Enviada = true,
-            FechaCreacion = now, FechaEnvio = now, EstadoRevision = section == "conocimientos" ? "Guardada" : "EnRevision",
+            FechaCreacion = now, FechaEnvio = now, EstadoRevision = guardadoDirecto ? "Guardada" : "EnRevision",
             Propuesta = JsonSerializer.Serialize(input)
         });
         List<int> revisores = [];
-        if (section != "conocimientos")
+        if (!guardadoDirecto)
         {
             revisores = await db.TblAutenticacionUsuarioRols.AsNoTracking()
                 .Where(ur => ur.Activo && ur.IdusuarioNavigation.Activo && ur.IdrolNavigation.Activo &&
@@ -119,7 +132,7 @@ public sealed class ActualizacionDirectaService(
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         if (revisores.Count > 0) notificaciones.NotificarUsuarios(revisores);
-        return (control?.Version ?? db.Set<ColaboradorDatosControl>().Local.SingleOrDefault(x => x.IdEmpleado == owner.Employee.Id)?.Version ?? 0, section != "conocimientos");
+        return (control?.Version ?? db.Set<ColaboradorDatosControl>().Local.SingleOrDefault(x => x.IdEmpleado == owner.Employee.Id)?.Version ?? 0, !guardadoDirecto);
     }
 
     private async Task ApplyAsync(ActualizacionRequest input, TblAdministracionEmpleado employee, TblAdministracionPersona person, CancellationToken ct)
@@ -248,6 +261,9 @@ public sealed class ActualizacionDirectaService(
             throw new ArgumentException("Selecciona un estado valido.");
         if (estado == "RequiereCorreccion" && string.IsNullOrWhiteSpace(observacion))
             throw new ArgumentException("Indica el campo o documento que debe corregirse.");
+        if (observacion is not null && System.Text.RegularExpressions.Regex.IsMatch(observacion, """[^\p{L}\p{M}0-9 .,'"\r\n]"""))
+            throw new ArgumentException("La observación admite letras, números, espacios, saltos de línea, comillas, comas y puntos.");
+        observacion = observacion?.Trim();
         await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
         var row = await db.ColaboradorSolicitudes.SingleOrDefaultAsync(x => x.Id == id && x.Seccion != null, ct);
         if (row is null) return false;
@@ -257,12 +273,20 @@ public sealed class ActualizacionDirectaService(
         if (estado == "Aprobada")
         {
             var employee = await db.TblAdministracionEmpleados.Include(x => x.IdpersonaNavigation).SingleAsync(x => x.Id == row.IdEmpleado, ct);
-            await ApplyAsync(JsonSerializer.Deserialize<ActualizacionRequest>(row.Propuesta!)!, employee, employee.IdpersonaNavigation, ct);
+            var propuesta = JsonSerializer.Deserialize<ActualizacionRequest>(row.Propuesta!)!;
+            await ValidateInstitucionesAsync(propuesta, employee.Id, ct);
+            await ApplyAsync(propuesta, employee, employee.IdpersonaNavigation, ct);
         }
         if (estado is "Aprobada" or "RequiereCorreccion")
         {
             var seccion = NombreSeccion(row.Seccion);
             var aprobada = estado == "Aprobada";
+            var mensaje = aprobada
+                ? $"Recursos Humanos aprobó los cambios en {seccion}."
+                : $"Recursos Humanos solicitó una corrección en {seccion}: {observacion}";
+            const int maxMensaje = 500;
+            if (mensaje.Length > maxMensaje)
+                mensaje = mensaje.Substring(0, maxMensaje - 3) + "...";
             destinatarios = await (from usuario in db.TblAutenticacionUsuarios.AsNoTracking()
                                    join empleado in db.TblAdministracionEmpleados.AsNoTracking()
                                        on usuario.Idpersona equals empleado.Idpersona
@@ -272,15 +296,13 @@ public sealed class ActualizacionDirectaService(
             {
                 IdUsuarioDestino = idUsuario,
                 Titulo = aprobada ? "Cambios de perfil aprobados" : "Corrección de perfil solicitada",
-                Mensaje = aprobada
-                    ? $"Recursos Humanos aprobó los cambios en {seccion}."
-                    : $"Recursos Humanos solicitó una corrección en {seccion}: {observacion?.Trim()}",
+                Mensaje = mensaje,
                 UrlDestino = aprobada ? "/mi-perfil" : $"/mis-datos?tab={row.Seccion}",
                 FechaCreacion = DateTime.UtcNow
             }));
         }
         row.EstadoRevision = estado;
-        row.ObservacionRevision = observacion?.Trim();
+        row.ObservacionRevision = observacion;
         row.Revisor = currentUser.Email;
         row.FechaRevision = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
@@ -303,58 +325,37 @@ public sealed class ActualizacionDirectaService(
         db.Add(row); await db.SaveChangesAsync(ct); return row.Id;
     }
 
-    public async Task<bool> DeleteDocumentAsync(long documentId, IFileStorage storage, CancellationToken ct)
+    public async Task<bool> DeleteDocumentAsync(long documentId, CancellationToken ct)
     {
         var owner = await Owner(ct);
-        var row = owner is null
-            ? null
-            : await db.Set<ColaboradorDocumento>().SingleOrDefaultAsync(x => x.Id == documentId && x.IdEmpleado == owner.Value.Employee.Id && x.Activo, ct);
-        if (row is null) return false;
-        await EnsureEditable(row.IdEmpleado, DocumentSection(row.Seccion), ct);
+        if (owner is null) return false;
 
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
-        try
-        {
-            // El objeto se elimina antes de confirmar el soft-delete de metadata. Si falla,
-            // la transacción se revierte y el documento sigue disponible para reintentar.
-            await storage.DeleteAsync(row.StorageKey, ct, row.Provider);
-            row.Activo = false;
-            await db.SaveChangesAsync(ct);
-            await tx.CommitAsync(ct);
-            return true;
-        }
-        catch
-        {
-            await tx.RollbackAsync(CancellationToken.None);
-            throw;
-        }
+        await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+        var row = await db.Set<ColaboradorDocumento>().SingleOrDefaultAsync(
+            x => x.Id == documentId && x.IdEmpleado == owner.Value.Employee.Id && x.Activo, ct);
+        if (row is null) return false;
+
+        await EnsureEditable(row.IdEmpleado, DocumentSection(row.Seccion), ct);
+        row.Activo = false;
+        await eventBus.PublishAsync(new EliminarArchivoPerfil(row.StorageKey, row.Provider), ct);
+        await tx.CommitAsync(ct);
+        return true;
     }
 
-    public async Task<bool> DeleteSolicitudDocumentAsync(long solicitudId, long documentId, IFileStorage storage, CancellationToken ct)
+    public async Task<bool> DeleteSolicitudDocumentAsync(long solicitudId, long documentId, CancellationToken ct)
     {
         var owner = await Owner(ct);
-        var row = owner is null
-            ? null
-            : await (from a in db.Set<ColaboradorSolicitudArchivo>()
-                     join s in db.Set<ColaboradorSolicitud>() on a.IdSolicitud equals s.Id
-                     where a.Id == documentId && s.Id == solicitudId && s.IdEmpleado == owner.Value.Employee.Id
-                     select a).SingleOrDefaultAsync(ct);
+        if (owner is null) return false;
+
+        var row = await (from a in db.Set<ColaboradorSolicitudArchivo>()
+                         join s in db.Set<ColaboradorSolicitud>() on a.IdSolicitud equals s.Id
+                         where a.Id == documentId && s.Id == solicitudId && s.IdEmpleado == owner.Value.Employee.Id
+                         select a).SingleOrDefaultAsync(ct);
         if (row is null) return false;
 
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
-        try
-        {
-            await storage.DeleteAsync(row.StorageKey, ct, row.Provider);
-            db.Remove(row);
-            await db.SaveChangesAsync(ct);
-            await tx.CommitAsync(ct);
-            return true;
-        }
-        catch
-        {
-            await tx.RollbackAsync(CancellationToken.None);
-            throw;
-        }
+        db.Remove(row);
+        await eventBus.PublishAsync(new EliminarArchivoPerfil(row.StorageKey, row.Provider), ct);
+        return true;
     }
 
     public async Task<(TblAdministracionEmpleado Employee, TblAdministracionPersona Person)?> Owner(CancellationToken ct) => await (from u in db.TblAutenticacionUsuarios join e in db.TblAdministracionEmpleados on u.Idpersona equals e.Idpersona where u.Id == currentUser.UserId && u.Activo && e.Activo select new { Employee = e, Person = e.IdpersonaNavigation }).FirstOrDefaultAsync(ct) is { } x ? (x.Employee, x.Person) : null;
@@ -363,7 +364,7 @@ public sealed class ActualizacionDirectaService(
     {
         var rows = await db.Set<ColaboradorFormacion>().Where(x => x.IdEmpleado == id).ToListAsync(ct); var keys = values.Select(x => x.Clave).Where(x => !string.IsNullOrWhiteSpace(x)).ToHashSet();
         foreach (var row in rows) { if (!keys.Contains(row.Clave) && !values.Any(x => x.Id == row.Id)) row.Activo = false; }
-        foreach (var x in values) { var row = rows.FirstOrDefault(r => x.Id == r.Id || (!string.IsNullOrWhiteSpace(x.Clave) && r.Clave == x.Clave)) ?? new ColaboradorFormacion { IdEmpleado = id, Clave = string.IsNullOrWhiteSpace(x.Clave) ? Guid.NewGuid().ToString("N") : x.Clave! }; row.Nivel = x.Nivel.Trim(); row.Institucion = x.Institucion.Trim(); row.Titulo = x.Titulo.Trim(); row.FechaInicio = x.FechaInicio; row.FechaFin = x.FechaFin; row.Activo = true; if (row.Id == 0) db.Add(row); }
+        foreach (var x in values) { var row = rows.FirstOrDefault(r => x.Id == r.Id) ?? rows.FirstOrDefault(r => !string.IsNullOrWhiteSpace(x.Clave) && r.Clave == x.Clave) ?? new ColaboradorFormacion { IdEmpleado = id, Clave = string.IsNullOrWhiteSpace(x.Clave) ? Guid.NewGuid().ToString("N") : x.Clave! }; row.Nivel = x.Nivel.Trim(); if (row.Institucion != x.Institucion) row.Institucion = x.Institucion.Trim(); row.Titulo = x.Titulo.Trim(); row.FechaInicio = x.FechaInicio; row.FechaFin = x.FechaFin; row.Activo = true; if (row.Id == 0) db.Add(row); }
     }
 
     private async Task UpsertCertificaciones(int id, IReadOnlyList<CertificacionRequest> values, CancellationToken ct)
@@ -391,6 +392,35 @@ public sealed class ActualizacionDirectaService(
         "Doctorado (PhD)"
     };
 
+
+    private async Task ValidateInstitucionesAsync(ActualizacionRequest input, int employeeId, CancellationToken ct)
+    {
+        if (input.Seccion != "formacion" || input.Formaciones.Count == 0) return;
+
+        var actuales = await db.Set<ColaboradorFormacion>().AsNoTracking()
+            .Where(row => row.IdEmpleado == employeeId && row.Activo)
+            .ToDictionaryAsync(row => row.Id, ct);
+        var errors = new List<ApiError>();
+        for (var i = 0; i < input.Formaciones.Count; i++)
+        {
+            var formation = input.Formaciones[i];
+            var institucion = formation.Institucion;
+            if (formation.Id is { } id && actuales.TryGetValue(id, out var actual)
+                && (string.IsNullOrWhiteSpace(formation.Clave) || formation.Clave == actual.Clave)
+                && institucion == actual.Institucion)
+                continue;
+
+            var message = string.IsNullOrWhiteSpace(institucion) ? "Este campo es obligatorio."
+                : institucion.Length > 200 ? "Máximo 200 caracteres."
+                : !System.Text.RegularExpressions.Regex.IsMatch(institucion, """\A[\p{L}\p{M}0-9 "]+\z""")
+                    ? "Usa solo letras, números, espacios y comillas dobles."
+                    : null;
+            if (message is not null)
+                errors.Add(new ApiError($"formaciones[{i}].institucion", message, "VALIDATION_ERROR"));
+        }
+
+        if (errors.Count > 0) throw new FieldValidationException(errors);
+    }
 
     private static void Validate(ActualizacionRequest x)
     {
@@ -427,7 +457,6 @@ public sealed class ActualizacionDirectaService(
                 Add($"formaciones[{i}].fechaInicio", "La fecha de inicio debe ser anterior o igual a la fecha de fin.");
                 Add($"formaciones[{i}].fechaFin", "La fecha de fin debe ser posterior o igual a la fecha de inicio.");
             }
-            if (string.IsNullOrWhiteSpace(formation.Institucion)) Add($"formaciones[{i}].institucion", "Este campo es obligatorio.");
             if (string.IsNullOrWhiteSpace(formation.Titulo)) Add($"formaciones[{i}].titulo", "Este campo es obligatorio.");
         }
         for (var i = 0; i < x.Certificaciones.Count; i++)
@@ -445,12 +474,17 @@ public sealed class ActualizacionDirectaService(
                     Add($"certificaciones[{i}].entidadEmisora", "Ingresa una entidad emisora valida.");
             }
         }
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = CalculoHorasPeriodo.HoyEcuador();
         if (x.Persona.FechaNacimiento > today)
             Add("persona.fechaNacimiento", "La fecha de nacimiento no puede ser futura.");
         for (var i = 0; i < x.Certificaciones.Count; i++)
         {
             var certification = x.Certificaciones[i];
+            if (certification.FechaEmision == default)
+            {
+                Add($"certificaciones[{i}].fechaEmision", "La fecha de emisión es obligatoria.");
+                continue;
+            }
             if (certification.FechaEmision > today) Add($"certificaciones[{i}].fechaEmision", "La fecha de emisión no puede ser futura.");
             if (certification.FechaVencimiento is { } vencimiento && vencimiento <= certification.FechaEmision)
             {

@@ -374,6 +374,7 @@ builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProv
 // NOTIFICACIONES MODULE
 // =========================
 builder.Services.AddMessaging();
+builder.Services.AddScoped<IEventHandler<EliminarArchivoPerfil>, EliminarArchivoPerfilHandler>();
 builder.Services.AddNotificacionesModule(builder.Configuration);
 builder.Services.AddNotificacionesQuartz(builder.Configuration);
 
