@@ -15,8 +15,18 @@ namespace tmr_backend.Features.Permisos.Services;
 /// </summary>
 public static class SincronizadorCuentasPermisos
 {
+    public const string EnableFixturesConfigKey = "Fixtures:EnableAccountSync";
     private static readonly SemaphoreSlim Mutex = new(1, 1);
     private static DateTime _ultimaVerificacionUtc = DateTime.MinValue;
+    private static bool _fixturesHabilitados;
+
+    public static bool DebeEjecutarFixtures(string? environmentName, bool enableAccountSync) =>
+        enableAccountSync && string.Equals(environmentName, "Testing", StringComparison.OrdinalIgnoreCase);
+
+    public static void Configurar(IHostEnvironment environment, IConfiguration configuration) =>
+        _fixturesHabilitados = DebeEjecutarFixtures(
+            environment.EnvironmentName,
+            configuration.GetValue<bool>(EnableFixturesConfigKey));
 
     private sealed record DefinicionCuentaPrueba(
         string Email,
@@ -44,6 +54,9 @@ public static class SincronizadorCuentasPermisos
         IMemoryCache? cache = null,
         CancellationToken ct = default)
     {
+        if (!_fixturesHabilitados)
+            return;
+
         if (db.Database.CurrentTransaction is not null)
             return;
 
@@ -555,7 +568,8 @@ public static class SincronizadorCuentasPermisos
                 p.Codigo == "PERMISOS_RRHH_READ" ||
                 p.Codigo == "PERMISOS_RRHH_CONFIRM" ||
                 p.Codigo == "PERMISOS_GERENCIA_READ" ||
-                p.Codigo == "SEGUIMIENTO_READ"))
+                p.Codigo == "SEGUIMIENTO_READ" ||
+                p.Codigo == "SEGUIMIENTO_ACTIVIDADES_GLOBAL_WRITE"))
             .ToListAsync(ct);
 
         if (permisosModulo.Count == 0)
@@ -582,6 +596,7 @@ public static class SincronizadorCuentasPermisos
                     "PERMISOS_LIDER_READ" or "PERMISOS_LIDER_APPROVE" => esAdmin || esLider,
                     "PERMISOS_RRHH_READ" or "PERMISOS_RRHH_CONFIRM" => esAdmin || esRrhh,
                     "PERMISOS_GERENCIA_READ" or "SEGUIMIENTO_READ" => esAdmin || esGerencia || esRrhh || esLider,
+                    "SEGUIMIENTO_ACTIVIDADES_GLOBAL_WRITE" => esAdmin,
                     _ => false
                 };
 
