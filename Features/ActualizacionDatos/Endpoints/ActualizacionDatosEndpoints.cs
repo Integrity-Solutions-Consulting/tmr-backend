@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using tmr_backend.Features.ActualizacionDatos.DTOs;
 using tmr_backend.Features.ActualizacionDatos.Domain;
 using tmr_backend.Features.ActualizacionDatos.Services;
@@ -32,7 +33,30 @@ public static class ActualizacionDatosEndpoints
                 Extensions = { ["code"] = inactive ? "EMPLOYEE_INACTIVE" : "EMPLOYEE_LINK_MISSING" }
             });
         });
-        mine.MapPut("", async (ActualizacionRequest request, ActualizacionDirectaService service, CancellationToken ct) => { try { var saved = await service.SaveAsync(request, ct); return Results.Ok(new { version = saved.Version, validacionEnviada = saved.ValidacionEnviada }); } catch (DbUpdateConcurrencyException ex) { return Results.Conflict(new ProblemDetails { Detail = ex.Message, Status = 409 }); } catch (FieldValidationException ex) { return Results.BadRequest(ApiResponse<object>.Fail(400, "Error de validación", ex.Errors)); } catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { return Results.BadRequest(new ProblemDetails { Detail=ex.Message, Status=400 }); } });
+        mine.MapPut("", async (ActualizacionRequest request, ActualizacionDirectaService service, CancellationToken ct) =>
+        {
+            try
+            {
+                var saved = await service.SaveAsync(request, ct);
+                return Results.Ok(new { version = saved.Version, validacionEnviada = saved.ValidacionEnviada });
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                return Results.Conflict(new ProblemDetails { Detail = ex.Message, Status = 409 });
+            }
+            catch (Exception ex) when (IsSerializationConflict(ex))
+            {
+                return Results.Conflict(new ProblemDetails { Detail = "El perfil cambió mientras guardabas. Recarga el perfil y vuelve a intentarlo.", Status = 409 });
+            }
+            catch (FieldValidationException ex)
+            {
+                return Results.BadRequest(ApiResponse<object>.Fail(400, "Error de validación", ex.Errors));
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+            {
+                return Results.BadRequest(new ProblemDetails { Detail = ex.Message, Status = 400 });
+            }
+        });
         mine.MapGet("/revisiones", async (ActualizacionDirectaService service, CancellationToken ct) => Results.Ok(await service.MyReviewsAsync(ct)));
         mine.MapGet("/solicitudes", async (ActualizacionDirectaService service, CancellationToken ct) => Results.Ok(await service.SolicitudesAsync(ct)));
         mine.MapPost("/solicitudes", async (CrearSolicitudRequest request, ActualizacionDirectaService service, CancellationToken ct) => { try { return Results.Ok(new { id = await service.CrearSolicitudAsync(request.Asunto, request.Descripcion, request.Enviar, ct) }); } catch (ArgumentException ex) { return Results.BadRequest(new { message = ex.Message }); } });
@@ -51,7 +75,12 @@ public static class ActualizacionDatosEndpoints
             var owner = await service.Owner(ct); if (owner is null) return Results.Conflict(new { message = "No existe un colaborador activo asociado." });
             try { await service.EnsureEditable(owner.Value.Employee.Id, ActualizacionDirectaService.DocumentSection(seccion), ct); }
             catch (DbUpdateConcurrencyException ex) { return Results.Conflict(new { message = ex.Message }); }
-            var validSections = new[] { "Discapacidad", "Pareja", "Familiar", "Formacion", "Certificacion", "PartidaNacimiento" }; if (!validSections.Contains(seccion, StringComparer.OrdinalIgnoreCase)) return Results.BadRequest(new { message = "La sección documental no es válida." });
+            var validSections = new[] { "Discapacidad", "Pareja", "Familiar", "Formacion", "Certificacion", "PartidaNacimiento", "ActaNacimiento" };
+            var seccionValida = validSections.FirstOrDefault(value => string.Equals(value, seccion, StringComparison.OrdinalIgnoreCase));
+            if (seccionValida is null) return Results.BadRequest(new { message = "La sección documental no es válida." });
+            seccion = seccionValida;
+            if (seccion == "ActaNacimiento" && (referenciaId is not null || !string.IsNullOrEmpty(referenciaClave) || replaceId is not null))
+                return Results.BadRequest(new { message = "Adjunta el acta de nacimiento desde Información personal." });
             if (string.Equals(seccion, "PartidaNacimiento", StringComparison.OrdinalIgnoreCase))
             {
                 seccion = "PartidaNacimiento";
@@ -79,15 +108,17 @@ public static class ActualizacionDatosEndpoints
             return Results.Ok(new DocumentoResponse(record.Id, record.NombreOriginal, record.ContentType, record.Tamano, record.FechaCreacion, record.Seccion, record.ReferenciaId, record.ReferenciaClave));
         }).DisableAntiforgery();
         mine.MapGet("/archivos/{archivoId:long}", async (long archivoId, ApplicationDbContext db, IFileStorage storage, ActualizacionDirectaService service, CancellationToken ct) => { var owner = await service.Owner(ct); var file = await db.Set<ColaboradorDocumento>().SingleOrDefaultAsync(x => owner != null && x.Id == archivoId && x.IdEmpleado == owner.Value.Employee.Id && x.Activo, ct); if (file is null) return Results.NotFound(); var stream = await storage.OpenReadAsync(file.StorageKey, ct, file.Provider); return stream is null ? Results.NotFound() : Results.File(stream, file.ContentType, file.NombreOriginal); });
-        mine.MapDelete("/archivos/{archivoId:long}", async (long archivoId, IFileStorage storage, ActualizacionDirectaService service, CancellationToken ct) =>
+        mine.MapDelete("/archivos/{archivoId:long}", async (long archivoId, ActualizacionDirectaService service, CancellationToken ct) =>
         {
-            try { return await service.DeleteDocumentAsync(archivoId, storage, ct) ? Results.NoContent() : Results.NotFound(); }
+            try { return await service.DeleteDocumentAsync(archivoId, ct) ? Results.NoContent() : Results.NotFound(); }
             catch (DbUpdateConcurrencyException ex) { return Results.Conflict(new { message = ex.Message }); }
+            catch (Exception ex) when (IsSerializationConflict(ex)) { return Results.Conflict(new { message = "La sección cambió. Recarga el perfil antes de eliminar el documento." }); }
             catch (Exception) { return Results.Problem("No fue posible eliminar el documento. Reintenta sin cerrar la página.", statusCode: 502); }
         });
-        mine.MapDelete("/solicitudes/{id:long}/archivos/{archivoId:long}", async (long id, long archivoId, IFileStorage storage, ActualizacionDirectaService service, CancellationToken ct) =>
+        mine.MapDelete("/solicitudes/{id:long}/archivos/{archivoId:long}", async (long id, long archivoId, ActualizacionDirectaService service, CancellationToken ct) =>
         {
-            try { return await service.DeleteSolicitudDocumentAsync(id, archivoId, storage, ct) ? Results.NoContent() : Results.NotFound(); }
+            try { return await service.DeleteSolicitudDocumentAsync(id, archivoId, ct) ? Results.NoContent() : Results.NotFound(); }
+            catch (DbUpdateConcurrencyException) { return Results.NotFound(); }
             catch (Exception) { return Results.Problem("No fue posible eliminar el documento. Reintenta sin cerrar la página.", statusCode: 502); }
         });
         mine.MapPost("/legacy/{id:long}/archivos", async (long id, string? seccion, long? referenciaId, IFormFile file, ApplicationDbContext db, IFileStorage storage, ActualizacionDatosService service, CancellationToken ct) => {
@@ -107,8 +138,17 @@ public static class ActualizacionDatosEndpoints
         {
             try { return await service.DecideAsync(id, input.Estado, input.Observacion, ct) ? Results.NoContent() : Results.NotFound(); }
             catch (DbUpdateConcurrencyException ex) { return Results.Conflict(new { message = ex.Message }); }
+            catch (Exception ex) when (IsSerializationConflict(ex))
+            {
+                return Results.Conflict(new { message = "La solicitud cambió mientras la revisabas. Recarga el perfil antes de continuar." });
+            }
             catch (ArgumentException ex) { return Results.BadRequest(new { message = ex.Message }); }
-            catch (FieldValidationException) { return Results.Conflict(new { message = "Los respaldos ya no estan disponibles." }); }
+            catch (FieldValidationException ex)
+            {
+                if (ex.Errors.Any(error => error.Field.EndsWith(".institucion", StringComparison.Ordinal)))
+                    return Results.Conflict(new { message = "La propuesta tiene una institución inválida. Solicita al colaborador que la corrija." });
+                return Results.Conflict(new { message = "Los respaldos ya no estan disponibles." });
+            }
         });
         review.MapGet("/perfil/{id:long}/archivos/{fileId:long}", async (long id, long fileId, ApplicationDbContext db, IFileStorage storage, ILogger<ActualizacionDirectaService> logger, CancellationToken ct) =>
         {
@@ -133,4 +173,8 @@ public static class ActualizacionDatosEndpoints
         review.MapGet("/{id:long}/archivos/{archivoId:long}", async (long id,long archivoId,ApplicationDbContext db,IFileStorage storage,CancellationToken ct)=>{var file=await db.Set<ActualizacionArchivo>().SingleOrDefaultAsync(x=>x.Id==archivoId&&x.IdSolicitud==id,ct);if(file is null)return Results.NotFound();var stream=await storage.OpenReadAsync(file.StorageKey,ct,file.Provider);return stream is null?Results.NotFound():Results.File(stream,file.ContentType,file.NombreOriginal);});
     }
     public sealed record PerfilDecision(string Estado, string? Observacion);
+
+    private static bool IsSerializationConflict(Exception exception) =>
+        exception is PostgresException { SqlState: PostgresErrorCodes.SerializationFailure }
+        || exception is DbUpdateException { InnerException: PostgresException { SqlState: PostgresErrorCodes.SerializationFailure } };
 }
