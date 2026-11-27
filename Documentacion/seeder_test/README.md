@@ -14,8 +14,13 @@ sirven como cuentas iniciales funcionales. No ejecutarlo sobre bases reales.
 
 La preparación reproducible de estructura, catálogos, roles, permisos y primer
 administrador está en la [guía de instalación vigente](../Scripts_DB/00-ORDEN_DESPLIEGUE.md).
-Los comandos actuales son `--prepare-database`, `--initialize-data` y
+Los comandos actuales son `--prepare-database`, `--initialize-data`, `--initialize-seguimiento-global` y
 `--verify-database`. El arranque web no genera datos.
+
+`--initialize-seguimiento-global` es la opción acotada para preparar
+`SEGUIMIENTO_ACTIVIDADES_GLOBAL_WRITE` y el rol `Lider General`; no ejecuta
+los seeders de Proveedores, Actualización de datos ni crea el administrador
+bootstrap.
 
 Para estudiar el generador heredado, consultar
 `Infrastructure/Database/Seeders/SeedTemplateSeeder.cs` y
