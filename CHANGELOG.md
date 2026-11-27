@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.16.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.15.0...v1.16.0) (2026-11-27)
+
+
+### Features
+
+* **time-report:** agregar permisos globales para seguimiento de acti… ([5ede1fd](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/5ede1fd29d0466733d16397aff46a7a729bb686a))
+* **time-report:** agregar permisos globales para seguimiento de actividades ([04f261a](https://github.com/Integrity-Solutions-Consulting/tmr-backend/commit/04f261aa4d5e65b80864e51bcf53a6b035c50140))
+
 ## [1.15.0](https://github.com/Integrity-Solutions-Consulting/tmr-backend/compare/v1.14.0...v1.15.0) (2026-11-27)
 
 
