@@ -230,12 +230,14 @@ public static class TimeReportEndpoints
         groupActividades.MapGet("/completar-lider", async (int idEmpleado, int idProyecto, ClaimsPrincipal user, ApplicationDbContext db) =>
         {
             var idLider = await ObtenerLiderSesionAsync(user, db);
-            if (idLider is null || await ObtenerEmpleadoSesionAsync(user, db) == idEmpleado)
+            var esGlobal = ActividadAuthorization.TieneGestionGlobal(user);
+            if ((!esGlobal && idLider is null) || await ObtenerEmpleadoSesionAsync(user, db) == idEmpleado)
                 return Results.Ok(new CompletarLiderDto(false));
 
             var asignaciones = await db.TblTimeReportAsignacionProyectos
                 .AsNoTracking()
-                .Where(ep => ep.Activo && ep.Idempleado == idEmpleado && ep.Idproyecto == idProyecto && ep.Idlider == idLider)
+                .Where(ep => ep.Activo && ep.Idempleado == idEmpleado && ep.Idproyecto == idProyecto
+                    && (esGlobal || ep.Idlider == idLider))
                 .Select(ep => new
                 {
                     ep.IdproyectoNavigation.Nombre,
@@ -253,14 +255,14 @@ public static class TimeReportEndpoints
                 .Select(e => e.Activo ? null : e.Fechaterminacion)
                 .FirstOrDefaultAsync();
 
-            return Results.Ok(new CompletarLiderDto(true, idLider, new ProyectoLookupDto(
+            return Results.Ok(new CompletarLiderDto(true, esGlobal ? null : idLider, new ProyectoLookupDto(
                 idProyecto,
                 asignaciones[0].Nombre,
                 asignaciones[0].Codigo,
                 asignaciones.Any(a => a.Fechaasignacion == null) ? null : asignaciones.Min(a => a.Fechaasignacion),
                 asignaciones.Any(a => a.Fechafinasignacion == null) ? null : asignaciones.Max(a => a.Fechafinasignacion),
                 salidaColaborador,
-                asignaciones[0].FinProyecto)));
+                asignaciones[0].FinProyecto), esGlobal));
         });
 
         // sm - idsProyecto / incluirSinProyecto (opcionales): filtro de proyectos del calendario de Actividades. El
@@ -353,8 +355,11 @@ public static class TimeReportEndpoints
             if (await ObtenerEmpleadoSesionAsync(user, db) != request.IdEmpleado)
             {
                 if (!request.IdProyecto.HasValue) return Results.Forbid();
-                idLiderRegistro = await ObtenerLiderDeAsignacionAsync(user, request.IdEmpleado, request.IdProyecto.Value, db);
-                if (idLiderRegistro is null) return Results.Forbid();
+                if (!ActividadAuthorization.TieneGestionGlobal(user))
+                {
+                    idLiderRegistro = await ObtenerLiderDeAsignacionAsync(user, request.IdEmpleado, request.IdProyecto.Value, db);
+                    if (idLiderRegistro is null) return Results.Forbid();
+                }
             }
 
             var horasRegistradasHoy = await db.TblTimeReportActividadDiaria
@@ -413,8 +418,9 @@ public static class TimeReportEndpoints
             // sm - Solo actividades propias, o las del colaborador en un proyecto donde la sesión es su líder (o que el
             // líder cargó a su nombre). El líder no puede pasarla a "Sin proyecto".
             var esPropia = await ObtenerEmpleadoSesionAsync(user, db) == actividad.Idempleado;
-            int? idLiderEditor = esPropia ? null : await ObtenerLiderEditorAsync(user, actividad, db);
-            if (!esPropia && idLiderEditor is null) return Results.Forbid();
+            var esGlobal = ActividadAuthorization.TieneGestionGlobal(user);
+            int? idLiderEditor = esPropia || esGlobal ? null : await ObtenerLiderEditorAsync(user, actividad, db);
+            if (!esPropia && !esGlobal && idLiderEditor is null) return Results.Forbid();
             if (!esPropia && !request.IdProyecto.HasValue) return Results.Forbid();
 
             // Validar horas registradas en el día si cambia la fecha o la cantidad de horas
@@ -469,7 +475,8 @@ public static class TimeReportEndpoints
 
             if (actividad is null) return Results.NotFound();
             // sm - Solo actividades propias, o las del colaborador en un proyecto donde la sesión es su líder.
-            if (await ObtenerEmpleadoSesionAsync(user, db) != actividad.Idempleado
+            var esPropia = await ObtenerEmpleadoSesionAsync(user, db) == actividad.Idempleado;
+            if (!esPropia && !ActividadAuthorization.TieneGestionGlobal(user)
                 && await ObtenerLiderEditorAsync(user, actividad, db) is null) return Results.Forbid();
 
             // Eliminación lógica
@@ -952,6 +959,6 @@ public static class TimeReportEndpoints
     // sm - Puede ver el calendario/métricas de un empleado: él mismo, o quien tiene el permiso de Seguimiento
     // (el modal "Ver detalle" de Seguimiento es de solo lectura).
     private static async Task<bool> PuedeVerEmpleadoAsync(ClaimsPrincipal user, int idEmpleado, ApplicationDbContext db) =>
-        user.HasClaim("permission", "SEGUIMIENTO_READ")
+        (user.HasClaim("permission", "SEGUIMIENTO_READ") || ActividadAuthorization.TieneGestionGlobal(user))
         || await ObtenerEmpleadoSesionAsync(user, db) == idEmpleado;
 }
