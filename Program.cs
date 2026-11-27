@@ -82,12 +82,13 @@ AppDomain.CurrentDomain.UnhandledException += (_, e) =>
     Log.CloseAndFlush();
 };
 
-var databaseCommands = new[] { "--prepare-database", "--adopt-baseline", "--apply-migrations", "--initialize-data", "--verify-database" };
+var databaseCommands = new[] { "--prepare-database", "--adopt-baseline", "--apply-migrations", "--initialize-data", "--initialize-seguimiento-global", "--verify-database" };
 var requestedCommands = args.Where(databaseCommands.Contains).ToArray();
 if (requestedCommands.Length > 1)
     throw new InvalidOperationException("Ejecute una sola etapa de base de datos por comando.");
 var builder = WebApplication.CreateBuilder(
     args.Where(arg => !databaseCommands.Contains(arg)).ToArray());
+SincronizadorCuentasPermisos.Configurar(builder.Environment, builder.Configuration);
 if (requestedCommands.Length == 1)
 {
     await tmr_backend.Infrastructure.Database.Scripts.DatabaseInstaller.RunAsync(

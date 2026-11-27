@@ -50,7 +50,15 @@ public static class DatabaseInstaller
                     {
                         await ProveedorPermissionsSeeder.EnsureAsync(db);
                         await ActualizacionDatosPermissionsSeeder.EnsureAsync(db);
+                        await SeguimientoGlobalPermissionsSeeder.EnsureAsync(db);
                         await CreateAdministratorAsync(db, configuration);
+                        await transaction.CommitAsync();
+                    }
+                    break;
+                case "--initialize-seguimiento-global":
+                    await using (var transaction = await db.Database.BeginTransactionAsync())
+                    {
+                        await SeguimientoGlobalPermissionsSeeder.EnsureAsync(db);
                         await transaction.CommitAsync();
                     }
                     break;
@@ -164,7 +172,7 @@ public static class DatabaseInstaller
         if (await db.TblAutenticacionPermisos.CountAsync(x => x.Activo &&
             new[] { "PROVEEDORES_READ", "PROVEEDORES_CREATE", "PROVEEDORES_UPDATE", "PROVEEDORES_DELETE" }.Contains(x.Codigo)) != 4)
             throw new InvalidOperationException("Faltan permisos de Proveedores. Ejecute --initialize-data.");
-        var requiredPermissionCodes = new[] { "COLABORADORES_DATOS_REVISAR" };
+        var requiredPermissionCodes = new[] { "COLABORADORES_DATOS_REVISAR", "SEGUIMIENTO_ACTIVIDADES_GLOBAL_WRITE" };
         var requiredPermissions = await db.TblAutenticacionPermisos
             .Where(x => x.Activo && requiredPermissionCodes.Contains(x.Codigo))
             .Select(x => x.Codigo).ToListAsync();
@@ -174,7 +182,10 @@ public static class DatabaseInstaller
             x.Activo && x.IdpermisoNavigation.Activo && x.IdpermisoNavigation.Codigo == "COLABORADORES_DATOS_REVISAR" &&
             db.TblAutenticacionRols.Any(role => role.Id == x.Idrol && role.Activo) &&
             db.TblAutenticacionUsuarioRols.Any(userRole => userRole.Idrol == x.Idrol && userRole.Activo));
-        if (!assignedReviewer ||
+        var globalRoleReady = await db.TblAutenticacionRols.AnyAsync(role => role.Activo && role.Nombre == "Lider General" &&
+            role.TblAutenticacionRolPermisos.Any(rp => rp.Activo && rp.IdpermisoNavigation.Activo &&
+                rp.IdpermisoNavigation.Codigo == "SEGUIMIENTO_ACTIVIDADES_GLOBAL_WRITE"));
+        if (!assignedReviewer || !globalRoleReady ||
             !await db.TblAdministracionCatalogos.AnyAsync() || !await db.TblTimeReportTipoActividads.AnyAsync())
             throw new InvalidOperationException("Instalación sin roles, administrador o catálogos indispensables.");
         Console.WriteLine("Esquema mapeado, catálogos, administrador y permisos verificados.");
